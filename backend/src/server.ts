@@ -6,6 +6,7 @@ import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
+import { sessionsRoutes } from './routes/sessions.js';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -40,6 +41,7 @@ async function buildServer() {
 
   // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
+  await fastify.register(sessionsRoutes);
 
   // Health check
   fastify.get('/health', async () => {

@@ -1,18 +1,15 @@
 import { Stack, useRouter } from "expo-router";
 import { TouchableOpacity, Text, Alert } from "react-native";
-import { supabase } from "@/src/lib/supabase";
+import { useAuth } from "@/src/features/auth/useAuth";
 
 export default function SessionsLayout() {
   const router = useRouter();
+  const { signOut } = useAuth();
 
   async function handleSignOut() {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        router.replace("/auth/sign-in");
-      }
+      await signOut();
+      router.replace("/auth/sign-in");
     } catch (error) {
       console.error("Sign out error:", error);
       Alert.alert("Error", "Failed to sign out");

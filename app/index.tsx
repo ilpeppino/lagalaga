@@ -1,9 +1,9 @@
 import { Redirect } from "expo-router";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
-import { useSession } from "@/src/features/auth/useSession";
+import { useAuth } from "@/src/features/auth/useAuth";
 
 export default function Index() {
-  const { session, loading } = useSession();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -13,7 +13,7 @@ export default function Index() {
     );
   }
 
-  if (!session) {
+  if (!user) {
     return <Redirect href="/auth/sign-in" />;
   }
 

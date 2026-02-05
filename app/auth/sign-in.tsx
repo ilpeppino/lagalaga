@@ -2,49 +2,24 @@ import { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Platform,
 } from "react-native";
-import * as Linking from "expo-linking";
-import { supabase } from "@/src/lib/supabase";
+import { useAuth } from "@/src/features/auth/useAuth";
 
 export default function SignInScreen() {
-  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const { signInWithRoblox } = useAuth();
 
-  async function handleSendMagicLink() {
-    if (!email.trim()) {
-      Alert.alert("Error", "Please enter your email address");
-      return;
-    }
-
+  async function handleRobloxSignIn() {
     try {
       setLoading(true);
-
-      const redirectTo = Linking.createURL("/auth/callback");
-
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: redirectTo,
-        },
-      });
-
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        Alert.alert(
-          "Check your email",
-          "We sent you a magic link! Click the link in your email to sign in."
-        );
-      }
+      await signInWithRoblox();
     } catch (error) {
       console.error("Sign in error:", error);
-      Alert.alert("Error", "Failed to send magic link. Please try again.");
+      Alert.alert("Error", "Failed to sign in with Roblox. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -54,34 +29,23 @@ export default function SignInScreen() {
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Welcome to Lagalaga</Text>
-        <Text style={styles.subtitle}>Sign in with your email</Text>
+        <Text style={styles.subtitle}>Sign in with Roblox</Text>
 
         <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="your@email.com"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoComplete="email"
-            editable={!loading}
-          />
-
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSendMagicLink}
+            onPress={handleRobloxSignIn}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Send Magic Link</Text>
+              <Text style={styles.buttonText}>Sign in with Roblox</Text>
             )}
           </TouchableOpacity>
 
           <Text style={styles.hint}>
-            We'll send you a magic link to sign in without a password
+            You'll be redirected to Roblox to authorize the app
           </Text>
         </View>
       </View>
@@ -116,14 +80,6 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
-    backgroundColor: "#fff",
   },
   button: {
     backgroundColor: "#007AFF",

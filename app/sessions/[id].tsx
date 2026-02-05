@@ -6,14 +6,20 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Alert,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { getSessionsStore, type Session } from "@/src/features/sessions";
+import { apiClient } from "@/src/lib/api";
+import { useAuth } from "@/src/features/auth/useAuth";
 
 export default function SessionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const { user } = useAuth();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     loadSession();
@@ -32,6 +38,49 @@ export default function SessionDetailScreen() {
     }
   }
 
+  async function handleJoin() {
+    if (!id) return;
+
+    try {
+      setActionLoading(true);
+      await apiClient.sessions.join(id);
+      Alert.alert("Success", "You have joined the session!");
+      await loadSession(); // Refresh to show updated participants
+    } catch (error) {
+      console.error("Failed to join session:", error);
+      Alert.alert("Error", "Failed to join session. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleLeave() {
+    if (!id) return;
+
+    Alert.alert(
+      "Leave Session",
+      "Are you sure you want to leave this session?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setActionLoading(true);
+              await apiClient.sessions.leave(id);
+              router.back();
+            } catch (error) {
+              console.error("Failed to leave session:", error);
+              Alert.alert("Error", "Failed to leave session. Please try again.");
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   function formatDateTime(isoString: string): string {
     const date = new Date(isoString);
     return date.toLocaleString(undefined, {
@@ -43,6 +92,8 @@ export default function SessionDetailScreen() {
       minute: "2-digit",
     });
   }
+
+  const isHost = user && session && user.id === session.hostUserId;
 
   if (loading) {
     return (
@@ -113,9 +164,35 @@ export default function SessionDetailScreen() {
         <Text style={styles.placeholder}>Join link will be available soon</Text>
       </View>
 
-      <TouchableOpacity style={styles.joinButton}>
-        <Text style={styles.joinButtonText}>Join Session</Text>
-      </TouchableOpacity>
+      {!isHost && (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.joinButton, actionLoading && styles.buttonDisabled]}
+            onPress={handleJoin}
+            disabled={actionLoading}
+          >
+            {actionLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.joinButtonText}>Join Session</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.leaveButton, actionLoading && styles.buttonDisabled]}
+            onPress={handleLeave}
+            disabled={actionLoading}
+          >
+            <Text style={styles.leaveButtonText}>Leave Session</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isHost && (
+        <View style={styles.hostBadge}>
+          <Text style={styles.hostBadgeText}>You are the host</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -177,14 +254,43 @@ const styles = StyleSheet.create({
     color: "#999",
     fontStyle: "italic",
   },
+  buttonContainer: {
+    gap: 12,
+    marginTop: 12,
+  },
   joinButton: {
     backgroundColor: "#34C759",
     padding: 16,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 12,
+  },
+  leaveButton: {
+    backgroundColor: "#FF3B30",
+    padding: 16,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   joinButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  leaveButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  hostBadge: {
+    backgroundColor: "#007AFF",
+    padding: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  hostBadgeText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",

@@ -1,13 +1,15 @@
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { mockSessionsStore } from "./mock";
-import { supabaseSessionsStore } from "./store";
+import { apiSessionsStore } from "./apiStore";
 import type { SessionsStore } from "./store";
 
 export function getSessionsStore(): SessionsStore {
-  if (isSupabaseConfigured()) {
-    return supabaseSessionsStore;
+  // Use API store if API URL is configured
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return apiSessionsStore;
   }
+  // Fallback to mock store
   return mockSessionsStore;
 }
 
 export * from "./types";
+export type { SessionsStore } from "./store";

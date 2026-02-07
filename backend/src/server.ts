@@ -7,6 +7,8 @@ import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
 import { sessionsRoutes } from './routes/sessions.js';
+import { sessionsRoutesV2 } from './routes/sessions-v2.js';
+import { robloxRoutes } from './routes/roblox.js';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -42,6 +44,8 @@ async function buildServer() {
   // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
   await fastify.register(sessionsRoutes);
+  await fastify.register(sessionsRoutesV2); // New Epic 3 routes
+  await fastify.register(robloxRoutes);
 
   // Health check
   fastify.get('/health', async () => {

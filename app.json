@@ -8,8 +8,12 @@
     "scheme": "lagalaga",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["roblox"]
+      }
     },
     "android": {
       "adaptiveIcon": {

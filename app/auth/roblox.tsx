@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../../src/lib/api';
 import { tokenStorage } from '../../src/lib/tokenStorage';
+import { logger } from '@/src/lib/logger';
 
 export default function RobloxCallback() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function RobloxCallback() {
     try {
       // Check for OAuth error
       if (params.error) {
-        console.error('OAuth error:', params.error);
+        logger.error('OAuth error from provider', { oauthError: params.error });
         router.replace('/auth/sign-in');
         return;
       }
@@ -25,7 +26,7 @@ export default function RobloxCallback() {
       const { code, state } = params;
 
       if (!code || !state) {
-        console.error('Missing code or state parameter');
+        logger.error('Missing code or state parameter in OAuth callback');
         router.replace('/auth/sign-in');
         return;
       }
@@ -35,14 +36,16 @@ export default function RobloxCallback() {
       const storedState = await AsyncStorage.getItem('pkce_state');
 
       if (!codeVerifier || !storedState) {
-        console.error('Missing stored PKCE parameters');
+        logger.error('Missing stored PKCE parameters');
         router.replace('/auth/sign-in');
         return;
       }
 
       // Verify state matches
       if (state !== storedState) {
-        console.error('State mismatch - possible CSRF attack');
+        logger.error('State mismatch - possible CSRF attack', {
+          receivedState: state,
+        });
         router.replace('/auth/sign-in');
         return;
       }
@@ -61,12 +64,9 @@ export default function RobloxCallback() {
       // Redirect to sessions
       router.replace('/sessions');
     } catch (error) {
-      // Make sure we see something actionable in Metro logs.
-      if (error instanceof Error) {
-        console.error('Failed to complete OAuth flow:', { message: error.message, stack: error.stack });
-      } else {
-        console.error('Failed to complete OAuth flow:', error);
-      }
+      logger.error('Failed to complete OAuth flow', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       router.replace('/auth/sign-in');
     }
   };

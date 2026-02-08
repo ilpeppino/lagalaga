@@ -1,56 +1,108 @@
 import { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
-import { AppError } from '../utils/errors.js';
+import { AppError, ErrorCodes } from '../utils/errors.js';
+import type { ErrorSeverity } from '../../../shared/errors/codes.js';
+import { logError } from '../lib/logger.js';
+
+interface ErrorResponseBody {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    statusCode: number;
+    severity: ErrorSeverity;
+    requestId: string;
+    details?: unknown;
+  };
+}
+
+function buildErrorResponse(
+  code: string,
+  message: string,
+  statusCode: number,
+  severity: ErrorSeverity,
+  requestId: string,
+  details?: unknown
+): ErrorResponseBody {
+  return {
+    success: false,
+    error: {
+      code,
+      message,
+      statusCode,
+      severity,
+      requestId,
+      ...(details !== undefined ? { details } : {}),
+    },
+  };
+}
 
 export async function errorHandlerPlugin(fastify: FastifyInstance) {
   fastify.setErrorHandler(
-    async (error: FastifyError | AppError, _request: FastifyRequest, reply: FastifyReply) => {
-      fastify.log.error(error);
+    async (error: FastifyError | AppError, request: FastifyRequest, reply: FastifyReply) => {
+      const requestId = String(request.id || '');
+      const isProduction = fastify.config.NODE_ENV === 'production';
 
-      // Handle AppError instances
+      // Handle AppError instances (our domain errors)
       if (error instanceof AppError) {
-        return reply.status(error.statusCode).send({
-          error: {
-            code: error.code,
-            message: error.message,
-            statusCode: error.statusCode,
-          },
-        });
+        logError(error, { requestId, severity: error.severity }, `[${error.code}] ${error.message}`);
+
+        return reply.status(error.statusCode).send(
+          buildErrorResponse(
+            error.code,
+            error.message,
+            error.statusCode,
+            error.severity,
+            requestId,
+          )
+        );
       }
 
-      // Handle JWT errors
+      // Handle JWT / auth errors
       if (error.name === 'UnauthorizedError' || error.statusCode === 401) {
-        return reply.status(401).send({
-          error: {
-            code: 'AUTH_002',
-            message: 'Token expired or invalid',
-            statusCode: 401,
-          },
-        });
+        logError(error, { requestId }, 'Unauthorized');
+
+        return reply.status(401).send(
+          buildErrorResponse(
+            ErrorCodes.AUTH_TOKEN_EXPIRED,
+            'Token expired or invalid',
+            401,
+            'warning',
+            requestId,
+          )
+        );
       }
 
-      // Handle validation errors
-      if (error.validation) {
-        return reply.status(400).send({
-          error: {
-            code: 'VAL_001',
-            message: 'Validation error',
-            statusCode: 400,
-            details: error.validation,
-          },
-        });
+      // Handle Fastify validation errors
+      if ((error as FastifyError).validation) {
+        logError(error, { requestId }, 'Validation error');
+
+        return reply.status(400).send(
+          buildErrorResponse(
+            ErrorCodes.VALIDATION_ERROR,
+            'Validation error',
+            400,
+            'warning',
+            requestId,
+            (error as FastifyError).validation,
+          )
+        );
       }
 
-      // Handle other Fastify errors
+      // Handle all other errors
       const statusCode = error.statusCode || 500;
-      return reply.status(statusCode).send({
-        error: {
-          code: 'INT_001',
-          message: fastify.config.NODE_ENV === 'production'
-            ? 'Internal server error'
-            : error.message,
+      const severity: ErrorSeverity = statusCode >= 500 ? 'error' : 'warning';
+
+      logError(error, { requestId, statusCode }, 'Unhandled error');
+
+      return reply.status(statusCode).send(
+        buildErrorResponse(
+          ErrorCodes.INTERNAL_ERROR,
+          isProduction ? 'Internal server error' : error.message,
           statusCode,
-        },
-      });
+          severity,
+          requestId,
+        )
+      );
     }
   );
 }

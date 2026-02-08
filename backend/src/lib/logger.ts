@@ -1,29 +1,17 @@
 /**
- * Epic 8 Story 8.3: Structured Logging
+ * Structured Logging with Pino
  *
- * Provides structured logging with Pino for:
- * - Request/response logging
- * - Error tracking
- * - Performance metrics
- * - Debug information
+ * Features:
+ * - PII sanitization via custom serializers
+ * - Correlation ID support for cross-layer tracing
+ * - Request/response, error, metric, auth, session, and invite logging
  */
 
 import pino from 'pino';
+import { sanitize, sanitizedReqSerializer, sanitizedResSerializer } from './sanitizer.js';
 
-/**
- * Log levels:
- * - fatal (60): Application crash
- * - error (50): Error conditions
- * - warn (40): Warning conditions
- * - info (30): Informational messages
- * - debug (20): Debug messages
- * - trace (10): Trace messages
- */
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
-/**
- * Main application logger
- */
 export const logger = pino({
   level: logLevel,
   transport:
@@ -44,33 +32,39 @@ export const logger = pino({
     },
   },
   serializers: {
-    // Custom error serializer
     err: pino.stdSerializers.err,
-    // Custom request serializer
-    req: pino.stdSerializers.req,
-    // Custom response serializer
-    res: pino.stdSerializers.res,
+    req: sanitizedReqSerializer,
+    res: sanitizedResSerializer,
   },
 });
 
-/**
- * Create a child logger with specific context
- *
- * @example
- * const sessionLogger = createLogger({ module: 'session-service' });
- * sessionLogger.info({ sessionId: '123' }, 'Session created');
- */
 export function createLogger(bindings: Record<string, unknown>) {
   return logger.child(bindings);
 }
 
 /**
- * Log request start
+ * Log with both requestId and correlationId for cross-layer tracing.
  */
-export function logRequestStart(method: string, url: string, requestId: string) {
+export function logWithCorrelation(
+  level: 'info' | 'warn' | 'error' | 'debug',
+  data: Record<string, unknown>,
+  message: string,
+  requestId?: string,
+  correlationId?: string
+) {
+  const enriched = sanitize({
+    ...data,
+    ...(requestId ? { requestId } : {}),
+    ...(correlationId ? { correlationId } : {}),
+  });
+  logger[level](enriched, message);
+}
+
+export function logRequestStart(method: string, url: string, requestId: string, correlationId?: string) {
   logger.info(
     {
       requestId,
+      ...(correlationId ? { correlationId } : {}),
       method,
       url,
       type: 'request_start',
@@ -79,21 +73,20 @@ export function logRequestStart(method: string, url: string, requestId: string) 
   );
 }
 
-/**
- * Log request completion
- */
 export function logRequestEnd(
   method: string,
   url: string,
   statusCode: number,
   duration: number,
-  requestId: string
+  requestId: string,
+  correlationId?: string
 ) {
   const level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
 
   logger[level](
     {
       requestId,
+      ...(correlationId ? { correlationId } : {}),
       method,
       url,
       statusCode,
@@ -104,27 +97,21 @@ export function logRequestEnd(
   );
 }
 
-/**
- * Log error with context
- */
 export function logError(
   error: Error,
   context?: Record<string, unknown>,
   message?: string
 ) {
   logger.error(
-    {
+    sanitize({
       err: error,
       ...context,
       type: 'error',
-    },
+    }),
     message || error.message
   );
 }
 
-/**
- * Log performance metric
- */
 export function logMetric(
   name: string,
   value: number,
@@ -143,9 +130,6 @@ export function logMetric(
   );
 }
 
-/**
- * Log database query (for debugging)
- */
 export function logQuery(
   query: string,
   duration: number,
@@ -164,28 +148,22 @@ export function logQuery(
   }
 }
 
-/**
- * Log authentication event
- */
 export function logAuthEvent(
   event: 'login' | 'logout' | 'token_refresh' | 'auth_failed',
   userId?: string,
   details?: Record<string, unknown>
 ) {
   logger.info(
-    {
+    sanitize({
       event,
       userId,
       ...details,
       type: 'auth',
-    },
+    }),
     `Auth: ${event}${userId ? ` (user: ${userId})` : ''}`
   );
 }
 
-/**
- * Log session event
- */
 export function logSessionEvent(
   event: 'created' | 'joined' | 'left' | 'deleted' | 'full',
   sessionId: string,
@@ -204,9 +182,6 @@ export function logSessionEvent(
   );
 }
 
-/**
- * Log invite event
- */
 export function logInviteEvent(
   event: 'created' | 'used' | 'expired',
   inviteCode: string,
@@ -225,5 +200,4 @@ export function logInviteEvent(
   );
 }
 
-// Export default logger
 export default logger;

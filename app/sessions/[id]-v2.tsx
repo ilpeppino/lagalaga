@@ -1,13 +1,5 @@
 /**
  * Epic 4 Story 4.4: Session Detail UI
- *
- * Features:
- * - Complete session information display
- * - Participant list with roles
- * - Share button with invite link
- * - Join button (if not already joined)
- * - Launch Roblox button (will be implemented in Epic 6)
- * - Error handling
  */
 
 import { useEffect, useState } from 'react';
@@ -27,6 +19,8 @@ import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { logger } from '@/src/lib/logger';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -36,6 +30,7 @@ export default function SessionDetailScreenV2() {
   }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { handleError, getErrorMessage } = useErrorHandler();
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,25 +54,18 @@ export default function SessionDetailScreenV2() {
     }
   }, [id]);
 
-  /**
-   * Load session details
-   */
   const loadSession = async () => {
     try {
       setIsLoading(true);
       const data = await sessionsAPIStoreV2.getSessionById(id);
       setSession(data);
     } catch (error) {
-      console.error('Failed to load session:', error);
-      Alert.alert('Error', 'Failed to load session details');
+      handleError(error, { fallbackMessage: 'Failed to load session details' });
     } finally {
       setIsLoading(false);
     }
   };
 
-  /**
-   * Handle share button
-   */
   const handleShare = async (inviteLink?: string) => {
     const link = inviteLink || session?.inviteLink;
     if (!link || !session) return;
@@ -88,13 +76,10 @@ export default function SessionDetailScreenV2() {
         title: `Join ${session.title}`,
       });
     } catch (error) {
-      console.error('Failed to share:', error);
+      logger.warn('Failed to share', { error: (error as Error).message });
     }
   };
 
-  /**
-   * Handle join session
-   */
   const handleJoin = async () => {
     if (!session) return;
 
@@ -102,38 +87,25 @@ export default function SessionDetailScreenV2() {
       setIsJoining(true);
       await sessionsAPIStoreV2.joinSession(session.id);
       Alert.alert('Success', 'You have joined the session!');
-      await loadSession(); // Refresh to show updated participants
+      await loadSession();
     } catch (error) {
-      console.error('Failed to join session:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Failed to join session'
-      );
+      const message = getErrorMessage(error, 'Failed to join session');
+      Alert.alert('Error', message);
     } finally {
       setIsJoining(false);
     }
   };
 
-  /**
-   * Handle launch Roblox (Epic 6)
-   */
   const handleLaunchRoblox = async () => {
     if (!session?.game) return;
 
     try {
       await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
     } catch (error) {
-      console.error('Failed to launch Roblox:', error);
-      Alert.alert(
-        'Error',
-        'Failed to launch Roblox. Please try again later.'
-      );
+      handleError(error, { fallbackMessage: 'Failed to launch Roblox. Please try again later.' });
     }
   };
 
-  /**
-   * Format date/time
-   */
   const formatDateTime = (isoString: string): string => {
     const date = new Date(isoString);
     return date.toLocaleString(undefined, {
@@ -145,21 +117,12 @@ export default function SessionDetailScreenV2() {
     });
   };
 
-  /**
-   * Check if user is host
-   */
   const isHost = user && session && user.id === session.hostId;
 
-  /**
-   * Check if user has joined
-   */
   const hasJoined = user && session?.participants.some(
     (p) => p.userId === user.id && p.state === 'joined'
   );
 
-  /**
-   * Loading state
-   */
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -169,9 +132,6 @@ export default function SessionDetailScreenV2() {
     );
   }
 
-  /**
-   * Error state
-   */
   if (!session) {
     return (
       <View style={styles.centered}>
@@ -278,7 +238,6 @@ export default function SessionDetailScreenV2() {
 
       {/* Action Buttons */}
       <View style={styles.actions}>
-        {/* Share Button */}
         {session.inviteLink && (
           <TouchableOpacity
             style={styles.shareButton}
@@ -288,7 +247,6 @@ export default function SessionDetailScreenV2() {
           </TouchableOpacity>
         )}
 
-        {/* Join/Launch Button */}
         {!hasJoined && !isFull && (
           <TouchableOpacity
             style={[styles.joinButton, isJoining && styles.buttonDisabled]}

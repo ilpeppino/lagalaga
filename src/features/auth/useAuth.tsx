@@ -4,6 +4,7 @@ import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
+import { logger } from '../../lib/logger';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -29,7 +30,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load user on mount
     loadUser();
   }, []);
 
@@ -41,12 +41,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Verify token and get user info
       const { user: userData } = await apiClient.auth.me();
       setUser(userData);
     } catch (error) {
-      console.error('Failed to load user:', error);
-      // Clear invalid tokens
+      logger.error('Failed to load user', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       await tokenStorage.clearTokens();
     } finally {
       setLoading(false);
@@ -55,31 +55,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithRoblox = async () => {
     try {
-      // 1. Generate PKCE parameters
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-      // 2. Store verifier temporarily (state comes from backend and must match the auth URL)
       await AsyncStorage.setItem('pkce_code_verifier', codeVerifier);
 
-      // 3. Get authorization URL from backend
       const { authorizationUrl, state } = await apiClient.auth.startRobloxAuth(codeChallenge);
 
-      // 4. Store backend-generated state so we can validate the redirect and avoid CSRF.
       await AsyncStorage.setItem('pkce_state', state);
 
-      // 5. Open OAuth flow in browser
       const result = await WebBrowser.openAuthSessionAsync(
         authorizationUrl,
         process.env.EXPO_PUBLIC_ROBLOX_REDIRECT_URI || 'lagalaga://auth/roblox'
       );
 
       if (result.type === 'success') {
-        // The callback will handle the rest
-        console.log('OAuth redirect received:', result.url);
+        logger.info('OAuth redirect received');
       }
     } catch (error) {
-      console.error('Failed to start OAuth flow:', error);
+      logger.error('Failed to start OAuth flow', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   };
@@ -88,7 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiClient.auth.revoke();
     } catch (error) {
-      console.error('Failed to revoke token:', error);
+      logger.warn('Failed to revoke token on server', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       await tokenStorage.clearTokens();
       setUser(null);

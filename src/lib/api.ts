@@ -1,4 +1,7 @@
 import { tokenStorage } from './tokenStorage';
+import { ApiError, NetworkError, parseApiError } from './errors';
+import { logger } from './logger';
+import { monitoring } from './monitoring';
 import type { Session, CreateSessionInput, SessionParticipant } from '../features/sessions/types';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
@@ -20,15 +23,27 @@ interface RefreshResponse {
   refreshToken: string;
 }
 
-interface ErrorResponse {
-  // Typical backend shape: { error: { code, message, statusCode } }
-  // Some routes may use: { success: false, error: { code, message } }
-  error?: {
-    code?: string;
-    message?: string;
-    statusCode?: number;
-  };
-  success?: boolean;
+function generateCorrelationId(): string {
+  // Use crypto.randomUUID if available, otherwise fall back
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  if (headers instanceof Headers) {
+    const record: Record<string, string> = {};
+    headers.forEach((value, key) => { record[key] = value; });
+    return record;
+  }
+  if (Array.isArray(headers)) {
+    const record: Record<string, string> = {};
+    for (const [k, v] of headers) record[k] = v;
+    return record;
+  }
+  return headers as Record<string, string>;
 }
 
 class ApiClient {
@@ -47,46 +62,7 @@ class ApiClient {
     return Object.keys(headers).some((k) => k.toLowerCase() === lower);
   }
 
-  private async buildHttpError(response: Response): Promise<Error> {
-    const status = response.status;
-    const statusText = response.statusText || '';
-
-    let bodyText: string | undefined;
-    let parsed: any = undefined;
-
-    try {
-      // Clone so we can fall back to text even if JSON parsing fails.
-      parsed = await response.clone().json();
-    } catch {
-      // Ignore JSON errors; we'll use text fallback.
-    }
-
-    try {
-      bodyText = await response.clone().text();
-      bodyText = bodyText?.trim() || undefined;
-    } catch {
-      // Ignore.
-    }
-
-    const code =
-      parsed?.error?.code ??
-      parsed?.code ??
-      parsed?.error?.error?.code ?? // ultra defensive
-      parsed?.error?.name;
-
-    const message =
-      parsed?.error?.message ??
-      parsed?.message ??
-      parsed?.error?.error?.message ??
-      (typeof parsed === 'string' ? parsed : undefined) ??
-      bodyText;
-
-    const label = code ? `${code}` : `HTTP_${status}`;
-    const details = message || statusText || 'Request failed';
-    return new Error(`${label}: ${details}`);
-  }
-
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await tokenStorage.getToken();
     if (!token) {
       return {};
@@ -97,7 +73,6 @@ class ApiClient {
   }
 
   private async refreshAccessToken(): Promise<string> {
-    // If already refreshing, wait for the existing promise
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
     }
@@ -107,19 +82,21 @@ class ApiClient {
       try {
         const refreshToken = await tokenStorage.getRefreshToken();
         if (!refreshToken) {
-          throw new Error('No refresh token available');
+          throw new ApiError({
+            code: 'AUTH_005',
+            message: 'No refresh token available',
+            statusCode: 401,
+          });
         }
 
         const response = await fetch(`${API_URL}/auth/refresh`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refreshToken }),
         });
 
         if (!response.ok) {
-          throw new Error('Failed to refresh token');
+          throw await parseApiError(response);
         }
 
         const data: RefreshResponse = await response.json();
@@ -138,22 +115,46 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount = 0
   ): Promise<T> {
-    // Don't send Content-Type: application/json on requests with no body.
-    // Fastify will reject an empty JSON body with FST_ERR_CTP_EMPTY_JSON_BODY.
+    const correlationId = generateCorrelationId();
+
     const headers: Record<string, string> = {
-      ...(options.headers as Record<string, string> | undefined),
+      ...headersToRecord(options.headers),
       ...(await this.getAuthHeaders()),
+      'X-Correlation-ID': correlationId,
     };
     if (options.body != null && !this.hasHeader(options.headers, 'content-type')) {
       headers['Content-Type'] = 'application/json';
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (err) {
+      const networkError = new NetworkError(
+        'Network request failed',
+        err instanceof Error ? err : undefined
+      );
+      logger.error('Network request failed', {
+        endpoint,
+        correlationId,
+        error: (err as Error).message,
+      });
+      monitoring.trackHttpRequest(options.method || 'GET', endpoint);
+      throw networkError;
+    }
+
+    const requestId = response.headers.get('X-Request-ID') || '';
+    monitoring.trackHttpRequest(
+      options.method || 'GET',
+      endpoint,
+      response.status
+    );
 
     // Handle 401 - try to refresh token
     if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
@@ -161,8 +162,9 @@ class ApiClient {
         await this.refreshAccessToken();
         // Retry the request with new token
         const newHeaders: Record<string, string> = {
-          ...(options.headers as Record<string, string> | undefined),
+          ...headersToRecord(options.headers),
           ...(await this.getAuthHeaders()),
+          'X-Correlation-ID': correlationId,
         };
         if (options.body != null && !this.hasHeader(options.headers, 'content-type')) {
           newHeaders['Content-Type'] = 'application/json';
@@ -173,19 +175,40 @@ class ApiClient {
         });
 
         if (!retryResponse.ok) {
-          throw await this.buildHttpError(retryResponse);
+          const apiError = await parseApiError(retryResponse);
+          logger.error(`API error after token refresh: ${apiError.code}`, {
+            endpoint, statusCode: retryResponse.status, requestId,
+          });
+          throw apiError;
         }
 
         return await retryResponse.json();
       } catch (error) {
-        // Refresh failed, clear tokens
         await tokenStorage.clearTokens();
         throw error;
       }
     }
 
     if (!response.ok) {
-      throw await this.buildHttpError(response);
+      const apiError = await parseApiError(response);
+      logger.error(`API error: ${apiError.code} - ${apiError.message}`, {
+        endpoint,
+        statusCode: response.status,
+        requestId,
+        correlationId,
+      });
+
+      // Retry transient errors (5xx) up to 2 times
+      if (apiError.isRetryable && retryCount < 2) {
+        const delay = Math.min(500 * Math.pow(2, retryCount), 4000);
+        logger.warn(`Retrying ${endpoint} in ${delay}ms (attempt ${retryCount + 1})`, {
+          correlationId,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.request<T>(endpoint, options, retryCount + 1);
+      }
+
+      throw apiError;
     }
 
     // Handle 204 No Content
@@ -219,7 +242,11 @@ class ApiClient {
     refresh: async (): Promise<RefreshResponse> => {
       const refreshToken = await tokenStorage.getRefreshToken();
       if (!refreshToken) {
-        throw new Error('No refresh token available');
+        throw new ApiError({
+          code: 'AUTH_005',
+          message: 'No refresh token available',
+          statusCode: 401,
+        });
       }
       return this.request('/auth/refresh', {
         method: 'POST',

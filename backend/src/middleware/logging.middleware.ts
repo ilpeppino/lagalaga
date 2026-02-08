@@ -1,34 +1,41 @@
 /**
- * Epic 8 Story 8.3: Request Logging Middleware
+ * Request Logging Middleware
  *
- * Logs all HTTP requests and responses with:
- * - Request ID for tracing
- * - Method, URL, status code
- * - Response time
- * - Error details
+ * Features:
+ * - Request ID generation
+ * - Correlation ID from X-Correlation-ID header (client-supplied)
+ * - X-Request-ID response header for cross-layer tracing
+ * - Request/response/error logging
  */
 
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { logRequestStart, logRequestEnd, logError } from '../lib/logger.js';
 
-/**
- * Request logging plugin for Fastify
- */
+declare module 'fastify' {
+  interface FastifyRequest {
+    correlationId?: string;
+  }
+}
+
 export async function requestLoggingPlugin(fastify: FastifyInstance) {
-  // Add request ID to all requests
-  fastify.addHook('onRequest', async (request: FastifyRequest) => {
+  // Assign request ID and capture correlation ID
+  fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     request.id = crypto.randomUUID();
+    request.correlationId = (request.headers['x-correlation-id'] as string) || undefined;
+
+    // Send request ID back so the client can correlate
+    reply.header('X-Request-ID', request.id);
   });
 
   // Log request start
   fastify.addHook('onRequest', async (request: FastifyRequest) => {
-    logRequestStart(request.method, request.url, request.id);
+    logRequestStart(request.method, request.url, request.id, request.correlationId);
   });
 
   // Log request end
   fastify.addHook('onResponse', async (request: FastifyRequest, reply: FastifyReply) => {
-    const duration = reply.getResponseTime();
-    logRequestEnd(request.method, request.url, reply.statusCode, duration, request.id);
+    const duration = (reply as any).getResponseTime?.() ?? 0;
+    logRequestEnd(request.method, request.url, reply.statusCode, duration, request.id, request.correlationId);
   });
 
   // Log errors
@@ -37,6 +44,7 @@ export async function requestLoggingPlugin(fastify: FastifyInstance) {
       error,
       {
         requestId: request.id,
+        correlationId: request.correlationId,
         method: request.method,
         url: request.url,
         statusCode: reply.statusCode,
@@ -46,23 +54,17 @@ export async function requestLoggingPlugin(fastify: FastifyInstance) {
   });
 }
 
-/**
- * Helper to add custom request context for logging
- */
 export function addRequestContext(
   request: FastifyRequest,
   context: Record<string, unknown>
 ) {
-  // Store context on request for use in logs
-  (request as any).logContext = {
-    ...(request as any).logContext,
+  const req = request as unknown as Record<string, unknown>;
+  req.logContext = {
+    ...(req.logContext as Record<string, unknown> || {}),
     ...context,
   };
 }
 
-/**
- * Get request context for logging
- */
 export function getRequestContext(request: FastifyRequest): Record<string, unknown> {
-  return (request as any).logContext || {};
+  return (request as unknown as Record<string, unknown>).logContext as Record<string, unknown> || {};
 }

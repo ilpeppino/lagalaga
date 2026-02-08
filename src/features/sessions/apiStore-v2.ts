@@ -11,34 +11,58 @@ import {
   ListSessionsResponse,
 } from './types-v2';
 import { tokenStorage } from '@/src/lib/tokenStorage';
+import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
+import { logger } from '@/src/lib/logger';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 
+function generateCorrelationId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 /**
- * Simple HTTP client for v2 API endpoints
+ * HTTP client for v2 API endpoints with typed errors
  */
 async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = await tokenStorage.getToken();
+  const correlationId = generateCorrelationId();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Correlation-ID': correlationId,
   };
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      ...headers,
-      ...(options.headers as Record<string, string>),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options.headers as Record<string, string>),
+      },
+    });
+  } catch (err) {
+    throw new NetworkError(
+      'Network request failed',
+      err instanceof Error ? err : undefined
+    );
+  }
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'Request failed');
+    const apiError = await parseApiError(response);
+    logger.error(`API error: ${apiError.code}`, {
+      endpoint,
+      statusCode: response.status,
+      requestId: apiError.requestId,
+    });
+    throw apiError;
   }
 
   return await response.json();
@@ -58,7 +82,11 @@ class SessionsAPIStoreV2 {
     );
 
     if (!response.success) {
-      throw new Error('Failed to create session');
+      throw new ApiError({
+        code: 'SESSION_005',
+        message: 'Failed to create session',
+        statusCode: 500,
+      });
     }
 
     return response.data;
@@ -82,7 +110,11 @@ class SessionsAPIStoreV2 {
     );
 
     if (!response.success) {
-      throw new Error('Failed to list sessions');
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to list sessions',
+        statusCode: 500,
+      });
     }
 
     return response.data;
@@ -97,7 +129,11 @@ class SessionsAPIStoreV2 {
     );
 
     if (!response.success) {
-      throw new Error('Failed to get session');
+      throw new ApiError({
+        code: 'SESSION_001',
+        message: 'Failed to get session',
+        statusCode: 404,
+      });
     }
 
     return response.data.session;
@@ -116,7 +152,11 @@ class SessionsAPIStoreV2 {
     );
 
     if (!response.success) {
-      throw new Error('Failed to join session');
+      throw new ApiError({
+        code: 'SESSION_002',
+        message: 'Failed to join session',
+        statusCode: 400,
+      });
     }
 
     return response.data.session;
@@ -135,7 +175,11 @@ class SessionsAPIStoreV2 {
     }>(`/api/invites/${code}`);
 
     if (!response.success) {
-      throw new Error('Invalid invite code');
+      throw new ApiError({
+        code: 'NOT_FOUND_002',
+        message: 'Invalid invite code',
+        statusCode: 404,
+      });
     }
 
     return response.data;

@@ -2,12 +2,6 @@
  * Epic 5 Story 5.2: Join via Invite Link
  *
  * Handles deep links: lagalaga://invite/:code
- *
- * Flow:
- * 1. Fetch session by invite code
- * 2. If authenticated -> auto-join session
- * 3. If unauthenticated -> show session preview + login prompt
- * 4. Navigate to session detail on success
  */
 
 import { useEffect, useState } from 'react';
@@ -24,6 +18,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { useAuth } from '@/src/features/auth/useAuth';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { logger } from '@/src/lib/logger';
+import { isApiError } from '@/src/lib/errors';
 
 type InviteState = 'loading' | 'preview' | 'joining' | 'error' | 'login_required';
 
@@ -31,6 +28,7 @@ export default function InviteScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { handleError, getErrorMessage } = useErrorHandler();
 
   const [state, setState] = useState<InviteState>('loading');
   const [session, setSession] = useState<Partial<Session> | null>(null);
@@ -41,9 +39,6 @@ export default function InviteScreen() {
     loadInvite();
   }, [code]);
 
-  /**
-   * Load invite and session info
-   */
   const loadInvite = async () => {
     try {
       setState('loading');
@@ -53,55 +48,51 @@ export default function InviteScreen() {
       setSession(response.session);
       setSessionId(response.sessionId);
 
-      // If user is authenticated, auto-join
       if (user) {
         await handleAutoJoin(response.sessionId);
       } else {
         setState('login_required');
       }
     } catch (err) {
-      console.error('Failed to load invite:', err);
-      setError(err instanceof Error ? err.message : 'Invalid invite code');
+      const message = getErrorMessage(err, 'Invalid invite code');
+      logger.error('Failed to load invite', {
+        code,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      setError(message);
       setState('error');
     }
   };
 
-  /**
-   * Auto-join session if authenticated
-   */
   const handleAutoJoin = async (id: string) => {
     try {
       setState('joining');
       await sessionsAPIStoreV2.joinSession(id, code);
-
-      // Navigate to session detail
       router.replace(`/sessions/${id}`);
     } catch (err) {
-      console.error('Failed to join session:', err);
+      logger.warn('Failed to auto-join session', {
+        sessionId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
 
-      // If already joined or other non-critical error, just navigate to detail
-      if (err instanceof Error && err.message.includes('already joined')) {
+      // If already joined, just navigate to the session
+      if (isApiError(err) && err.code === 'SESSION_003') {
+        router.replace(`/sessions/${id}`);
+      } else if (err instanceof Error && err.message.includes('already joined')) {
         router.replace(`/sessions/${id}`);
       } else {
-        // Show error but allow manual navigation
-        Alert.alert(
-          'Join Failed',
-          err instanceof Error ? err.message : 'Failed to join session',
-          [
-            {
-              text: 'View Session',
-              onPress: () => router.replace(`/sessions/${id}`),
-            },
-          ]
-        );
+        const message = getErrorMessage(err, 'Failed to join session');
+        Alert.alert('Join Failed', message, [
+          {
+            text: 'View Session',
+            onPress: () => router.replace(`/sessions/${id}`),
+          },
+        ]);
         setState('preview');
       }
     }
   };
 
-  /**
-   * Handle manual join (after login or retry)
-   */
   const handleManualJoin = async () => {
     if (!sessionId) return;
 
@@ -110,29 +101,19 @@ export default function InviteScreen() {
       await sessionsAPIStoreV2.joinSession(sessionId, code);
       router.replace(`/sessions/${sessionId}`);
     } catch (err) {
-      console.error('Failed to join session:', err);
-      Alert.alert(
-        'Error',
-        err instanceof Error ? err.message : 'Failed to join session'
-      );
+      const message = getErrorMessage(err, 'Failed to join session');
+      Alert.alert('Error', message);
       setState('preview');
     }
   };
 
-  /**
-   * Navigate to login
-   */
   const handleLogin = () => {
-    // Store the invite code to return after login
     router.push({
       pathname: '/auth/sign-in',
       params: { returnTo: `/invite/${code}` },
     });
   };
 
-  /**
-   * Loading state
-   */
   if (state === 'loading') {
     return (
       <View style={styles.centered}>
@@ -142,14 +123,11 @@ export default function InviteScreen() {
     );
   }
 
-  /**
-   * Error state
-   */
   if (state === 'error') {
     return (
       <View style={styles.centered}>
         <View style={styles.errorIcon}>
-          <Text style={styles.errorIconText}>✕</Text>
+          <Text style={styles.errorIconText}>X</Text>
         </View>
         <Text style={styles.errorTitle}>Invalid Invite</Text>
         <Text style={styles.errorMessage}>
@@ -162,9 +140,6 @@ export default function InviteScreen() {
     );
   }
 
-  /**
-   * Joining state
-   */
   if (state === 'joining') {
     return (
       <View style={styles.centered}>
@@ -174,9 +149,6 @@ export default function InviteScreen() {
     );
   }
 
-  /**
-   * Login required or preview state
-   */
   if (!session) return null;
 
   const isFull =

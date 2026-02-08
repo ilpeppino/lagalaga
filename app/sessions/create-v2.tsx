@@ -8,7 +8,7 @@
  * - Max participants slider (2-50)
  * - Optional scheduled start date/time
  * - Loading state
- * - Error handling
+ * - Error handling via useErrorHandler
  */
 
 import { useState } from 'react';
@@ -19,7 +19,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -28,6 +27,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionVisibility } from '@/src/features/sessions/types-v2';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'public', label: 'Public' },
@@ -37,6 +37,7 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
 
 export default function CreateSessionScreenV2() {
   const router = useRouter();
+  const { handleError, getErrorMessage } = useErrorHandler();
 
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
@@ -59,8 +60,7 @@ export default function CreateSessionScreenV2() {
       const text = await Clipboard.getStringAsync();
       setRobloxUrl(text);
     } catch (err) {
-      console.error('Failed to paste:', err);
-      Alert.alert('Error', 'Failed to paste from clipboard');
+      handleError(err, { fallbackMessage: 'Failed to paste from clipboard' });
     }
   };
 
@@ -112,8 +112,8 @@ export default function CreateSessionScreenV2() {
         },
       });
     } catch (err) {
-      console.error('Failed to create session:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create session');
+      const message = getErrorMessage(err, 'Failed to create session');
+      setError(message);
     } finally {
       setIsCreating(false);
     }

@@ -1,12 +1,5 @@
 /**
  * Epic 4 Story 4.3: Browse Sessions UI
- *
- * Features:
- * - Infinite scroll pagination
- * - Session cards with thumbnails, title, host, participant count
- * - Pull to refresh
- * - Empty state
- * - Loading states
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -23,6 +16,7 @@ import {
 import { useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
+import { logger } from '@/src/lib/logger';
 
 export default function SessionsListScreenV2() {
   const router = useRouter();
@@ -40,16 +34,10 @@ export default function SessionsListScreenV2() {
 
   const LIMIT = 20;
 
-  /**
-   * Initial load
-   */
   useEffect(() => {
     loadSessions();
   }, []);
 
-  /**
-   * Load sessions with optional refresh
-   */
   const loadSessions = async (refresh = false) => {
     try {
       if (refresh) {
@@ -77,7 +65,9 @@ export default function SessionsListScreenV2() {
       setHasMore(response.pagination.hasMore);
       setTotal(response.pagination.total);
     } catch (error) {
-      console.error('Failed to load sessions:', error);
+      logger.error('Failed to load sessions', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -85,16 +75,10 @@ export default function SessionsListScreenV2() {
     }
   };
 
-  /**
-   * Handle pull to refresh
-   */
   const handleRefresh = useCallback(() => {
     loadSessions(true);
   }, []);
 
-  /**
-   * Handle load more (infinite scroll)
-   */
   const handleLoadMore = useCallback(() => {
     if (!isLoadingMore && hasMore && !isRefreshing) {
       setIsLoadingMore(true);
@@ -102,9 +86,6 @@ export default function SessionsListScreenV2() {
     }
   }, [isLoadingMore, hasMore, isRefreshing, offset]);
 
-  /**
-   * Format relative time (e.g., "in 2 hours", "5 minutes ago")
-   */
   const formatRelativeTime = (isoString: string): string => {
     const date = new Date(isoString);
     const now = new Date();
@@ -127,22 +108,6 @@ export default function SessionsListScreenV2() {
     }
   };
 
-  /**
-   * Format date/time for display
-   */
-  const formatDateTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
-  /**
-   * Render session card
-   */
   const renderSession = ({ item }: { item: Session }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
 
@@ -151,7 +116,6 @@ export default function SessionsListScreenV2() {
         style={styles.sessionCard}
         onPress={() => router.push(`/sessions/${item.id}`)}
       >
-        {/* Game Thumbnail */}
         {item.game.thumbnailUrl ? (
           <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
         ) : (
@@ -162,7 +126,6 @@ export default function SessionsListScreenV2() {
           </View>
         )}
 
-        {/* Session Info */}
         <View style={styles.sessionInfo}>
           <Text style={styles.title} numberOfLines={1}>
             {item.title}
@@ -172,7 +135,6 @@ export default function SessionsListScreenV2() {
             {item.game.gameName || 'Roblox Game'}
           </Text>
 
-          {/* Participant Count */}
           <View style={styles.participants}>
             <Text style={[styles.participantText, isFull && styles.participantTextFull]}>
               {item.currentParticipants}/{item.maxParticipants} players
@@ -180,14 +142,12 @@ export default function SessionsListScreenV2() {
             {isFull && <Text style={styles.fullBadge}>FULL</Text>}
           </View>
 
-          {/* Scheduled Time */}
           {item.scheduledStart && (
             <Text style={styles.timeText}>
               {formatRelativeTime(item.scheduledStart)}
             </Text>
           )}
 
-          {/* Visibility Badge */}
           {item.visibility !== 'public' && (
             <View style={styles.visibilityBadge}>
               <Text style={styles.visibilityBadgeText}>
@@ -200,9 +160,6 @@ export default function SessionsListScreenV2() {
     );
   };
 
-  /**
-   * Render loading footer
-   */
   const renderFooter = () => {
     if (!isLoadingMore) return null;
     return (
@@ -212,9 +169,6 @@ export default function SessionsListScreenV2() {
     );
   };
 
-  /**
-   * Render empty state
-   */
   const renderEmpty = () => {
     if (isLoading) return null;
 
@@ -232,9 +186,6 @@ export default function SessionsListScreenV2() {
     );
   };
 
-  /**
-   * Initial loading state
-   */
   if (isLoading && sessions.length === 0) {
     return (
       <View style={styles.centered}>
@@ -246,13 +197,11 @@ export default function SessionsListScreenV2() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Active Sessions</Text>
         <Text style={styles.headerSubtitle}>{total} total</Text>
       </View>
 
-      {/* Session List */}
       <FlatList
         data={sessions}
         renderItem={renderSession}
@@ -267,7 +216,6 @@ export default function SessionsListScreenV2() {
         ListEmptyComponent={renderEmpty}
       />
 
-      {/* Floating Create Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/sessions/create')}
@@ -312,7 +260,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
-    paddingBottom: 80, // Space for FAB
+    paddingBottom: 80,
   },
   sessionCard: {
     flexDirection: 'row',

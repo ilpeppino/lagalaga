@@ -5,17 +5,9 @@
  * if the Roblox app is not installed.
  */
 
-import { Linking, Platform, Alert } from 'react-native';
+import { Linking, Alert } from 'react-native';
+import { logger } from '../lib/logger';
 
-/**
- * Launch Roblox app to a specific game
- *
- * Primary: Opens roblox://placeId=<placeId> deep link
- * Fallback: Opens canonical_start_url in browser if deep link fails
- *
- * @param placeId - The Roblox place ID
- * @param canonicalStartUrl - The web URL to open as fallback
- */
 export async function launchRobloxGame(
   placeId: number,
   canonicalStartUrl: string
@@ -23,26 +15,22 @@ export async function launchRobloxGame(
   const deepLink = `roblox://placeId=${placeId}`;
 
   try {
-    // Check if Roblox app can handle the deep link
     const canOpen = await Linking.canOpenURL(deepLink);
 
     if (canOpen) {
-      // Launch Roblox app directly
       await Linking.openURL(deepLink);
     } else {
-      // Fallback to browser
       await launchInBrowser(canonicalStartUrl);
     }
   } catch (error) {
-    console.error('Failed to launch Roblox deep link:', error);
-    // Deep link failed, use browser fallback
+    logger.warn('Failed to launch Roblox deep link, falling back to browser', {
+      placeId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     await launchInBrowser(canonicalStartUrl);
   }
 }
 
-/**
- * Launch Roblox game in browser (fallback method)
- */
 async function launchInBrowser(url: string): Promise<void> {
   Alert.alert(
     'Opening in Browser',
@@ -55,7 +43,10 @@ async function launchInBrowser(url: string): Promise<void> {
           try {
             await Linking.openURL(url);
           } catch (error) {
-            console.error('Failed to open browser:', error);
+            logger.error('Failed to open browser', {
+              url,
+              error: error instanceof Error ? error.message : String(error),
+            });
             Alert.alert('Error', 'Failed to open browser');
           }
         },

@@ -4,22 +4,22 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
 
 export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const { signInWithRoblox } = useAuth();
+  const { handleError } = useErrorHandler();
 
   async function handleRobloxSignIn() {
     try {
       setLoading(true);
       await signInWithRoblox();
     } catch (error) {
-      console.error("Sign in error:", error);
-      Alert.alert("Error", "Failed to sign in with Roblox. Please try again.");
+      handleError(error, { fallbackMessage: "Failed to sign in with Roblox. Please try again." });
     } finally {
       setLoading(false);
     }

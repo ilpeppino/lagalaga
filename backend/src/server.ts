@@ -5,10 +5,14 @@ import { initSupabase } from './config/supabase.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
+import { healthCheckPlugin } from './plugins/healthCheck.js';
+import { metricsPlugin } from './plugins/metrics.js';
+import { requestLoggingPlugin } from './middleware/logging.middleware.js';
 import { authRoutes } from './routes/auth.js';
 import { sessionsRoutes } from './routes/sessions.js';
 import { sessionsRoutesV2 } from './routes/sessions-v2.js';
 import { robloxRoutes } from './routes/roblox.js';
+import { monitoring } from './lib/monitoring.js';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -36,21 +40,22 @@ async function buildServer() {
   // Initialize Supabase
   initSupabase(fastify);
 
+  // Initialize monitoring
+  monitoring.captureMessage('Server starting', 'info');
+
   // Register plugins
+  await fastify.register(requestLoggingPlugin);
   await fastify.register(corsPlugin);
   await fastify.register(authPlugin);
   await fastify.register(errorHandlerPlugin);
+  await fastify.register(healthCheckPlugin);
+  await fastify.register(metricsPlugin);
 
   // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
   await fastify.register(sessionsRoutes);
-  await fastify.register(sessionsRoutesV2); // New Epic 3 routes
+  await fastify.register(sessionsRoutesV2);
   await fastify.register(robloxRoutes);
-
-  // Health check
-  fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
-  });
 
   return fastify;
 }
@@ -64,10 +69,12 @@ async function start() {
 
     await fastify.listen({ port, host });
 
-    fastify.log.info(`🚀 Server listening on http://${host}:${port}`);
+    fastify.log.info(`Server listening on http://${host}:${port}`);
     fastify.log.info(`Environment: ${fastify.config.NODE_ENV}`);
+    monitoring.captureMessage('Server started successfully', 'info');
   } catch (err) {
     fastify.log.error(err);
+    monitoring.captureError(err instanceof Error ? err : new Error(String(err)));
     process.exit(1);
   }
 }

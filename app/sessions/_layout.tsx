@@ -1,18 +1,19 @@
 import { Stack, useRouter } from "expo-router";
-import { TouchableOpacity, Text, Alert } from "react-native";
+import { TouchableOpacity, Text } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
 
 export default function SessionsLayout() {
   const router = useRouter();
   const { signOut } = useAuth();
+  const { handleError } = useErrorHandler();
 
   async function handleSignOut() {
     try {
       await signOut();
       router.replace("/auth/sign-in");
     } catch (error) {
-      console.error("Sign out error:", error);
-      Alert.alert("Error", "Failed to sign out");
+      handleError(error, { fallbackMessage: "Failed to sign out" });
     }
   }
 

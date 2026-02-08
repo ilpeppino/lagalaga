@@ -3,7 +3,7 @@ import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { generateCodeVerifier, generateCodeChallenge, generateRandomState } from '../../lib/pkce';
+import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -58,16 +58,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 1. Generate PKCE parameters
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = await generateCodeChallenge(codeVerifier);
-      const state = generateRandomState();
 
-      // 2. Store verifier and state temporarily
+      // 2. Store verifier temporarily (state comes from backend and must match the auth URL)
       await AsyncStorage.setItem('pkce_code_verifier', codeVerifier);
-      await AsyncStorage.setItem('pkce_state', state);
 
       // 3. Get authorization URL from backend
-      const { authorizationUrl } = await apiClient.auth.startRobloxAuth(codeChallenge);
+      const { authorizationUrl, state } = await apiClient.auth.startRobloxAuth(codeChallenge);
 
-      // 4. Open OAuth flow in browser
+      // 4. Store backend-generated state so we can validate the redirect and avoid CSRF.
+      await AsyncStorage.setItem('pkce_state', state);
+
+      // 5. Open OAuth flow in browser
       const result = await WebBrowser.openAuthSessionAsync(
         authorizationUrl,
         process.env.EXPO_PUBLIC_ROBLOX_REDIRECT_URI || 'lagalaga://auth/roblox'

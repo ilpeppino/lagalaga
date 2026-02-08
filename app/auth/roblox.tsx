@@ -61,7 +61,12 @@ export default function RobloxCallback() {
       // Redirect to sessions
       router.replace('/sessions');
     } catch (error) {
-      console.error('Failed to complete OAuth flow:', error);
+      // Make sure we see something actionable in Metro logs.
+      if (error instanceof Error) {
+        console.error('Failed to complete OAuth flow:', { message: error.message, stack: error.stack });
+      } else {
+        console.error('Failed to complete OAuth flow:', error);
+      }
       router.replace('/auth/sign-in');
     }
   };

@@ -27,10 +27,17 @@ export class TokenService {
       }
     );
 
-    const refreshToken = this.fastify.refreshSign({
-      userId: payload.userId,
-      robloxUserId: payload.robloxUserId,
-    });
+    // Use JWT namespace "refresh" (registered in authPlugin) for refresh tokens.
+    const refreshToken = (this.fastify.jwt as any).refresh.sign(
+      {
+        userId: payload.userId,
+        robloxUserId: payload.robloxUserId,
+      },
+      {
+        iss: 'lagalaga-api',
+        aud: 'lagalaga-app',
+      }
+    );
 
     return { accessToken, refreshToken };
   }
@@ -45,7 +52,7 @@ export class TokenService {
   }
 
   verifyRefreshToken(token: string): { userId: string; robloxUserId: string } {
-    const payload = this.fastify.refreshVerify(token);
+    const payload = (this.fastify.jwt as any).refresh.verify(token);
     return {
       userId: payload.userId,
       robloxUserId: payload.robloxUserId,

@@ -8,11 +8,15 @@
     "scheme": "lagalaga",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["roblox"]
+        "LSApplicationQueriesSchemes": [
+          "roblox"
+        ]
       }
     },
     "android": {
@@ -23,7 +27,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.lunglogger.lagalaga"
     },
     "web": {
       "output": "static",

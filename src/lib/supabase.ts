@@ -1,10 +1,10 @@
-import "expo-sqlite/localStorage/install";
 import { createClient } from "@supabase/supabase-js";
 import Constants from "expo-constants";
+import "expo-sqlite/localStorage/install";
 
 const supabaseUrl =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  Constants.expoConfig?.extra?.SUPABASE_URL ||
   "";
 
 const supabaseAnonKey =

@@ -30,7 +30,7 @@ export async function authRoutes(fastify: FastifyInstance) {
    */
   fastify.post<{
     Body: { codeChallenge: string };
-  }>('/auth/roblox/start', {
+  }>('/roblox/start', {
     schema: {
       body: {
         type: 'object',
@@ -64,7 +64,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       state: string;
       codeVerifier: string;
     };
-  }>('/auth/roblox/callback', {
+  }>('/roblox/callback', {
     schema: {
       body: {
         type: 'object',
@@ -130,7 +130,7 @@ export async function authRoutes(fastify: FastifyInstance) {
    */
   fastify.post<{
     Body: { refreshToken: string };
-  }>('/auth/refresh', {
+  }>('/refresh', {
     schema: {
       body: {
         type: 'object',
@@ -172,7 +172,7 @@ export async function authRoutes(fastify: FastifyInstance) {
    * POST /auth/revoke
    * Sign out (in production, blacklist token)
    */
-  fastify.post('/auth/revoke', {
+  fastify.post('/revoke', {
     preHandler: authenticate,
   }, async (_request, reply) => {
     // In production, add token to blacklist (Redis)
@@ -184,7 +184,7 @@ export async function authRoutes(fastify: FastifyInstance) {
    * GET /auth/me
    * Get current user info
    */
-  fastify.get('/auth/me', {
+  fastify.get('/me', {
     preHandler: authenticate,
   }, async (request) => {
     const user = await userService.getUserById(request.user.userId);

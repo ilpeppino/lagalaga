@@ -21,16 +21,70 @@ interface RefreshResponse {
 }
 
 interface ErrorResponse {
-  error: {
-    code: string;
-    message: string;
-    statusCode: number;
+  // Typical backend shape: { error: { code, message, statusCode } }
+  // Some routes may use: { success: false, error: { code, message } }
+  error?: {
+    code?: string;
+    message?: string;
+    statusCode?: number;
   };
+  success?: boolean;
 }
 
 class ApiClient {
   private isRefreshing = false;
   private refreshPromise: Promise<string> | null = null;
+
+  private hasHeader(headers: HeadersInit | undefined, name: string): boolean {
+    if (!headers) return false;
+    const lower = name.toLowerCase();
+    if (headers instanceof Headers) {
+      return headers.has(name);
+    }
+    if (Array.isArray(headers)) {
+      return headers.some(([k]) => k.toLowerCase() === lower);
+    }
+    return Object.keys(headers).some((k) => k.toLowerCase() === lower);
+  }
+
+  private async buildHttpError(response: Response): Promise<Error> {
+    const status = response.status;
+    const statusText = response.statusText || '';
+
+    let bodyText: string | undefined;
+    let parsed: any = undefined;
+
+    try {
+      // Clone so we can fall back to text even if JSON parsing fails.
+      parsed = await response.clone().json();
+    } catch {
+      // Ignore JSON errors; we'll use text fallback.
+    }
+
+    try {
+      bodyText = await response.clone().text();
+      bodyText = bodyText?.trim() || undefined;
+    } catch {
+      // Ignore.
+    }
+
+    const code =
+      parsed?.error?.code ??
+      parsed?.code ??
+      parsed?.error?.error?.code ?? // ultra defensive
+      parsed?.error?.name;
+
+    const message =
+      parsed?.error?.message ??
+      parsed?.message ??
+      parsed?.error?.error?.message ??
+      (typeof parsed === 'string' ? parsed : undefined) ??
+      bodyText;
+
+    const label = code ? `${code}` : `HTTP_${status}`;
+    const details = message || statusText || 'Request failed';
+    return new Error(`${label}: ${details}`);
+  }
 
   private async getAuthHeaders(): Promise<HeadersInit> {
     const token = await tokenStorage.getToken();
@@ -86,11 +140,15 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
+    // Don't send Content-Type: application/json on requests with no body.
+    // Fastify will reject an empty JSON body with FST_ERR_CTP_EMPTY_JSON_BODY.
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string> | undefined),
       ...(await this.getAuthHeaders()),
     };
+    if (options.body != null && !this.hasHeader(options.headers, 'content-type')) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
@@ -102,19 +160,20 @@ class ApiClient {
       try {
         await this.refreshAccessToken();
         // Retry the request with new token
-        const newHeaders = {
-          'Content-Type': 'application/json',
-          ...options.headers,
+        const newHeaders: Record<string, string> = {
+          ...(options.headers as Record<string, string> | undefined),
           ...(await this.getAuthHeaders()),
         };
+        if (options.body != null && !this.hasHeader(options.headers, 'content-type')) {
+          newHeaders['Content-Type'] = 'application/json';
+        }
         const retryResponse = await fetch(`${API_URL}${endpoint}`, {
           ...options,
           headers: newHeaders,
         });
 
         if (!retryResponse.ok) {
-          const error: ErrorResponse = await retryResponse.json();
-          throw new Error(error.error.message);
+          throw await this.buildHttpError(retryResponse);
         }
 
         return await retryResponse.json();
@@ -126,8 +185,7 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      const error: ErrorResponse = await response.json();
-      throw new Error(error.error.message);
+      throw await this.buildHttpError(response);
     }
 
     // Handle 204 No Content

@@ -224,7 +224,7 @@ export default function SessionsListScreenV2() {
         <Text style={styles.emptySubtitle}>Be the first to create one!</Text>
         <TouchableOpacity
           style={styles.emptyButton}
-          onPress={() => router.push('/sessions/create-v2')}
+          onPress={() => router.push('/sessions/create')}
         >
           <Text style={styles.emptyButtonText}>Create Session</Text>
         </TouchableOpacity>
@@ -270,7 +270,7 @@ export default function SessionsListScreenV2() {
       {/* Floating Create Button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/sessions/create-v2')}
+        onPress={() => router.push('/sessions/create')}
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>

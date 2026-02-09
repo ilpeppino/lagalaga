@@ -2,6 +2,7 @@
   "expo": {
     "name": "lagalaga",
     "slug": "lagalaga",
+    "owner": "ilpeppino",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/generated/icon.png",
@@ -31,9 +32,25 @@
         "backgroundImage": "./assets/generated/adaptive-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "lagalaga",
+              "host": "auth",
+              "pathPrefix": "/roblox"
+            }
+          ]
+        }
+      ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.lunglogger.lagalaga"
+      "package": "com.ilpeppino.lagalaga"
     },
     "web": {
       "output": "static",
@@ -53,7 +70,16 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/BitcountSingle-Regular.ttf",
+            "./assets/fonts/BitcountSingle-Bold.ttf"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

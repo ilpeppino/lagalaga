@@ -21,7 +21,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [fontsLoaded, fontError] = useFonts({
-    BitcountSingle: require('@/assets/images/BitcountSingle-VariableFont_CRSV,ELSH,ELXP,slnt,wght.ttf'),
+    'BitcountSingle-Regular': require('@/assets/fonts/BitcountSingle-Regular.ttf'),
+    'BitcountSingle-Bold': require('@/assets/fonts/BitcountSingle-Bold.ttf'),
   });
 
   useEffect(() => {

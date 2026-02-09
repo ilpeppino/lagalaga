@@ -104,12 +104,35 @@ export class SessionServiceV2 {
     const supabase = getSupabase();
 
     const share = this.parseShareLink(input.robloxUrl);
+    const sharePlaceholderPlaceId = 0;
 
     // Step 1: Normalize Roblox link (placeId-based), unless this is a share link.
     let normalized:
       | (Awaited<ReturnType<RobloxLinkNormalizer['normalize']>> & { placeId: number })
       | null = null;
-    if (!share) {
+    if (share) {
+      // The current DB schema requires a non-null place_id (and typically a FK to games.place_id).
+      // Roblox share links don't expose a placeId, so we use a reserved placeholder.
+      const canonicalUrl = share.canonicalUrl;
+
+      const { error: gameError } = await supabase
+        .from('games')
+        .upsert(
+          {
+            place_id: sharePlaceholderPlaceId,
+            canonical_web_url: canonicalUrl,
+            canonical_start_url: canonicalUrl,
+          },
+          {
+            onConflict: 'place_id',
+            ignoreDuplicates: false,
+          }
+        );
+
+      if (gameError) {
+        throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to upsert share-link placeholder game: ${gameError.message}`);
+      }
+    } else {
       try {
         normalized = await this.normalizer.normalize(input.robloxUrl);
       } catch (err) {
@@ -141,7 +164,7 @@ export class SessionServiceV2 {
     const { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
       .insert({
-        place_id: normalized?.placeId ?? null,
+        place_id: normalized?.placeId ?? (share ? sharePlaceholderPlaceId : null),
         host_id: input.hostUserId,
         title: input.title,
         description: input.description,
@@ -189,11 +212,12 @@ export class SessionServiceV2 {
 
     // Step 6: Get game data for response (if we have placeId)
     let gameData: any = null;
-    if (normalized?.placeId) {
+    const placeIdForGame = normalized?.placeId ?? (share ? sharePlaceholderPlaceId : null);
+    if (placeIdForGame !== null) {
       const { data } = await supabase
         .from('games')
         .select('*')
-        .eq('place_id', normalized.placeId)
+        .eq('place_id', placeIdForGame)
         .single();
       gameData = data;
     }
@@ -213,7 +237,7 @@ export class SessionServiceV2 {
         currentParticipants: 1, // Host is the first participant
         scheduledStart: sessionData.scheduled_start,
         game: {
-          placeId: normalized?.placeId ?? 0,
+          placeId: placeIdForGame ?? 0,
           canonicalWebUrl: canonicalUrl,
           canonicalStartUrl: canonicalUrl,
           gameName: gameData?.game_name,

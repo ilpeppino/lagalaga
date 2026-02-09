@@ -1,0 +1,15 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" fill="#1A2A6C" rx="20" ry="20" />
+  
+  <text 
+    x="50%" 
+    y="55%" 
+    text-anchor="middle" 
+    dominant-baseline="middle" 
+    font-family="Bitcount Single', 'Courier New', monospace" 
+    font-size="400" 
+    font-weight="bold" 
+    fill="#FDF5E6">
+    L
+  </text>
+</svg>

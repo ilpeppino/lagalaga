@@ -60,6 +60,37 @@ export class SessionServiceV2 {
     this.normalizer = new RobloxLinkNormalizer();
   }
 
+  private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
+    let url: URL;
+    try {
+      url = new URL(inputUrl);
+    } catch {
+      return null;
+    }
+
+    if (url.hostname !== 'www.roblox.com' && url.hostname !== 'roblox.com') {
+      return null;
+    }
+
+    // Roblox mobile "Share" produces URLs like:
+    // https://www.roblox.com/share?code=...&type=ExperienceDetails&stamp=...
+    // These do not include a placeId. We keep them as canonical URLs and let the
+    // client open them directly (Roblox app will resolve using user cookies).
+    if (url.pathname !== '/share' && url.pathname !== '/share-links') {
+      return null;
+    }
+
+    const code = url.searchParams.get('code');
+    const type = url.searchParams.get('type');
+    if (!code || !type) return null;
+
+    const canonical = new URL('https://www.roblox.com/share-links');
+    canonical.searchParams.set('code', code);
+    canonical.searchParams.set('type', type);
+
+    return { canonicalUrl: canonical.toString(), normalizedFrom: 'share_link' };
+  }
+
   /**
    * Create a new session with host participant and invite link
    * This is an atomic operation that:
@@ -72,47 +103,53 @@ export class SessionServiceV2 {
   async createSession(input: CreateSessionInput): Promise<SessionWithInvite> {
     const supabase = getSupabase();
 
-    // Step 1: Normalize Roblox link
-    let normalized: Awaited<ReturnType<RobloxLinkNormalizer['normalize']>>;
-    try {
-      normalized = await this.normalizer.normalize(input.robloxUrl);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Invalid Roblox URL';
-      throw new ValidationError(message, { robloxUrl: input.robloxUrl });
-    }
+    const share = this.parseShareLink(input.robloxUrl);
 
-    // Step 2: Upsert game record
-    const { error: gameError } = await supabase
-      .from('games')
-      .upsert(
-        {
-          place_id: normalized.placeId,
-          canonical_web_url: normalized.canonicalWebUrl,
-          canonical_start_url: normalized.canonicalStartUrl,
-        },
-        {
-          onConflict: 'place_id',
-          ignoreDuplicates: false,
-        }
-      );
+    // Step 1: Normalize Roblox link (placeId-based), unless this is a share link.
+    let normalized:
+      | (Awaited<ReturnType<RobloxLinkNormalizer['normalize']>> & { placeId: number })
+      | null = null;
+    if (!share) {
+      try {
+        normalized = await this.normalizer.normalize(input.robloxUrl);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Invalid Roblox URL';
+        throw new ValidationError(message, { robloxUrl: input.robloxUrl });
+      }
 
-    if (gameError) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to upsert game: ${gameError.message}`);
+      // Step 2: Upsert game record (requires placeId)
+      const { error: gameError } = await supabase
+        .from('games')
+        .upsert(
+          {
+            place_id: normalized.placeId,
+            canonical_web_url: normalized.canonicalWebUrl,
+            canonical_start_url: normalized.canonicalStartUrl,
+          },
+          {
+            onConflict: 'place_id',
+            ignoreDuplicates: false,
+          }
+        );
+
+      if (gameError) {
+        throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to upsert game: ${gameError.message}`);
+      }
     }
 
     // Step 3: Create session
     const { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
       .insert({
-        place_id: normalized.placeId,
+        place_id: normalized?.placeId ?? null,
         host_id: input.hostUserId,
         title: input.title,
         description: input.description,
         visibility: input.visibility || 'public',
         max_participants: input.maxParticipants || 10,
         scheduled_start: input.scheduledStart,
-        original_input_url: normalized.originalInputUrl,
-        normalized_from: normalized.normalizedFrom,
+        original_input_url: normalized?.originalInputUrl ?? share?.canonicalUrl ?? input.robloxUrl,
+        normalized_from: normalized?.normalizedFrom ?? share?.normalizedFrom ?? 'unknown',
         status: input.scheduledStart ? 'scheduled' : 'active',
       })
       .select()
@@ -150,17 +187,23 @@ export class SessionServiceV2 {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
     }
 
-    // Step 6: Get game data for response
-    const { data: gameData } = await supabase
-      .from('games')
-      .select('*')
-      .eq('place_id', normalized.placeId)
-      .single();
+    // Step 6: Get game data for response (if we have placeId)
+    let gameData: any = null;
+    if (normalized?.placeId) {
+      const { data } = await supabase
+        .from('games')
+        .select('*')
+        .eq('place_id', normalized.placeId)
+        .single();
+      gameData = data;
+    }
+
+    const canonicalUrl = normalized?.canonicalWebUrl ?? share?.canonicalUrl ?? input.robloxUrl;
 
     return {
       session: {
         id: sessionData.id,
-        placeId: sessionData.place_id,
+        placeId: sessionData.place_id ?? 0,
         hostId: sessionData.host_id,
         title: sessionData.title,
         description: sessionData.description,
@@ -170,9 +213,9 @@ export class SessionServiceV2 {
         currentParticipants: 1, // Host is the first participant
         scheduledStart: sessionData.scheduled_start,
         game: {
-          placeId: normalized.placeId,
-          canonicalWebUrl: normalized.canonicalWebUrl,
-          canonicalStartUrl: normalized.canonicalStartUrl,
+          placeId: normalized?.placeId ?? 0,
+          canonicalWebUrl: canonicalUrl,
+          canonicalStartUrl: canonicalUrl,
           gameName: gameData?.game_name,
         },
         createdAt: sessionData.created_at,
@@ -236,7 +279,7 @@ export class SessionServiceV2 {
 
     const sessions = (data || []).map((row: any) => ({
       id: row.id,
-      placeId: row.place_id,
+      placeId: row.place_id ?? 0,
       hostId: row.host_id,
       title: row.title,
       description: row.description,
@@ -246,9 +289,10 @@ export class SessionServiceV2 {
       currentParticipants: row.session_participants?.[0]?.count || 0,
       scheduledStart: row.scheduled_start,
       game: {
-        placeId: row.games.place_id,
-        gameName: row.games.game_name,
-        canonicalWebUrl: row.games.canonical_web_url,
+        placeId: row.games?.place_id ?? row.place_id ?? 0,
+        gameName: row.games?.game_name,
+        canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
+        canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
       },
       createdAt: row.created_at,
     }));
@@ -292,7 +336,7 @@ export class SessionServiceV2 {
 
     return {
       id: sessionData.id,
-      placeId: sessionData.place_id,
+      placeId: sessionData.place_id ?? 0,
       hostId: sessionData.host_id,
       title: sessionData.title,
       description: sessionData.description,
@@ -301,10 +345,10 @@ export class SessionServiceV2 {
       maxParticipants: sessionData.max_participants,
       scheduledStart: sessionData.scheduled_start,
       game: {
-        placeId: sessionData.games.place_id,
-        gameName: sessionData.games.game_name,
-        canonicalWebUrl: sessionData.games.canonical_web_url,
-        canonicalStartUrl: sessionData.games.canonical_start_url,
+        placeId: sessionData.games?.place_id ?? sessionData.place_id ?? 0,
+        gameName: sessionData.games?.game_name,
+        canonicalWebUrl: sessionData.games?.canonical_web_url ?? sessionData.original_input_url,
+        canonicalStartUrl: sessionData.games?.canonical_start_url ?? sessionData.original_input_url,
       },
       participants: sessionData.session_participants.map((p: any) => ({
         userId: p.user_id,

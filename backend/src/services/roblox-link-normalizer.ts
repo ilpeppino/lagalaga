@@ -26,16 +26,6 @@ export interface NormalizedRobloxLink {
 }
 
 export class RobloxLinkNormalizer {
-  private buildUnsupportedShareLinkMessage(originalUrl: string): string {
-    return (
-      'Roblox share links (for example `www.roblox.com/share` or `www.roblox.com/share-links`) ' +
-      'do not include a placeId and cannot be normalized server-side. ' +
-      'Please share a direct experience link like `https://www.roblox.com/games/<placeId>/...` ' +
-      'or a start link like `https://www.roblox.com/games/start?placeId=<placeId>`. ' +
-      `Received: ${originalUrl}`
-    );
-  }
-
   /**
    * Main normalization method
    * Accepts any Roblox link format and returns normalized data
@@ -66,36 +56,8 @@ export class RobloxLinkNormalizer {
       throw new Error('Invalid URL format');
     }
 
-    // Roblox "share" links do not contain placeId; they are indirections intended for the Roblox app.
-    // Example:
-    // https://www.roblox.com/share?code=...&type=ExperienceDetails
-    // https://www.roblox.com/share-links?code=...&type=ExperienceDetails
-    if (
-      (parsedUrl.hostname === 'www.roblox.com' || parsedUrl.hostname === 'roblox.com') &&
-      (parsedUrl.pathname === '/share' || parsedUrl.pathname === '/share-links')
-    ) {
-      throw new Error(this.buildUnsupportedShareLinkMessage(originalUrl));
-    }
-
     // Check for ro.blox.com shortlink
     if (parsedUrl.hostname === 'ro.blox.com') {
-      // If this shortlink is ultimately a share-link, fail with a clearer message.
-      const afWebDp = parsedUrl.searchParams.get('af_web_dp');
-      if (afWebDp) {
-        try {
-          const decodedUrl = decodeURIComponent(afWebDp);
-          const nested = new URL(decodedUrl);
-          if (
-            (nested.hostname === 'www.roblox.com' || nested.hostname === 'roblox.com') &&
-            (nested.pathname === '/share' || nested.pathname === '/share-links')
-          ) {
-            throw new Error(this.buildUnsupportedShareLinkMessage(decodedUrl));
-          }
-        } catch {
-          // Ignore parse errors; fallback to normal logic.
-        }
-      }
-
       const placeId = await this.extractFromShortlink(parsedUrl);
       if (placeId) {
         const { web, start } = this.buildCanonicalUrls(placeId);

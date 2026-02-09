@@ -12,6 +12,22 @@ export async function launchRobloxGame(
   placeId: number,
   canonicalStartUrl: string
 ): Promise<void> {
+  // Some Roblox share links don't include a placeId. In that case, opening the
+  // canonical URL is the best we can do (Roblox app resolves it if installed).
+  if (!placeId || placeId <= 0) {
+    try {
+      await Linking.openURL(canonicalStartUrl);
+      return;
+    } catch (error) {
+      logger.error('Failed to open Roblox URL', {
+        url: canonicalStartUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      Alert.alert('Error', 'Failed to open Roblox');
+      return;
+    }
+  }
+
   const deepLink = `roblox://placeId=${placeId}`;
 
   try {

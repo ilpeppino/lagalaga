@@ -8,12 +8,15 @@
  * - Invite code validation
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
-import { FastifyInstance } from 'fastify';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { getSupabase } from '../../config/supabase.js';
 
 // Note: We'll need to export buildServer from server.ts for testing
 // For now, we'll create a test helper
+
+// Integration tests require a live Supabase project + service role key.
+// Keep them opt-in so `npm test` can run in dev/CI without secrets.
+const describeIntegration = process.env.RUN_INTEGRATION_TESTS === '1' ? describe : describe.skip;
 
 /**
  * Test user management helper
@@ -163,7 +166,7 @@ class TestSessionManager {
 // TEST SUITES
 // ============================================================================
 
-describe('Session Flow Integration Tests', () => {
+describeIntegration('Session Flow Integration Tests', () => {
   let userManager: TestUserManager;
   let sessionManager: TestSessionManager;
 

@@ -99,4 +99,3 @@ Then restart:
 cd backend && npm run dev
 cd .. && npx expo start -c
 ```
-

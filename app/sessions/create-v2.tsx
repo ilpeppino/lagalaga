@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionVisibility } from '@/src/features/sessions/types-v2';
@@ -74,6 +74,35 @@ export default function CreateSessionScreenV2() {
     if (selectedDate) {
       setScheduledStart(selectedDate);
     }
+  };
+
+  const openAndroidDateTimePicker = () => {
+    const base = scheduledStart ?? new Date();
+
+    // Android doesn't support mode="datetime" via the component; open date then time.
+    DateTimePickerAndroid.open({
+      value: base,
+      mode: 'date',
+      is24Hour: true,
+      onChange: (event, date) => {
+        if (event.type !== 'set' || !date) return;
+
+        const withDate = new Date(base);
+        withDate.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+
+        DateTimePickerAndroid.open({
+          value: withDate,
+          mode: 'time',
+          is24Hour: true,
+          onChange: (timeEvent, time) => {
+            if (timeEvent.type !== 'set' || !time) return;
+            const final = new Date(withDate);
+            final.setHours(time.getHours(), time.getMinutes(), 0, 0);
+            setScheduledStart(final);
+          },
+        });
+      },
+    });
   };
 
   /**
@@ -279,7 +308,13 @@ export default function CreateSessionScreenV2() {
               borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
             }
           ]}
-          onPress={() => setShowDatePicker(true)}
+          onPress={() => {
+            if (Platform.OS === 'android') {
+              openAndroidDateTimePicker();
+            } else {
+              setShowDatePicker(true);
+            }
+          }}
         >
           <ThemedText type="bodyLarge">
             {scheduledStart

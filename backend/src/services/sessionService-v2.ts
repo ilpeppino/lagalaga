@@ -1,5 +1,5 @@
 import { getSupabase } from '../config/supabase.js';
-import { SessionError, ErrorCodes, AppError } from '../utils/errors.js';
+import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/errors.js';
 import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 
 export type SessionVisibility = 'public' | 'friends' | 'invite_only';
@@ -73,7 +73,13 @@ export class SessionServiceV2 {
     const supabase = getSupabase();
 
     // Step 1: Normalize Roblox link
-    const normalized = await this.normalizer.normalize(input.robloxUrl);
+    let normalized: Awaited<ReturnType<RobloxLinkNormalizer['normalize']>>;
+    try {
+      normalized = await this.normalizer.normalize(input.robloxUrl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid Roblox URL';
+      throw new ValidationError(message, { robloxUrl: input.robloxUrl });
+    }
 
     // Step 2: Upsert game record
     const { error: gameError } = await supabase

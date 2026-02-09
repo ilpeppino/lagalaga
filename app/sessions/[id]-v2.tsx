@@ -5,7 +5,6 @@
 import { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
@@ -21,6 +20,8 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
+import { ThemedText } from '@/components/themed-text';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -31,6 +32,7 @@ export default function SessionDetailScreenV2() {
   const router = useRouter();
   const { user } = useAuth();
   const { handleError, getErrorMessage } = useErrorHandler();
+  const colorScheme = useColorScheme();
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -125,20 +127,28 @@ export default function SessionDetailScreenV2() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading session...</Text>
+        <ThemedText type="bodyLarge" style={styles.loadingText}>
+          Loading session...
+        </ThemedText>
       </View>
     );
   }
 
   if (!session) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorTitle}>Session Not Found</Text>
-        <Text style={styles.errorSubtitle}>This session may have been deleted</Text>
+      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
+        <ThemedText type="titleLarge" style={styles.errorTitle}>
+          Session Not Found
+        </ThemedText>
+        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.errorSubtitle}>
+          This session may have been deleted
+        </ThemedText>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+            Go Back
+          </ThemedText>
         </TouchableOpacity>
       </View>
     );
@@ -147,38 +157,52 @@ export default function SessionDetailScreenV2() {
   const isFull = session.currentParticipants >= session.maxParticipants;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
+      contentContainerStyle={styles.content}
+    >
       {/* Header Banner */}
       {session.game.thumbnailUrl ? (
         <Image source={{ uri: session.game.thumbnailUrl }} style={styles.banner} />
       ) : (
         <View style={[styles.banner, styles.bannerPlaceholder]}>
-          <Text style={styles.bannerPlaceholderText}>
+          <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
             {session.game.gameName?.[0] || '?'}
-          </Text>
+          </ThemedText>
         </View>
       )}
 
       {/* Title Section */}
-      <View style={styles.titleSection}>
-        <Text style={styles.title}>{session.title}</Text>
-        <Text style={styles.gameName}>{session.game.gameName || 'Roblox Game'}</Text>
+      <View style={[
+        styles.titleSection,
+        { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        <ThemedText type="headlineSmall" style={styles.title}>
+          {session.title}
+        </ThemedText>
+        <ThemedText type="titleLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
+          {session.game.gameName || 'Roblox Game'}
+        </ThemedText>
 
         {/* Status Badges */}
         <View style={styles.badges}>
           <View style={[styles.badge, styles.statusBadge]}>
-            <Text style={styles.badgeText}>{session.status.toUpperCase()}</Text>
+            <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+              {session.status.toUpperCase()}
+            </ThemedText>
           </View>
           {session.visibility !== 'public' && (
             <View style={[styles.badge, styles.visibilityBadge]}>
-              <Text style={styles.badgeText}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
                 {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
-              </Text>
+              </ThemedText>
             </View>
           )}
           {isFull && (
             <View style={[styles.badge, styles.fullBadge]}>
-              <Text style={styles.badgeText}>FULL</Text>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+                FULL
+              </ThemedText>
             </View>
           )}
         </View>
@@ -186,50 +210,82 @@ export default function SessionDetailScreenV2() {
 
       {/* Info Grid */}
       <View style={styles.infoGrid}>
-        <View style={styles.infoCard}>
-          <Text style={styles.infoLabel}>Players</Text>
-          <Text style={styles.infoValue}>
+        <View style={[
+          styles.infoCard,
+          { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
+        ]}>
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.infoLabel}>
+            Players
+          </ThemedText>
+          <ThemedText type="titleMedium">
             {session.currentParticipants}/{session.maxParticipants}
-          </Text>
+          </ThemedText>
         </View>
 
         {session.scheduledStart && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoLabel}>Starts</Text>
-            <Text style={styles.infoValue}>{formatDateTime(session.scheduledStart)}</Text>
+          <View style={[
+            styles.infoCard,
+            { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
+          ]}>
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.infoLabel}>
+              Starts
+            </ThemedText>
+            <ThemedText type="titleMedium">
+              {formatDateTime(session.scheduledStart)}
+            </ThemedText>
           </View>
         )}
       </View>
 
       {/* Description */}
       {session.description && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{session.description}</Text>
+        <View style={[
+          styles.section,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleLarge" style={styles.sectionTitle}>
+            Description
+          </ThemedText>
+          <ThemedText type="bodyLarge" lightColor="#666" darkColor="#ccc" style={styles.description}>
+            {session.description}
+          </ThemedText>
         </View>
       )}
 
       {/* Participants */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
+      <View style={[
+        styles.section,
+        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        <ThemedText type="titleLarge" style={styles.sectionTitle}>
           Participants ({session.participants.length})
-        </Text>
+        </ThemedText>
         {session.participants.map((participant) => (
-          <View key={participant.userId} style={styles.participant}>
+          <View
+            key={participant.userId}
+            style={[
+              styles.participant,
+              { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
+            ]}
+          >
             <View style={styles.participantAvatar}>
-              <Text style={styles.participantAvatarText}>
+              <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
                 {participant.userId.substring(0, 2).toUpperCase()}
-              </Text>
+              </ThemedText>
             </View>
             <View style={styles.participantInfo}>
-              <Text style={styles.participantName}>
+              <ThemedText type="bodyLarge">
                 {participant.userId === session.hostId ? 'Host' : 'Member'}
-              </Text>
-              <Text style={styles.participantRole}>{participant.role}</Text>
+              </ThemedText>
+              <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
+                {participant.role}
+              </ThemedText>
             </View>
             {participant.role === 'host' && (
               <View style={styles.hostBadgeSmall}>
-                <Text style={styles.hostBadgeSmallText}>HOST</Text>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  HOST
+                </ThemedText>
               </View>
             )}
           </View>
@@ -240,10 +296,15 @@ export default function SessionDetailScreenV2() {
       <View style={styles.actions}>
         {session.inviteLink && (
           <TouchableOpacity
-            style={styles.shareButton}
+            style={[
+              styles.shareButton,
+              { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
+            ]}
             onPress={() => handleShare()}
           >
-            <Text style={styles.shareButtonText}>Share Invite</Text>
+            <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#007AFF">
+              Share Invite
+            </ThemedText>
           </TouchableOpacity>
         )}
 
@@ -256,7 +317,9 @@ export default function SessionDetailScreenV2() {
             {isJoining ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.joinButtonText}>Join Session</Text>
+              <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
+                Join Session
+              </ThemedText>
             )}
           </TouchableOpacity>
         )}
@@ -266,22 +329,35 @@ export default function SessionDetailScreenV2() {
             style={styles.launchButton}
             onPress={handleLaunchRoblox}
           >
-            <Text style={styles.launchButtonText}>Launch Roblox</Text>
+            <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
+              Launch Roblox
+            </ThemedText>
           </TouchableOpacity>
         )}
 
         {isFull && !hasJoined && (
           <View style={styles.fullMessage}>
-            <Text style={styles.fullMessageText}>This session is full</Text>
+            <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
+              This session is full
+            </ThemedText>
           </View>
         )}
       </View>
 
       {/* Game Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Game Information</Text>
-        <Text style={styles.label}>Canonical URL</Text>
-        <Text style={[styles.value, styles.link]}>{session.game.canonicalWebUrl}</Text>
+      <View style={[
+        styles.section,
+        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        <ThemedText type="titleLarge" style={styles.sectionTitle}>
+          Game Information
+        </ThemedText>
+        <ThemedText type="bodySmall" lightColor="#888" darkColor="#666" style={styles.label}>
+          Canonical URL
+        </ThemedText>
+        <ThemedText type="bodyMedium" lightColor="#007AFF" darkColor="#007AFF" style={styles.link}>
+          {session.game.canonicalWebUrl}
+        </ThemedText>
       </View>
     </ScrollView>
   );
@@ -290,7 +366,6 @@ export default function SessionDetailScreenV2() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   content: {
     paddingBottom: 32,
@@ -303,18 +378,11 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 12,
-    fontSize: 16,
-    color: '#666',
   },
   errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
   },
   errorSubtitle: {
-    fontSize: 16,
-    color: '#666',
     marginBottom: 24,
   },
   backButton: {
@@ -322,11 +390,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   banner: {
     width: '100%',
@@ -337,25 +400,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bannerPlaceholderText: {
-    fontSize: 64,
-    fontWeight: '700',
-    color: '#999',
-  },
   titleSection: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
     marginBottom: 4,
   },
   gameName: {
-    fontSize: 18,
-    color: '#666',
     marginBottom: 12,
   },
   badges: {
@@ -377,11 +429,6 @@ const styles = StyleSheet.create({
   fullBadge: {
     backgroundColor: '#ff3b30',
   },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-  },
   infoGrid: {
     flexDirection: 'row',
     padding: 16,
@@ -389,35 +436,21 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
     padding: 16,
     borderRadius: 8,
   },
   infoLabel: {
-    fontSize: 12,
-    color: '#666',
     marginBottom: 4,
     textTransform: 'uppercase',
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
   },
   section: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
     marginBottom: 12,
   },
   description: {
-    fontSize: 16,
-    color: '#666',
     lineHeight: 24,
   },
   participant: {
@@ -425,7 +458,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   participantAvatar: {
     width: 40,
@@ -436,22 +468,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  participantAvatarText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
   participantInfo: {
     flex: 1,
   },
-  participantName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
   participantRole: {
-    fontSize: 14,
-    color: '#666',
     textTransform: 'capitalize',
   },
   hostBadgeSmall: {
@@ -460,25 +480,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     borderRadius: 4,
   },
-  hostBadgeSmallText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
   actions: {
     padding: 16,
     gap: 12,
   },
   shareButton: {
-    backgroundColor: '#f0f0f0',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  shareButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   joinButton: {
     backgroundColor: '#34C759',
@@ -486,21 +495,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  joinButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
   launchButton: {
     backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  launchButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -511,22 +510,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  fullMessageText: {
-    color: '#c62828',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   label: {
-    fontSize: 12,
-    color: '#888',
     marginBottom: 4,
     textTransform: 'uppercase',
   },
-  value: {
-    fontSize: 14,
-    color: '#333',
-  },
   link: {
-    color: '#007AFF',
+    marginTop: 4,
   },
 });

@@ -14,7 +14,6 @@
 import { useState } from 'react';
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -28,6 +27,8 @@ import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { ThemedText } from '@/components/themed-text';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'public', label: 'Public' },
@@ -38,6 +39,7 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
 export default function CreateSessionScreenV2() {
   const router = useRouter();
   const { handleError, getErrorMessage } = useErrorHandler();
+  const colorScheme = useColorScheme();
 
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
@@ -120,49 +122,89 @@ export default function CreateSessionScreenV2() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[
+        styles.container,
+        { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }
+      ]}
+      contentContainerStyle={styles.content}
+    >
       {/* Roblox URL Input */}
       <View style={styles.field}>
-        <Text style={styles.label}>Roblox Game Link *</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Roblox Game Link *
+        </ThemedText>
         <View style={styles.inputWithButton}>
           <TextInput
-            style={[styles.input, styles.inputWithButtonField]}
+            style={[
+              styles.input,
+              styles.inputWithButtonField,
+              {
+                backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff',
+                borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
+                color: colorScheme === 'dark' ? '#fff' : '#000'
+              }
+            ]}
             value={robloxUrl}
             onChangeText={setRobloxUrl}
             placeholder="Paste any Roblox link"
+            placeholderTextColor={colorScheme === 'dark' ? '#666' : '#999'}
             autoCapitalize="none"
             keyboardType="url"
             autoCorrect={false}
           />
           <TouchableOpacity style={styles.pasteButton} onPress={handlePaste}>
-            <Text style={styles.pasteButtonText}>Paste</Text>
+            <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+              Paste
+            </ThemedText>
           </TouchableOpacity>
         </View>
-        <Text style={styles.helperText}>
+        <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
           e.g., https://www.roblox.com/games/606849621/Jailbreak
-        </Text>
+        </ThemedText>
       </View>
 
       {/* Title */}
       <View style={styles.field}>
-        <Text style={styles.label}>Session Title *</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Session Title *
+        </ThemedText>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff',
+              borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
+              color: colorScheme === 'dark' ? '#fff' : '#000'
+            }
+          ]}
           value={title}
           onChangeText={setTitle}
           placeholder="e.g., Late night Jailbreak"
+          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#999'}
           maxLength={100}
         />
       </View>
 
       {/* Description */}
       <View style={styles.field}>
-        <Text style={styles.label}>Description (optional)</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Description (optional)
+        </ThemedText>
         <TextInput
-          style={[styles.input, styles.textArea]}
+          style={[
+            styles.input,
+            styles.textArea,
+            {
+              backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff',
+              borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
+              color: colorScheme === 'dark' ? '#fff' : '#000'
+            }
+          ]}
           value={description}
           onChangeText={setDescription}
           placeholder="What are you planning?"
+          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#999'}
           multiline
           numberOfLines={3}
           maxLength={500}
@@ -171,25 +213,33 @@ export default function CreateSessionScreenV2() {
 
       {/* Visibility */}
       <View style={styles.field}>
-        <Text style={styles.label}>Visibility</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Visibility
+        </ThemedText>
         <View style={styles.visibilityPicker}>
           {visibilityOptions.map((option) => (
             <TouchableOpacity
               key={option.value}
               style={[
                 styles.visibilityOption,
-                visibility === option.value && styles.visibilityOptionActive,
+                {
+                  backgroundColor: visibility === option.value
+                    ? '#007AFF'
+                    : (colorScheme === 'dark' ? '#1a1a1a' : '#f5f5f5'),
+                  borderColor: visibility === option.value
+                    ? '#007AFF'
+                    : (colorScheme === 'dark' ? '#333' : '#ddd'),
+                },
               ]}
               onPress={() => setVisibility(option.value)}
             >
-              <Text
-                style={[
-                  styles.visibilityText,
-                  visibility === option.value && styles.visibilityTextActive,
-                ]}
+              <ThemedText
+                type={visibility === option.value ? 'labelLarge' : 'bodyMedium'}
+                lightColor={visibility === option.value ? '#fff' : '#333'}
+                darkColor={visibility === option.value ? '#fff' : '#ccc'}
               >
                 {option.label}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           ))}
         </View>
@@ -197,7 +247,9 @@ export default function CreateSessionScreenV2() {
 
       {/* Max Participants Slider */}
       <View style={styles.field}>
-        <Text style={styles.label}>Max Participants: {maxParticipants}</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Max Participants: {maxParticipants}
+        </ThemedText>
         <Slider
           style={styles.slider}
           minimumValue={2}
@@ -206,33 +258,43 @@ export default function CreateSessionScreenV2() {
           value={maxParticipants}
           onValueChange={setMaxParticipants}
           minimumTrackTintColor="#007AFF"
-          maximumTrackTintColor="#ddd"
+          maximumTrackTintColor={colorScheme === 'dark' ? '#333' : '#ddd'}
         />
         <View style={styles.sliderLabels}>
-          <Text style={styles.sliderLabel}>2</Text>
-          <Text style={styles.sliderLabel}>50</Text>
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">2</ThemedText>
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">50</ThemedText>
         </View>
       </View>
 
       {/* Scheduled Start (Optional) */}
       <View style={styles.field}>
-        <Text style={styles.label}>Scheduled Start (optional)</Text>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Scheduled Start (optional)
+        </ThemedText>
         <TouchableOpacity
-          style={styles.dateButton}
+          style={[
+            styles.dateButton,
+            {
+              backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f5f5f5',
+              borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
+            }
+          ]}
           onPress={() => setShowDatePicker(true)}
         >
-          <Text style={styles.dateButtonText}>
+          <ThemedText type="bodyLarge">
             {scheduledStart
               ? scheduledStart.toLocaleString()
               : 'Tap to set start time'}
-          </Text>
+          </ThemedText>
         </TouchableOpacity>
         {scheduledStart && (
           <TouchableOpacity
             style={styles.clearButton}
             onPress={() => setScheduledStart(null)}
           >
-            <Text style={styles.clearButtonText}>Clear</Text>
+            <ThemedText type="bodyMedium" lightColor="#007AFF" darkColor="#007AFF">
+              Clear
+            </ThemedText>
           </TouchableOpacity>
         )}
       </View>
@@ -249,7 +311,9 @@ export default function CreateSessionScreenV2() {
       {/* Error Message */}
       {error && (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
+            {error}
+          </ThemedText>
         </View>
       )}
 
@@ -262,9 +326,9 @@ export default function CreateSessionScreenV2() {
         onPress={handleCreate}
         disabled={isCreating || !robloxUrl || !title}
       >
-        <Text style={styles.submitButtonText}>
+        <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
           {isCreating ? 'Creating Session...' : 'Create Session'}
-        </Text>
+        </ThemedText>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -273,7 +337,6 @@ export default function CreateSessionScreenV2() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   content: {
     padding: 16,
@@ -283,23 +346,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
     marginBottom: 8,
-    color: '#333',
   },
   helperText: {
-    fontSize: 12,
-    color: '#666',
     marginTop: 4,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
   },
   textArea: {
     minHeight: 80,
@@ -319,11 +374,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
   },
-  pasteButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   visibilityPicker: {
     flexDirection: 'row',
     gap: 8,
@@ -334,21 +384,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#f5f5f5',
     alignItems: 'center',
-  },
-  visibilityOptionActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  visibilityText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  visibilityTextActive: {
-    color: '#fff',
-    fontWeight: '600',
   },
   slider: {
     width: '100%',
@@ -359,38 +395,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: -8,
   },
-  sliderLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
   dateButton: {
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
-    backgroundColor: '#f5f5f5',
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#333',
   },
   clearButton: {
     marginTop: 8,
     alignSelf: 'flex-start',
-  },
-  clearButtonText: {
-    fontSize: 14,
-    color: '#007AFF',
   },
   errorContainer: {
     backgroundColor: '#ffebee',
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
-  },
-  errorText: {
-    color: '#c62828',
-    fontSize: 14,
   },
   submitButton: {
     backgroundColor: '#007AFF',
@@ -401,10 +419,5 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: {
     opacity: 0.5,
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
   },
 });

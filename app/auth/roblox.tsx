@@ -1,14 +1,17 @@
 import { useEffect } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../../src/lib/api';
 import { tokenStorage } from '../../src/lib/tokenStorage';
 import { logger } from '@/src/lib/logger';
+import { ThemedText } from '@/components/themed-text';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function RobloxCallback() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
+  const colorScheme = useColorScheme();
 
   useEffect(() => {
     handleCallback();
@@ -72,9 +75,11 @@ export default function RobloxCallback() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
       <ActivityIndicator size="large" />
-      <Text style={styles.text}>Completing sign in...</Text>
+      <ThemedText type="bodyLarge" style={styles.text}>
+        Completing sign in...
+      </ThemedText>
     </View>
   );
 }
@@ -84,10 +89,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
   },
   text: {
     marginTop: 16,
-    fontSize: 16,
   },
 });

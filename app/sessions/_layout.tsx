@@ -1,7 +1,8 @@
 import { Stack, useRouter } from "expo-router";
-import { TouchableOpacity, Text } from "react-native";
+import { TouchableOpacity } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
+import { ThemedText } from "@/components/themed-text";
 
 export default function SessionsLayout() {
   const router = useRouter();
@@ -25,7 +26,9 @@ export default function SessionsLayout() {
           title: "Sessions",
           headerRight: () => (
             <TouchableOpacity onPress={handleSignOut} style={{ marginRight: 4 }}>
-              <Text style={{ color: "#007AFF", fontSize: 16 }}>Sign Out</Text>
+              <ThemedText type="bodyLarge" lightColor="#007AFF" darkColor="#007AFF">
+                Sign Out
+              </ThemedText>
             </TouchableOpacity>
           ),
         }}

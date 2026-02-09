@@ -5,7 +5,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View,
-  Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
@@ -17,9 +16,12 @@ import { useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
+import { ThemedText } from '@/components/themed-text';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function SessionsListScreenV2() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
 
   // Data state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -120,39 +122,76 @@ export default function SessionsListScreenV2() {
           <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
         ) : (
           <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
-            <Text style={styles.thumbnailPlaceholderText}>
+            <ThemedText
+              type="displaySmall"
+              lightColor="#999"
+              darkColor="#666"
+              style={styles.thumbnailPlaceholderText}
+            >
               {item.game.gameName?.[0] || '?'}
-            </Text>
+            </ThemedText>
           </View>
         )}
 
         <View style={styles.sessionInfo}>
-          <Text style={styles.title} numberOfLines={1}>
+          <ThemedText
+            type="titleMedium"
+            lightColor="#333"
+            darkColor="#fff"
+            numberOfLines={1}
+            style={styles.title}
+          >
             {item.title}
-          </Text>
+          </ThemedText>
 
-          <Text style={styles.gameName} numberOfLines={1}>
+          <ThemedText
+            type="bodyMedium"
+            lightColor="#666"
+            darkColor="#aaa"
+            numberOfLines={1}
+            style={styles.gameName}
+          >
             {item.game.gameName || 'Roblox Game'}
-          </Text>
+          </ThemedText>
 
           <View style={styles.participants}>
-            <Text style={[styles.participantText, isFull && styles.participantTextFull]}>
+            <ThemedText
+              type="labelMedium"
+              lightColor={isFull ? "#ff3b30" : "#007AFF"}
+              darkColor={isFull ? "#ff453a" : "#0a84ff"}
+              style={styles.participantText}
+            >
               {item.currentParticipants}/{item.maxParticipants} players
-            </Text>
-            {isFull && <Text style={styles.fullBadge}>FULL</Text>}
+            </ThemedText>
+            {isFull && (
+              <View style={styles.fullBadge}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  FULL
+                </ThemedText>
+              </View>
+            )}
           </View>
 
           {item.scheduledStart && (
-            <Text style={styles.timeText}>
+            <ThemedText
+              type="bodySmall"
+              lightColor="#888"
+              darkColor="#999"
+              style={styles.timeText}
+            >
               {formatRelativeTime(item.scheduledStart)}
-            </Text>
+            </ThemedText>
           )}
 
           {item.visibility !== 'public' && (
             <View style={styles.visibilityBadge}>
-              <Text style={styles.visibilityBadgeText}>
+              <ThemedText
+                type="labelSmall"
+                lightColor="#666"
+                darkColor="#aaa"
+              >
                 {item.visibility === 'friends' ? 'Friends' : 'Invite Only'}
-              </Text>
+              </ThemedText>
             </View>
           )}
         </View>
@@ -174,13 +213,24 @@ export default function SessionsListScreenV2() {
 
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No Active Sessions</Text>
-        <Text style={styles.emptySubtitle}>Be the first to create one!</Text>
+        <ThemedText type="titleLarge" style={styles.emptyTitle}>
+          No Active Sessions
+        </ThemedText>
+        <ThemedText
+          type="bodyLarge"
+          lightColor="#666"
+          darkColor="#aaa"
+          style={styles.emptySubtitle}
+        >
+          Be the first to create one!
+        </ThemedText>
         <TouchableOpacity
           style={styles.emptyButton}
           onPress={() => router.push('/sessions/create')}
         >
-          <Text style={styles.emptyButtonText}>Create Session</Text>
+          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+            Create Session
+          </ThemedText>
         </TouchableOpacity>
       </View>
     );
@@ -190,16 +240,30 @@ export default function SessionsListScreenV2() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading sessions...</Text>
+        <ThemedText
+          type="bodyLarge"
+          lightColor="#666"
+          darkColor="#aaa"
+          style={styles.loadingText}
+        >
+          Loading sessions...
+        </ThemedText>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Active Sessions</Text>
-        <Text style={styles.headerSubtitle}>{total} total</Text>
+    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
+      <View style={[styles.header, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
+        <ThemedText type="headlineSmall">Active Sessions</ThemedText>
+        <ThemedText
+          type="bodyMedium"
+          lightColor="#666"
+          darkColor="#aaa"
+          style={styles.headerSubtitle}
+        >
+          {total} total
+        </ThemedText>
       </View>
 
       <FlatList
@@ -220,7 +284,9 @@ export default function SessionsListScreenV2() {
         style={styles.fab}
         onPress={() => router.push('/sessions/create')}
       >
-        <Text style={styles.fabText}>+</Text>
+        <ThemedText type="displaySmall" lightColor="#fff" darkColor="#fff" style={styles.fabText}>
+          +
+        </ThemedText>
       </TouchableOpacity>
     </View>
   );
@@ -229,7 +295,6 @@ export default function SessionsListScreenV2() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   centered: {
     flex: 1,
@@ -239,23 +304,13 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 12,
-    fontSize: 16,
-    color: '#666',
   },
   header: {
-    backgroundColor: '#fff',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
-  },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#666',
     marginTop: 4,
   },
   list: {
@@ -284,9 +339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   thumbnailPlaceholderText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#999',
+    // Font from displaySmall token
   },
   sessionInfo: {
     flex: 1,
@@ -294,14 +347,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
     marginBottom: 4,
   },
   gameName: {
-    fontSize: 14,
-    color: '#666',
     marginBottom: 8,
   },
   participants: {
@@ -310,12 +358,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   participantText: {
-    fontSize: 13,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  participantTextFull: {
-    color: '#ff3b30',
+    // Font from labelMedium token
   },
   fullBadge: {
     marginLeft: 8,
@@ -323,13 +366,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     backgroundColor: '#ff3b30',
     borderRadius: 4,
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
   },
   timeText: {
-    fontSize: 12,
-    color: '#888',
+    // Font from bodySmall token
   },
   visibilityBadge: {
     alignSelf: 'flex-start',
@@ -338,11 +377,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#f0f0f0',
     borderRadius: 4,
-  },
-  visibilityBadgeText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#666',
   },
   footer: {
     paddingVertical: 20,
@@ -356,14 +390,9 @@ const styles = StyleSheet.create({
     minHeight: 400,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 16,
-    color: '#666',
     marginBottom: 24,
   },
   emptyButton: {
@@ -371,11 +400,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
-  },
-  emptyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   fab: {
     position: 'absolute',
@@ -394,8 +418,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   fabText: {
-    fontSize: 32,
-    color: '#fff',
-    fontWeight: '300',
+    // Font from displaySmall token
   },
 });

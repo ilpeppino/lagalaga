@@ -7,7 +7,6 @@
 import { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
@@ -21,6 +20,8 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
 import { isApiError } from '@/src/lib/errors';
+import { ThemedText } from '@/components/themed-text';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type InviteState = 'loading' | 'preview' | 'joining' | 'error' | 'login_required';
 
@@ -29,6 +30,7 @@ export default function InviteScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { handleError, getErrorMessage } = useErrorHandler();
+  const colorScheme = useColorScheme();
 
   const [state, setState] = useState<InviteState>('loading');
   const [session, setSession] = useState<Partial<Session> | null>(null);
@@ -116,25 +118,33 @@ export default function InviteScreen() {
 
   if (state === 'loading') {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading invite...</Text>
+        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.loadingText}>
+          Loading invite...
+        </ThemedText>
       </View>
     );
   }
 
   if (state === 'error') {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
         <View style={styles.errorIcon}>
-          <Text style={styles.errorIconText}>X</Text>
+          <ThemedText type="displaySmall" lightColor="#c62828" darkColor="#ef5350">
+            X
+          </ThemedText>
         </View>
-        <Text style={styles.errorTitle}>Invalid Invite</Text>
-        <Text style={styles.errorMessage}>
+        <ThemedText type="headlineSmall" style={styles.errorTitle}>
+          Invalid Invite
+        </ThemedText>
+        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.errorMessage}>
           {error || 'This invite link is not valid or has expired'}
-        </Text>
+        </ThemedText>
         <TouchableOpacity style={styles.button} onPress={() => router.back()}>
-          <Text style={styles.buttonText}>Go Back</Text>
+          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+            Go Back
+          </ThemedText>
         </TouchableOpacity>
       </View>
     );
@@ -142,9 +152,11 @@ export default function InviteScreen() {
 
   if (state === 'joining') {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Joining session...</Text>
+        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.loadingText}>
+          Joining session...
+        </ThemedText>
       </View>
     );
   }
@@ -157,10 +169,10 @@ export default function InviteScreen() {
       : false;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
       <View style={styles.content}>
         {/* Session Preview */}
-        <View style={styles.preview}>
+        <View style={[styles.preview, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
           {session.game?.thumbnailUrl ? (
             <Image
               source={{ uri: session.game.thumbnailUrl }}
@@ -168,35 +180,42 @@ export default function InviteScreen() {
             />
           ) : (
             <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
-              <Text style={styles.thumbnailPlaceholderText}>
+              <ThemedText type="displayMedium" lightColor="#999" darkColor="#666">
                 {session.game?.gameName?.[0] || '?'}
-              </Text>
+              </ThemedText>
             </View>
           )}
 
           <View style={styles.info}>
-            <Text style={styles.inviteTitle}>You've been invited!</Text>
+            <ThemedText type="labelLarge" lightColor="#007AFF" darkColor="#0a84ff" style={styles.inviteTitle}>
+              You've been invited!
+            </ThemedText>
 
-            <Text style={styles.sessionTitle} numberOfLines={2}>
+            <ThemedText type="headlineSmall" style={styles.sessionTitle} numberOfLines={2}>
               {session.title || 'Gaming Session'}
-            </Text>
+            </ThemedText>
 
             {session.game?.gameName && (
-              <Text style={styles.gameName}>{session.game.gameName}</Text>
+              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
+                {session.game.gameName}
+              </ThemedText>
             )}
 
             {session.currentParticipants !== undefined &&
               session.maxParticipants !== undefined && (
                 <View style={styles.participants}>
-                  <Text
-                    style={[
-                      styles.participantText,
-                      isFull && styles.participantTextFull,
-                    ]}
+                  <ThemedText
+                    type="labelLarge"
+                    lightColor={isFull ? '#ff3b30' : '#007AFF'}
+                    darkColor={isFull ? '#ff453a' : '#0a84ff'}
                   >
                     {session.currentParticipants}/{session.maxParticipants} players
-                  </Text>
-                  {isFull && <Text style={styles.fullBadge}>FULL</Text>}
+                  </ThemedText>
+                  {isFull && (
+                    <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff" style={styles.fullBadge}>
+                      FULL
+                    </ThemedText>
+                  )}
                 </View>
               )}
           </View>
@@ -206,23 +225,27 @@ export default function InviteScreen() {
         <View style={styles.actions}>
           {state === 'login_required' && (
             <>
-              <Text style={styles.infoText}>
+              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.infoText}>
                 Sign in to join this session and start playing!
-              </Text>
+              </ThemedText>
 
               <TouchableOpacity
                 style={styles.primaryButton}
                 onPress={handleLogin}
               >
-                <Text style={styles.primaryButtonText}>Sign In to Join</Text>
+                <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
+                  Sign In to Join
+                </ThemedText>
               </TouchableOpacity>
 
               {sessionId && (
                 <TouchableOpacity
-                  style={styles.secondaryButton}
+                  style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                   onPress={() => router.push(`/sessions/${sessionId}`)}
                 >
-                  <Text style={styles.secondaryButtonText}>View Session</Text>
+                  <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
+                    View Session
+                  </ThemedText>
                 </TouchableOpacity>
               )}
             </>
@@ -236,34 +259,38 @@ export default function InviteScreen() {
                     style={styles.primaryButton}
                     onPress={handleManualJoin}
                   >
-                    <Text style={styles.primaryButtonText}>Join Session</Text>
+                    <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
+                      Join Session
+                    </ThemedText>
                   </TouchableOpacity>
 
                   {sessionId && (
                     <TouchableOpacity
-                      style={styles.secondaryButton}
+                      style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                       onPress={() => router.push(`/sessions/${sessionId}`)}
                     >
-                      <Text style={styles.secondaryButtonText}>View Details</Text>
+                      <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
+                        View Details
+                      </ThemedText>
                     </TouchableOpacity>
                   )}
                 </>
               ) : (
                 <>
-                  <View style={styles.fullMessage}>
-                    <Text style={styles.fullMessageText}>
+                  <View style={[styles.fullMessage, { backgroundColor: colorScheme === 'dark' ? '#3a1a1a' : '#ffebee' }]}>
+                    <ThemedText type="bodyLarge" lightColor="#c62828" darkColor="#ef5350">
                       This session is full
-                    </Text>
+                    </ThemedText>
                   </View>
 
                   {sessionId && (
                     <TouchableOpacity
-                      style={styles.secondaryButton}
+                      style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                       onPress={() => router.push(`/sessions/${sessionId}`)}
                     >
-                      <Text style={styles.secondaryButtonText}>
+                      <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
                         View Session Anyway
-                      </Text>
+                      </ThemedText>
                     </TouchableOpacity>
                   )}
                 </>
@@ -279,7 +306,6 @@ export default function InviteScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   content: {
     flex: 1,
@@ -294,8 +320,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16,
-    color: '#666',
   },
   errorIcon: {
     width: 80,
@@ -306,26 +330,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  errorIconText: {
-    fontSize: 40,
-    color: '#c62828',
-  },
   errorTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
     marginBottom: 8,
     textAlign: 'center',
   },
   errorMessage: {
-    fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     marginBottom: 32,
     paddingHorizontal: 20,
   },
   preview: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
@@ -346,32 +360,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbnailPlaceholderText: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#999',
-  },
   info: {
     alignItems: 'center',
   },
   inviteTitle: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
     marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   sessionTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
     textAlign: 'center',
     marginBottom: 8,
   },
   gameName: {
-    fontSize: 16,
-    color: '#666',
     marginBottom: 12,
   },
   participants: {
@@ -379,29 +380,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  participantText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  participantTextFull: {
-    color: '#ff3b30',
-  },
   fullBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     backgroundColor: '#ff3b30',
     borderRadius: 4,
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
   },
   actions: {
     gap: 12,
   },
   infoText: {
-    fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -411,42 +399,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
   secondaryButton: {
-    backgroundColor: '#f0f0f0',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   button: {
     backgroundColor: '#007AFF',
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    alignItems: 'center',
   },
   fullMessage: {
-    backgroundColor: '#ffebee',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-  },
-  fullMessageText: {
-    color: '#c62828',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

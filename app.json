@@ -21,9 +21,11 @@
       "supportsTablet": true,
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
+          "roblox",
           "roblox"
         ]
-      }
+      },
+      "bundleIdentifier": "com.ilpeppino.lagalaga"
     },
     "android": {
       "adaptiveIcon": {

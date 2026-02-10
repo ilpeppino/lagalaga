@@ -8,8 +8,8 @@ const supabaseUrl =
   "";
 
 const supabaseAnonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ||
   "";
 
 export function isSupabaseConfigured(): boolean {

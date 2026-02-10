@@ -6,7 +6,7 @@
     y="55%" 
     text-anchor="middle" 
     dominant-baseline="middle" 
-    font-family="Bitcount Single', 'Courier New', monospace" 
+    font-family="'Bitcount Single', 'Courier New', monospace" 
     font-size="400" 
     font-weight="bold" 
     fill="#FDF5E6">

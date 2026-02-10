@@ -13,15 +13,14 @@ const INPUT_SVG = path.join(repoRoot, "assets", "lagalaga.xml");
 const PRIMARY_FONT = path.join(
   repoRoot,
   "assets",
-  "images",
-  "BitcountSingle-VariableFont_CRSV,ELSH,ELXP,slnt,wght.ttf",
+  "fonts",
+  "BitcountSingle-Bold.ttf",
 );
 const FALLBACK_FONT = path.join(
   repoRoot,
   "assets",
-  "res",
-  "font",
-  "BitcountSingle-VariableFont_CRSV,ELSH,ELXP,slnt,wght.ttf",
+  "fonts",
+  "BitcountSingle-Regular.ttf",
 );
 
 const OUT_DIR = path.join(repoRoot, "assets", "generated");

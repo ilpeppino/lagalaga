@@ -5,10 +5,12 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import * as Linking from 'expo-linking';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '@/src/features/auth/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { logger } from '@/src/lib/logger';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -30,6 +32,24 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    // Log initial URL if app was opened via deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        logger.info('App opened with initial URL', { url });
+      }
+    });
+
+    // Listen for deep link events while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      logger.info('Deep link received', { url: event.url });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

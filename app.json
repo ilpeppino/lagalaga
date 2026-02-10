@@ -22,8 +22,11 @@
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "roblox",
+          "roblox",
+          "roblox",
           "roblox"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.ilpeppino.lagalaga"
     },
@@ -86,6 +89,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "36b14711-e62b-452d-82bf-e8e7f9128fe6"
+      }
     }
   }
 }

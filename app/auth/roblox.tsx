@@ -7,13 +7,21 @@ import { tokenStorage } from '../../src/lib/tokenStorage';
 import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuth } from '@/src/features/auth/useAuth';
 
 export default function RobloxCallback() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
   const colorScheme = useColorScheme();
+  const { reloadUser } = useAuth();
 
   useEffect(() => {
+    logger.info('RobloxCallback mounted', {
+      hasCode: !!params.code,
+      hasState: !!params.state,
+      hasError: !!params.error,
+      allParams: params
+    });
     handleCallback();
   }, []);
 
@@ -63,6 +71,13 @@ export default function RobloxCallback() {
       // Store tokens
       await tokenStorage.setToken(response.accessToken);
       await tokenStorage.setRefreshToken(response.refreshToken);
+
+      logger.info('Tokens stored, reloading user...');
+
+      // Reload user to update AuthContext
+      await reloadUser();
+
+      logger.info('User reloaded, navigating to sessions...');
 
       // Redirect to sessions
       router.replace('/sessions');

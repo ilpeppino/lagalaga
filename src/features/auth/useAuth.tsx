@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -6,6 +7,7 @@ import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
+import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -22,6 +24,7 @@ interface AuthContextValue {
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
   signOut: () => Promise<void>;
+  reloadUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -65,21 +68,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await AsyncStorage.setItem('pkce_state', state);
 
-      // Expo Go + Auth Proxy:
-      // You must start the flow via `https://auth.expo.io/@owner/slug/start?...` so the proxy
-      // can set a cookie mapping the provider callback to our in-app return URL.
-      //
-      // The backend's `redirect_uri` must be `https://auth.expo.io/@ilpeppino/lagalaga`.
-      const returnUrl = Linking.createURL('auth/roblox');
-      const startUrl = `https://auth.expo.io/@ilpeppino/lagalaga/start?${new URLSearchParams({
-        authUrl: authorizationUrl,
+      // Create the return URL for our app
+      // In development builds, use the development scheme (exp+lagalaga)
+      // In production, use the standard scheme (lagalaga)
+      const isDevelopment = __DEV__ || Constants.appOwnership === 'expo';
+      const scheme = isDevelopment ? 'exp+lagalaga' : 'lagalaga';
+      const returnUrl = `${scheme}://auth/roblox`;
+
+      logger.info('Starting OAuth flow', {
         returnUrl,
-      }).toString()}`;
+        isDevelopment,
+        authUrl: authorizationUrl.substring(0, 100)
+      });
 
-      const result = await WebBrowser.openAuthSessionAsync(startUrl, returnUrl);
+      // For development builds and production, use direct OAuth (no auth proxy)
+      // The authorizationUrl from backend already has the correct redirect_uri
+      const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
 
-      logger.info('OAuth session finished', { type: result.type });
-      // The code exchange happens in `app/auth/roblox.tsx` after the proxy deep-link.
+      logger.info('OAuth session finished', {
+        type: result.type,
+        url: result.type === 'success' ? (result as any).url : undefined
+      });
+
+      // Note: The deep link callback will be handled by expo-router automatically
+      // when the OAuth provider redirects back
+      // The code exchange happens in `app/auth/roblox.tsx`
     } catch (error) {
       logger.error('Failed to start OAuth flow', {
         error: error instanceof Error ? error.message : String(error),
@@ -102,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signOut, reloadUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );

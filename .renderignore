@@ -1,0 +1,35 @@
+# Frontend files (not needed for backend deployment)
+/src
+/app
+/assets
+/scripts
+/constants
+/components
+/hooks
+node_modules
+
+# Development files
+*.log
+*.md
+.expo
+.expo-shared
+.vscode
+.idea
+
+# Test files
+*.test.*
+*.spec.*
+**/__tests__
+**/coverage
+
+# Mobile platform files
+/ios
+/android
+
+# Build artifacts (will be rebuilt)
+/backend/dist
+/backend/coverage
+
+# Environment files (use Render's env vars)
+.env*
+!.env.example

@@ -19,7 +19,6 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
-import { isApiError } from '@/src/lib/errors';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
@@ -101,16 +100,6 @@ export default function SessionDetailScreenV2() {
       setSession(joinedSession);
       await launchRobloxGame(joinedSession.game.placeId, joinedSession.game.canonicalStartUrl);
     } catch (error) {
-      const alreadyJoined =
-        (isApiError(error) && error.code === 'SESSION_003') ||
-        (error instanceof Error && error.message.toLowerCase().includes('already joined'));
-
-      if (alreadyJoined) {
-        await loadSession();
-        await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
-        return;
-      }
-
       const message = getErrorMessage(error, 'Failed to join session');
       Alert.alert('Error', message);
     } finally {

@@ -543,7 +543,7 @@ export class SessionServiceV2 {
         .eq('id', invite.id);
     }
 
-    // Check if already joined
+    // Check if already joined (idempotent operation)
     const { data: existing } = await supabase
       .from('session_participants')
       .select('*')
@@ -552,16 +552,19 @@ export class SessionServiceV2 {
       .single();
 
     if (existing && existing.state === 'joined') {
-      throw new SessionError(ErrorCodes.SESSION_ALREADY_JOINED, 'You have already joined this session', 400);
+      // Already joined - return session without error (idempotent)
+      logger.info({ sessionId, userId }, 'User already joined session - returning existing session');
+      const existingSession = await this.getSessionById(sessionId);
+      return { session: existingSession };
     }
 
-    // Insert participant
+    // Insert participant (or update if they left previously)
     const { error: participantError } = await supabase.from('session_participants').upsert({
       session_id: sessionId,
       user_id: userId,
       role: 'member',
       state: 'joined',
-      joined_at: new Date().toISOString(),
+      joined_at: existing?.joined_at || new Date().toISOString(), // Keep original join time if re-joining
     });
 
     if (participantError) {

@@ -33,11 +33,15 @@ Notes:
 
 ## 2. Confirm App Config
 
-These values should already exist in `app.json`:
+These values should already exist in `app.config.ts` for production:
 
 - `expo.scheme=lagalaga`
 - `expo.android.package=com.ilpeppino.lagalaga`
 - Android intent filter for `lagalaga://auth/roblox`
+
+Important variant behavior:
+- `APP_VARIANT=dev` installs a dev client (`expo-dev-client`) and can show Expo Dev Launcher / Expo login.
+- `APP_VARIANT=prod` installs the standalone app and should open your app login directly.
 
 ## 3. Configure Backend (Render)
 
@@ -66,7 +70,7 @@ If this value does not match exactly, sign-in callback will fail.
 
 You can install directly from your local machine without consuming EAS build quota.
 
-### Option A: Local Dev Build (recommended)
+### Option A: Local Dev Build (fast iteration)
 
 Use this when you want fast iteration and repeated installs during testing.
 
@@ -93,16 +97,16 @@ npx expo start --dev-client -c
 Notes:
 - This installs a debug/dev build directly on the phone.
 - The app still uses your public Render API URL from `.env`.
+- You may see Expo Dev Launcher / Expo login in this build type.
 
-### Option B: Local APK Build + Manual Install
+### Option B: Local Production APK + Manual Install (direct app login)
 
-Use this when you want an APK file without EAS.
+Use this when you want the installed app to open directly into your app (not Expo login).
 
 ```sh
 npm install
-cd android
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+APP_VARIANT=prod npx expo run:android --variant release
+adb install -r android/app/build/outputs/apk/release/app-release.apk
 ```
 
 Then open the app on the phone.
@@ -121,6 +125,27 @@ npx eas build --platform android --profile preview
 
 Why `preview`:
 - The repo `eas.json` has `preview.distribution=internal`, which is suitable for device testing outside Play Store.
+- Current `preview` profile uses `APP_VARIANT=dev`, so it can still produce a dev-style experience.
+
+If you need an installable internal **production APK** (recommended for realistic QA), add this profile to `eas.json`:
+
+```json
+{
+  "build": {
+    "internalProdApk": {
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "prod" },
+      "android": { "buildType": "apk" }
+    }
+  }
+}
+```
+
+Then build it:
+
+```sh
+npx eas build --platform android --profile internalProdApk
+```
 
 ## 7. Install On Android Phone (EAS path only)
 
@@ -155,3 +180,10 @@ Expected behavior:
 - Build installs but app is old
   - Rebuild with EAS and reinstall the newest APK from the latest build link.
   - For local build, run `npx expo run:android --device` again or reinstall latest debug APK via `adb install -r`.
+
+- App opens Expo login instead of app login
+  - You installed a dev-client/dev-variant build.
+  - Uninstall dev package: `adb uninstall com.ilpeppino.lagalaga.dev`
+  - Install production APK:
+    - local: `APP_VARIANT=prod npx expo run:android --variant release`
+    - or EAS internal prod APK profile (`internalProdApk`) and install that APK.

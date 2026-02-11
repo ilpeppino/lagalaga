@@ -2,22 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { RobloxOAuthService } from '../services/robloxOAuth.js';
 import { UserService } from '../services/userService.js';
 import { TokenService } from '../services/tokenService.js';
-import { generateState, isValidCodeVerifier } from '../utils/crypto.js';
+import {
+  generateSignedOAuthState,
+  isValidCodeVerifier,
+  verifySignedOAuthState,
+} from '../utils/crypto.js';
 import { AuthError, ErrorCodes } from '../utils/errors.js';
 import { authenticate } from '../middleware/authenticate.js';
-
-// Store states in memory (in production, use Redis)
-const validStates = new Map<string, number>();
-
-// Clean up expired states every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, timestamp] of validStates.entries()) {
-    if (now - timestamp > 10 * 60 * 1000) {
-      validStates.delete(state);
-    }
-  }
-}, 10 * 60 * 1000);
 
 export async function authRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
@@ -43,8 +34,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   }, async (request) => {
     const { codeChallenge } = request.body;
 
-    const state = generateState();
-    validStates.set(state, Date.now());
+    const state = generateSignedOAuthState(request.server.config.JWT_SECRET);
 
     const authorizationUrl = robloxOAuth.generateAuthorizationUrl(state, codeChallenge);
 
@@ -80,10 +70,9 @@ export async function authRoutes(fastify: FastifyInstance) {
     const { code, state, codeVerifier } = request.body;
 
     // Validate state
-    if (!validStates.has(state)) {
+    if (!verifySignedOAuthState(state, request.server.config.JWT_SECRET)) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_STATE, 'Invalid or expired state parameter');
     }
-    validStates.delete(state);
 
     // Validate code verifier
     if (!isValidCodeVerifier(codeVerifier)) {

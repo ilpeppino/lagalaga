@@ -2,9 +2,8 @@ import { tokenStorage } from './tokenStorage';
 import { ApiError, NetworkError, parseApiError } from './errors';
 import { logger } from './logger';
 import { monitoring } from './monitoring';
+import { API_URL } from './runtimeConfig';
 import type { Session, CreateSessionInput, SessionParticipant } from '../features/sessions/types';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface AuthResponse {
   accessToken: string;

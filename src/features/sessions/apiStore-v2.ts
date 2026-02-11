@@ -13,8 +13,7 @@ import {
 import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+import { API_URL } from '@/src/lib/runtimeConfig';
 
 function generateCorrelationId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {

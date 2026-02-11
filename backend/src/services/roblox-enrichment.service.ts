@@ -378,7 +378,7 @@ export class RobloxEnrichmentService {
         'Failed to upsert game to database'
       );
       throw new AppError(
-        ErrorCodes.INTERNAL_DATABASE,
+        ErrorCodes.INTERNAL_DB_ERROR,
         `Database error: ${error.message}`,
         500
       );

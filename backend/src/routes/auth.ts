@@ -201,7 +201,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       );
     } catch (error) {
       // Log but don't fail the request if avatar fetch fails
-      fastify.log.warn(`Failed to fetch avatar for user ${user.id}:`, error);
+      fastify.log.warn(`Failed to fetch avatar for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return {

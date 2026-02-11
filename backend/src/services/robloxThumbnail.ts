@@ -38,12 +38,12 @@ export class RobloxThumbnailService {
 
       if (!response.ok) {
         throw new AppError(
-          ErrorCodes.EXTERNAL_SERVICE_ERROR,
+          ErrorCodes.INTERNAL_EXTERNAL_SERVICE,
           `Roblox thumbnails API returned ${response.status}`
         );
       }
 
-      const data: RobloxThumbnailResponse = await response.json();
+      const data = await response.json() as RobloxThumbnailResponse;
 
       if (!data.data || data.data.length === 0) {
         return null;
@@ -61,7 +61,7 @@ export class RobloxThumbnailService {
       // If request was aborted due to timeout
       if (error instanceof Error && error.name === 'AbortError') {
         throw new AppError(
-          ErrorCodes.EXTERNAL_SERVICE_ERROR,
+          ErrorCodes.INTERNAL_EXTERNAL_SERVICE,
           'Roblox thumbnails API request timed out'
         );
       }
@@ -73,7 +73,7 @@ export class RobloxThumbnailService {
 
       // Wrap other errors
       throw new AppError(
-        ErrorCodes.EXTERNAL_SERVICE_ERROR,
+        ErrorCodes.INTERNAL_EXTERNAL_SERVICE,
         `Failed to fetch Roblox avatar: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } finally {

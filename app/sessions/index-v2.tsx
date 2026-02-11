@@ -5,14 +5,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
   Image,
+  ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
@@ -23,7 +23,7 @@ export default function SessionsListScreenV2() {
   const router = useRouter();
   const colorScheme = useColorScheme();
 
-  // Data state
+  // Active sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -34,11 +34,25 @@ export default function SessionsListScreenV2() {
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
 
+  // Planned sessions state
+  const [plannedSessions, setPlannedSessions] = useState<Session[]>([]);
+  const [plannedLoading, setPlannedLoading] = useState(true);
+  const [plannedError, setPlannedError] = useState<string | null>(null);
+  const [plannedTotal, setPlannedTotal] = useState(0);
+
   const LIMIT = 20;
 
   useEffect(() => {
     loadSessions();
+    loadPlannedSessions();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSessions(true);
+      loadPlannedSessions();
+    }, [])
+  );
 
   const loadSessions = async (refresh = false) => {
     try {
@@ -77,8 +91,30 @@ export default function SessionsListScreenV2() {
     }
   };
 
+  const loadPlannedSessions = async () => {
+    try {
+      setPlannedLoading(true);
+      setPlannedError(null);
+
+      const response = await sessionsAPIStoreV2.listMyPlannedSessions({
+        limit: LIMIT,
+        offset: 0,
+      });
+
+      setPlannedSessions(response.sessions);
+      setPlannedTotal(response.pagination.total);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to load planned sessions', { error: errorMsg });
+      setPlannedError('Failed to load your planned sessions');
+    } finally {
+      setPlannedLoading(false);
+    }
+  };
+
   const handleRefresh = useCallback(() => {
     loadSessions(true);
+    loadPlannedSessions();
   }, []);
 
   const handleLoadMore = useCallback(() => {
@@ -110,7 +146,7 @@ export default function SessionsListScreenV2() {
     }
   };
 
-  const renderSession = ({ item }: { item: Session }) => {
+  const renderSession = ({ item, isPlanned = false }: { item: Session; isPlanned?: boolean }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
 
     return (
@@ -134,15 +170,24 @@ export default function SessionsListScreenV2() {
         )}
 
         <View style={styles.sessionInfo}>
-          <ThemedText
-            type="titleMedium"
-            lightColor="#333"
-            darkColor="#fff"
-            numberOfLines={1}
-            style={styles.title}
-          >
-            {item.title}
-          </ThemedText>
+          <View style={styles.titleRow}>
+            <ThemedText
+              type="titleMedium"
+              lightColor="#333"
+              darkColor="#fff"
+              numberOfLines={1}
+              style={styles.title}
+            >
+              {item.title || item.game.gameName || 'Roblox Session'}
+            </ThemedText>
+            {isPlanned && (
+              <View style={styles.hostBadge}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  Host
+                </ThemedText>
+              </View>
+            )}
+          </View>
 
           <ThemedText
             type="bodyMedium"
@@ -183,7 +228,34 @@ export default function SessionsListScreenV2() {
             </ThemedText>
           )}
 
-          {item.visibility !== 'public' && (
+          {isPlanned && (
+            <View style={styles.metadataRow}>
+              <ThemedText
+                type="labelSmall"
+                lightColor="#666"
+                darkColor="#aaa"
+              >
+                {item.visibility === 'public' ? 'Public' : item.visibility === 'friends' ? 'Friends Only' : 'Invite Only'}
+              </ThemedText>
+              <ThemedText
+                type="labelSmall"
+                lightColor="#666"
+                darkColor="#aaa"
+                style={styles.metadataSeparator}
+              >
+                •
+              </ThemedText>
+              <ThemedText
+                type="labelSmall"
+                lightColor="#666"
+                darkColor="#aaa"
+              >
+                {item.status === 'scheduled' ? 'Scheduled' : 'Active'}
+              </ThemedText>
+            </View>
+          )}
+
+          {!isPlanned && item.visibility !== 'public' && (
             <View style={styles.visibilityBadge}>
               <ThemedText
                 type="labelSmall"
@@ -208,35 +280,7 @@ export default function SessionsListScreenV2() {
     );
   };
 
-  const renderEmpty = () => {
-    if (isLoading) return null;
-
-    return (
-      <View style={styles.emptyContainer}>
-        <ThemedText type="titleLarge" style={styles.emptyTitle}>
-          No Active Sessions
-        </ThemedText>
-        <ThemedText
-          type="bodyLarge"
-          lightColor="#666"
-          darkColor="#aaa"
-          style={styles.emptySubtitle}
-        >
-          Be the first to create one!
-        </ThemedText>
-        <TouchableOpacity
-          style={styles.emptyButton}
-          onPress={() => router.push('/sessions/create')}
-        >
-          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-            Create Session
-          </ThemedText>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  if (isLoading && sessions.length === 0) {
+  if (isLoading && sessions.length === 0 && plannedLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -254,31 +298,98 @@ export default function SessionsListScreenV2() {
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
-      <View style={[styles.header, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
-        <ThemedText type="headlineSmall">Active Sessions</ThemedText>
-        <ThemedText
-          type="bodyMedium"
-          lightColor="#666"
-          darkColor="#aaa"
-          style={styles.headerSubtitle}
-        >
-          {total} total
-        </ThemedText>
-      </View>
-
-      <FlatList
-        data={sessions}
-        renderItem={renderSession}
-        keyExtractor={(item) => item.id}
+      <ScrollView
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={renderEmpty}
-      />
+      >
+        {/* Planned Sessions Section */}
+        <View style={[styles.sectionHeader, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
+          <ThemedText type="headlineSmall">Planned Sessions</ThemedText>
+          <ThemedText
+            type="bodyMedium"
+            lightColor="#666"
+            darkColor="#aaa"
+            style={styles.headerSubtitle}
+          >
+            {plannedTotal} total
+          </ThemedText>
+        </View>
+
+        {plannedLoading && (
+          <View style={styles.sectionLoading}>
+            <ActivityIndicator size="small" color="#007AFF" />
+          </View>
+        )}
+
+        {plannedError && (
+          <View style={styles.errorContainer}>
+            <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
+              {plannedError}
+            </ThemedText>
+          </View>
+        )}
+
+        {!plannedLoading && !plannedError && plannedSessions.length === 0 && (
+          <View style={styles.sectionEmpty}>
+            <ThemedText
+              type="bodyMedium"
+              lightColor="#666"
+              darkColor="#aaa"
+            >
+              No planned sessions yet
+            </ThemedText>
+          </View>
+        )}
+
+        {!plannedLoading && !plannedError && plannedSessions.map((session) => (
+          <View key={session.id} style={styles.sessionWrapper}>
+            {renderSession({ item: session, isPlanned: true })}
+          </View>
+        ))}
+
+        {/* Active Sessions Section */}
+        <View style={[styles.sectionHeader, styles.sectionHeaderSpacing, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
+          <ThemedText type="headlineSmall">Active Sessions</ThemedText>
+          <ThemedText
+            type="bodyMedium"
+            lightColor="#666"
+            darkColor="#aaa"
+            style={styles.headerSubtitle}
+          >
+            {total} total
+          </ThemedText>
+        </View>
+
+        {!isLoading && sessions.length === 0 && (
+          <View style={styles.sectionEmpty}>
+            <ThemedText
+              type="bodyMedium"
+              lightColor="#666"
+              darkColor="#aaa"
+            >
+              No active sessions
+            </ThemedText>
+            <ThemedText
+              type="bodySmall"
+              lightColor="#888"
+              darkColor="#999"
+              style={{ marginTop: 4 }}
+            >
+              Be the first to create one!
+            </ThemedText>
+          </View>
+        )}
+
+        {sessions.map((session) => (
+          <View key={session.id} style={styles.sessionWrapper}>
+            {renderSession({ item: session, isPlanned: false })}
+          </View>
+        ))}
+
+        {renderFooter()}
+      </ScrollView>
 
       <TouchableOpacity
         style={styles.fab}
@@ -305,16 +416,36 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
   },
-  header: {
+  sectionHeader: {
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  sectionHeaderSpacing: {
+    marginTop: 24,
+  },
   headerSubtitle: {
     marginTop: 4,
   },
+  sectionLoading: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  sectionEmpty: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  sessionWrapper: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  errorContainer: {
+    margin: 16,
+    padding: 12,
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+  },
   list: {
-    padding: 16,
     paddingBottom: 80,
   },
   sessionCard: {
@@ -346,11 +477,31 @@ const styles = StyleSheet.create({
     padding: 12,
     justifyContent: 'space-between',
   },
-  title: {
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
+  },
+  title: {
+    flex: 1,
+    marginRight: 8,
+  },
+  hostBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#007AFF',
+    borderRadius: 4,
   },
   gameName: {
     marginBottom: 8,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  metadataSeparator: {
+    marginHorizontal: 8,
   },
   participants: {
     flexDirection: 'row',
@@ -381,25 +532,6 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 20,
     alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    minHeight: 400,
-  },
-  emptyTitle: {
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    marginBottom: 24,
-  },
-  emptyButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
   },
   fab: {
     position: 'absolute',

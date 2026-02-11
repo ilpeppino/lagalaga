@@ -183,6 +183,33 @@ class SessionsAPIStoreV2 {
 
     return response.data;
   }
+
+  /**
+   * List current user's planned sessions
+   */
+  async listMyPlannedSessions(params: {
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<ListSessionsResponse> {
+    const queryParams = new URLSearchParams();
+
+    if (params.limit) queryParams.append('limit', params.limit.toString());
+    if (params.offset) queryParams.append('offset', params.offset.toString());
+
+    const response = await fetchWithAuth<{ success: boolean; data: ListSessionsResponse }>(
+      `/api/sessions/mine?${queryParams.toString()}`
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to list planned sessions',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
 }
 
 export const sessionsAPIStoreV2 = new SessionsAPIStoreV2();

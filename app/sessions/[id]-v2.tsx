@@ -19,6 +19,7 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
+import { isApiError } from '@/src/lib/errors';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
@@ -96,10 +97,20 @@ export default function SessionDetailScreenV2() {
 
     try {
       setIsJoining(true);
-      await sessionsAPIStoreV2.joinSession(session.id);
-      Alert.alert('Success', 'You have joined the session!');
-      await loadSession();
+      const joinedSession = await sessionsAPIStoreV2.joinSession(session.id);
+      setSession(joinedSession);
+      await launchRobloxGame(joinedSession.game.placeId, joinedSession.game.canonicalStartUrl);
     } catch (error) {
+      const alreadyJoined =
+        (isApiError(error) && error.code === 'SESSION_003') ||
+        (error instanceof Error && error.message.toLowerCase().includes('already joined'));
+
+      if (alreadyJoined) {
+        await loadSession();
+        await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
+        return;
+      }
+
       const message = getErrorMessage(error, 'Failed to join session');
       Alert.alert('Error', message);
     } finally {
@@ -128,8 +139,11 @@ export default function SessionDetailScreenV2() {
     });
   };
 
-  const hasJoined = user && session?.participants.some(
-    (p) => p.userId === user.id && p.state === 'joined'
+  const hasJoined = Boolean(
+    user && session && (
+      session.hostId === user.id ||
+      session.participants.some((p) => p.userId === user.id && p.state === 'joined')
+    )
   );
 
   if (isLoading) {

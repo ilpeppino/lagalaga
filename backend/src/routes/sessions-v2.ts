@@ -151,10 +151,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
   }>(
     '/api/sessions/:id',
     {
-      constraints: {
-        // Ensure this route doesn't match literal "mine" string
-        version: '1.0.0',
-      },
       schema: {
         params: {
           type: 'object',

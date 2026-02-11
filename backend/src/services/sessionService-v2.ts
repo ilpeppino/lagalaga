@@ -333,6 +333,74 @@ export class SessionServiceV2 {
   }
 
   /**
+   * List user's planned sessions (scheduled or active sessions they are hosting)
+   */
+  async listUserPlannedSessions(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<{
+    sessions: any[];
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  }> {
+    const supabase = getSupabase();
+
+    const { data, error, count } = await supabase
+      .from('sessions')
+      .select(
+        `
+        *,
+        games(*),
+        session_participants(count)
+      `,
+        { count: 'exact' }
+      )
+      .eq('host_id', userId)
+      .in('status', ['scheduled', 'active'])
+      .order('scheduled_start', { ascending: true, nullsFirst: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list user sessions: ${error.message}`);
+    }
+
+    const sessions = (data || []).map((row: any) => ({
+      id: row.id,
+      placeId: row.place_id ?? 0,
+      hostId: row.host_id,
+      title: row.title,
+      description: row.description,
+      visibility: row.visibility,
+      status: row.status,
+      maxParticipants: row.max_participants,
+      currentParticipants: row.session_participants?.[0]?.count || 0,
+      scheduledStart: row.scheduled_start,
+      game: {
+        placeId: row.games?.place_id ?? row.place_id ?? 0,
+        gameName: row.games?.game_name,
+        canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
+        canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
+      },
+      createdAt: row.created_at,
+    }));
+
+    return {
+      sessions,
+      pagination: {
+        total: count || 0,
+        limit,
+        offset,
+        hasMore: offset + limit < (count || 0),
+      },
+    };
+  }
+
+  /**
    * Get session details with participants
    */
   async getSessionById(sessionId: string): Promise<any | null> {

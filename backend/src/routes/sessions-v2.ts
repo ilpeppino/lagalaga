@@ -103,6 +103,44 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
   );
 
   /**
+   * GET /api/sessions/mine
+   * List current user's planned sessions
+   */
+  fastify.get<{
+    Querystring: {
+      limit?: number;
+      offset?: number;
+    };
+  }>(
+    '/api/sessions/mine',
+    {
+      preHandler: authenticate,
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number', default: 20 },
+            offset: { type: 'number', default: 0 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await sessionService.listUserPlannedSessions(
+        request.user.userId,
+        request.query.limit || 20,
+        request.query.offset || 0
+      );
+
+      return reply.send({
+        success: true,
+        data: result,
+        requestId: String(request.id),
+      });
+    }
+  );
+
+  /**
    * GET /api/sessions/:id
    * Get session details
    */

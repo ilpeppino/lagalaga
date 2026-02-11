@@ -6,7 +6,7 @@
  */
 
 import { Alert } from 'react-native';
-import { ApiError, NetworkError, isApiError, isNetworkError } from './errors';
+import { isApiError, isNetworkError } from './errors';
 import { logger } from './logger';
 
 interface PresentOptions {

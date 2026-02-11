@@ -2,13 +2,12 @@
  * Epic 4 Story 4.4: Session Detail UI
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  TouchableOpacity,
   Alert,
   Share,
   Image,
@@ -22,6 +21,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Button } from '@/components/ui/paper';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -37,26 +37,9 @@ export default function SessionDetailScreenV2() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
+  const hasShownCreatedPromptRef = useRef(false);
 
-  useEffect(() => {
-    loadSession();
-
-    // Show share prompt if just created
-    if (justCreated === 'true' && paramInviteLink) {
-      setTimeout(() => {
-        Alert.alert(
-          'Session Created!',
-          'Would you like to share the invite link?',
-          [
-            { text: 'Later', style: 'cancel' },
-            { text: 'Share', onPress: () => handleShare(paramInviteLink) },
-          ]
-        );
-      }, 500);
-    }
-  }, [id]);
-
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await sessionsAPIStoreV2.getSessionById(id);
@@ -66,9 +49,9 @@ export default function SessionDetailScreenV2() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [handleError, id]);
 
-  const handleShare = async (inviteLink?: string) => {
+  const handleShare = useCallback(async (inviteLink?: string) => {
     const link = inviteLink || session?.inviteLink;
     if (!link || !session) return;
 
@@ -80,7 +63,33 @@ export default function SessionDetailScreenV2() {
     } catch (error) {
       logger.warn('Failed to share', { error: (error as Error).message });
     }
-  };
+  }, [session]);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
+
+  useEffect(() => {
+    if (justCreated !== 'true' || !paramInviteLink || hasShownCreatedPromptRef.current) {
+      return;
+    }
+
+    hasShownCreatedPromptRef.current = true;
+    const timeoutId = setTimeout(() => {
+      Alert.alert(
+        'Session Created!',
+        'Would you like to share the invite link?',
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Share', onPress: () => handleShare(paramInviteLink) },
+        ]
+      );
+    }, 500);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [handleShare, justCreated, paramInviteLink]);
 
   const handleJoin = async () => {
     if (!session) return;
@@ -119,8 +128,6 @@ export default function SessionDetailScreenV2() {
     });
   };
 
-  const isHost = user && session && user.id === session.hostId;
-
   const hasJoined = user && session?.participants.some(
     (p) => p.userId === user.id && p.state === 'joined'
   );
@@ -145,11 +152,15 @@ export default function SessionDetailScreenV2() {
         <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.errorSubtitle}>
           This session may have been deleted
         </ThemedText>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-            Go Back
-          </ThemedText>
-        </TouchableOpacity>
+        <Button
+          title="Go Back"
+          variant="filled"
+          buttonColor="#007AFF"
+          style={styles.backButton}
+          contentStyle={styles.backButtonContent}
+          labelStyle={styles.backButtonLabel}
+          onPress={() => router.back()}
+        />
       </View>
     );
   }
@@ -295,44 +306,44 @@ export default function SessionDetailScreenV2() {
       {/* Action Buttons */}
       <View style={styles.actions}>
         {session.inviteLink && (
-          <TouchableOpacity
+          <Button
+            title="Share Invite"
+            variant="outlined"
+            textColor="#007AFF"
             style={[
               styles.shareButton,
               { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
             ]}
             onPress={() => handleShare()}
-          >
-            <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#007AFF">
-              Share Invite
-            </ThemedText>
-          </TouchableOpacity>
+          />
         )}
 
         {!hasJoined && !isFull && (
-          <TouchableOpacity
-            style={[styles.joinButton, isJoining && styles.buttonDisabled]}
+          <Button
+            title="Join Session"
+            variant="filled"
+            buttonColor="#34C759"
+            textColor="#fff"
+            style={styles.joinButton}
+            contentStyle={styles.actionButtonContent}
+            labelStyle={styles.actionButtonLabel}
             onPress={handleJoin}
+            loading={isJoining}
             disabled={isJoining}
-          >
-            {isJoining ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
-                Join Session
-              </ThemedText>
-            )}
-          </TouchableOpacity>
+          />
         )}
 
         {hasJoined && (
-          <TouchableOpacity
+          <Button
+            title="Launch Roblox"
+            variant="filled"
+            buttonColor="#007AFF"
+            textColor="#fff"
             style={styles.launchButton}
+            contentStyle={styles.actionButtonContent}
+            labelStyle={styles.actionButtonLabel}
             onPress={handleLaunchRoblox}
-          >
-            <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
-              Launch Roblox
-            </ThemedText>
-          </TouchableOpacity>
+          />
         )}
 
         {isFull && !hasJoined && (
@@ -386,10 +397,16 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   backButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
     borderRadius: 8,
+  },
+  backButtonContent: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+  },
+  backButtonLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   banner: {
     width: '100%',
@@ -485,24 +502,21 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   shareButton: {
-    padding: 16,
     borderRadius: 8,
-    alignItems: 'center',
   },
   joinButton: {
-    backgroundColor: '#34C759',
-    padding: 16,
     borderRadius: 8,
-    alignItems: 'center',
   },
   launchButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
     borderRadius: 8,
-    alignItems: 'center',
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  actionButtonContent: {
+    minHeight: 56,
+  },
+  actionButtonLabel: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
   },
   fullMessage: {
     backgroundColor: '#ffebee',

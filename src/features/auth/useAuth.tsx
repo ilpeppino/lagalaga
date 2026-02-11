@@ -1,9 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';

@@ -1,13 +1,9 @@
 import { useState } from "react";
-import {
-  View,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
+import { View, StyleSheet } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
+import { Button } from "@/components/ui/paper";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export default function SignInScreen() {
@@ -47,24 +43,17 @@ export default function SignInScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+          <Button
+            title="Sign in with Roblox"
+            variant="filled"
             onPress={handleRobloxSignIn}
+            loading={loading}
             disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <ThemedText
-                type="titleMedium"
-                lightColor="#fff"
-                darkColor="#fff"
-                style={styles.buttonText}
-              >
-                Sign in with Roblox
-              </ThemedText>
-            )}
-          </TouchableOpacity>
+            buttonColor="#007AFF"
+            style={styles.button}
+            contentStyle={styles.buttonContent}
+            labelStyle={styles.buttonLabel}
+          />
 
           <ThemedText
             type="bodyMedium"
@@ -72,7 +61,7 @@ export default function SignInScreen() {
             darkColor="#aaa"
             style={styles.hint}
           >
-            You'll be redirected to Roblox to authorize the app
+            You will be redirected to Roblox to authorize the app
           </ThemedText>
         </View>
       </View>
@@ -104,16 +93,15 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   button: {
-    backgroundColor: "#007AFF",
-    padding: 16,
     borderRadius: 8,
-    alignItems: "center",
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  buttonContent: {
+    minHeight: 52,
   },
-  buttonText: {
-    // Font styles now come from titleMedium token
+  buttonLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   hint: {
     textAlign: "center",

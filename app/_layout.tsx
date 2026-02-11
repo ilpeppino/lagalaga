@@ -6,11 +6,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import * as Linking from 'expo-linking';
+import { PaperProvider } from 'react-native-paper';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '@/src/features/auth/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
+import { DarkPaperTheme, LightPaperTheme } from '@/constants/paperTheme';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -22,6 +24,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const paperTheme = colorScheme === 'dark' ? DarkPaperTheme : LightPaperTheme;
   const [fontsLoaded, fontError] = useFonts({
     'BitcountSingle-Regular': require('@/assets/fonts/BitcountSingle-Regular.ttf'),
     'BitcountSingle-Bold': require('@/assets/fonts/BitcountSingle-Bold.ttf'),
@@ -58,16 +61,18 @@ export default function RootLayout() {
   return (
     <ErrorBoundary level="screen">
       <AuthProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="auth" options={{ headerShown: false }} />
-            <Stack.Screen name="sessions" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
+        <PaperProvider theme={paperTheme}>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="auth" options={{ headerShown: false }} />
+              <Stack.Screen name="sessions" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </PaperProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

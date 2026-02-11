@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,27 +14,16 @@ export default function RobloxCallback() {
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
   const colorScheme = useColorScheme();
   const { reloadUser } = useAuth();
+  const { code, state, error } = params;
 
-  useEffect(() => {
-    logger.info('RobloxCallback mounted', {
-      hasCode: !!params.code,
-      hasState: !!params.state,
-      hasError: !!params.error,
-      allParams: params
-    });
-    handleCallback();
-  }, []);
-
-  const handleCallback = async () => {
+  const handleCallback = useCallback(async () => {
     try {
       // Check for OAuth error
-      if (params.error) {
-        logger.error('OAuth error from provider', { oauthError: params.error });
+      if (error) {
+        logger.error('OAuth error from provider', { oauthError: error });
         router.replace('/auth/sign-in');
         return;
       }
-
-      const { code, state } = params;
 
       if (!code || !state) {
         logger.error('Missing code or state parameter in OAuth callback');
@@ -81,13 +70,23 @@ export default function RobloxCallback() {
 
       // Redirect to sessions
       router.replace('/sessions');
-    } catch (error) {
+    } catch (callbackError) {
       logger.error('Failed to complete OAuth flow', {
-        error: error instanceof Error ? error.message : String(error),
+        error: callbackError instanceof Error ? callbackError.message : String(callbackError),
       });
       router.replace('/auth/sign-in');
     }
-  };
+  }, [code, error, reloadUser, router, state]);
+
+  useEffect(() => {
+    logger.info('RobloxCallback mounted', {
+      hasCode: !!code,
+      hasState: !!state,
+      hasError: !!error,
+      allParams: params
+    });
+    handleCallback();
+  }, [code, error, handleCallback, params, state]);
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>

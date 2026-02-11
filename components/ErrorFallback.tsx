@@ -3,7 +3,8 @@
  * Shows error message, retry button, and optional navigation.
  */
 
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { Button } from '@/components/ui/paper';
 import { useRouter } from 'expo-router';
 
 interface ErrorFallbackProps {
@@ -35,18 +36,25 @@ export function ErrorFallback({
 
       <View style={styles.actions}>
         {onRetry && (
-          <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-            <Text style={styles.retryButtonText}>Try Again</Text>
-          </TouchableOpacity>
+          <Button
+            title="Try Again"
+            variant="filled"
+            onPress={onRetry}
+            style={styles.retryButton}
+            contentStyle={styles.retryButtonContent}
+            labelStyle={styles.retryButtonText}
+          />
         )}
 
         {showGoHome && (
-          <TouchableOpacity
-            style={styles.homeButton}
+          <Button
+            title="Go Home"
+            variant="text"
             onPress={() => router.replace('/')}
-          >
-            <Text style={styles.homeButtonText}>Go Home</Text>
-          </TouchableOpacity>
+            style={styles.homeButton}
+            labelStyle={styles.homeButtonText}
+            textColor="#007AFF"
+          />
         )}
       </View>
     </View>
@@ -84,10 +92,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 8,
+    alignSelf: 'stretch',
+    minWidth: 180,
+  },
+  retryButtonContent: {
+    paddingHorizontal: 20,
+    minHeight: 48,
   },
   retryButtonText: {
     color: '#fff',
@@ -95,8 +105,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   homeButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    alignSelf: 'center',
   },
   homeButtonText: {
     color: '#007AFF',

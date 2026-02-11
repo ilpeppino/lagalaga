@@ -105,7 +105,11 @@ Use this when you want the installed app to open directly into your app (not Exp
 
 ```sh
 npm install
-APP_VARIANT=prod npx expo run:android --variant release
+EXPO_PUBLIC_API_URL=https://lagalaga-api.onrender.com \
+EXPO_PUBLIC_ROBLOX_CLIENT_ID=<YOUR_ROBLOX_CLIENT_ID> \
+EXPO_PUBLIC_ROBLOX_REDIRECT_URI=lagalaga://auth/roblox \
+APP_VARIANT=prod \
+npx expo run:android --variant release
 adb install -r android/app/build/outputs/apk/release/app-release.apk
 ```
 

@@ -4,12 +4,11 @@
  * Handles deep links: lagalaga://invite/:code
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
   ActivityIndicator,
-  TouchableOpacity,
   Alert,
   Image,
 } from 'react-native';
@@ -22,6 +21,7 @@ import { logger } from '@/src/lib/logger';
 import { isApiError } from '@/src/lib/errors';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Button } from '@/components/ui/paper';
 
 type InviteState = 'loading' | 'preview' | 'joining' | 'error' | 'login_required';
 
@@ -29,7 +29,7 @@ export default function InviteScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { handleError, getErrorMessage } = useErrorHandler();
+  const { getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
 
   const [state, setState] = useState<InviteState>('loading');
@@ -37,36 +37,7 @@ export default function InviteScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInvite();
-  }, [code]);
-
-  const loadInvite = async () => {
-    try {
-      setState('loading');
-      setError(null);
-
-      const response = await sessionsAPIStoreV2.getSessionByInviteCode(code);
-      setSession(response.session);
-      setSessionId(response.sessionId);
-
-      if (user) {
-        await handleAutoJoin(response.sessionId);
-      } else {
-        setState('login_required');
-      }
-    } catch (err) {
-      const message = getErrorMessage(err, 'Invalid invite code');
-      logger.error('Failed to load invite', {
-        code,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      setError(message);
-      setState('error');
-    }
-  };
-
-  const handleAutoJoin = async (id: string) => {
+  const handleAutoJoin = useCallback(async (id: string) => {
     try {
       setState('joining');
       await sessionsAPIStoreV2.joinSession(id, code);
@@ -93,7 +64,36 @@ export default function InviteScreen() {
         setState('preview');
       }
     }
-  };
+  }, [code, getErrorMessage, router]);
+
+  const loadInvite = useCallback(async () => {
+    try {
+      setState('loading');
+      setError(null);
+
+      const response = await sessionsAPIStoreV2.getSessionByInviteCode(code);
+      setSession(response.session);
+      setSessionId(response.sessionId);
+
+      if (user) {
+        await handleAutoJoin(response.sessionId);
+      } else {
+        setState('login_required');
+      }
+    } catch (err) {
+      const message = getErrorMessage(err, 'Invalid invite code');
+      logger.error('Failed to load invite', {
+        code,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      setError(message);
+      setState('error');
+    }
+  }, [code, getErrorMessage, handleAutoJoin, user]);
+
+  useEffect(() => {
+    loadInvite();
+  }, [loadInvite]);
 
   const handleManualJoin = async () => {
     if (!sessionId) return;
@@ -141,11 +141,15 @@ export default function InviteScreen() {
         <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.errorMessage}>
           {error || 'This invite link is not valid or has expired'}
         </ThemedText>
-        <TouchableOpacity style={styles.button} onPress={() => router.back()}>
-          <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-            Go Back
-          </ThemedText>
-        </TouchableOpacity>
+        <Button
+          title="Go Back"
+          variant="filled"
+          buttonColor="#007AFF"
+          style={styles.button}
+          contentStyle={styles.buttonContent}
+          labelStyle={styles.buttonLabel}
+          onPress={() => router.back()}
+        />
       </View>
     );
   }
@@ -188,7 +192,7 @@ export default function InviteScreen() {
 
           <View style={styles.info}>
             <ThemedText type="labelLarge" lightColor="#007AFF" darkColor="#0a84ff" style={styles.inviteTitle}>
-              You've been invited!
+              You have been invited!
             </ThemedText>
 
             <ThemedText type="headlineSmall" style={styles.sessionTitle} numberOfLines={2}>
@@ -229,24 +233,25 @@ export default function InviteScreen() {
                 Sign in to join this session and start playing!
               </ThemedText>
 
-              <TouchableOpacity
+              <Button
+                title="Sign In to Join"
+                variant="filled"
+                buttonColor="#007AFF"
+                textColor="#fff"
                 style={styles.primaryButton}
+                contentStyle={styles.primaryButtonContent}
+                labelStyle={styles.primaryButtonLabel}
                 onPress={handleLogin}
-              >
-                <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
-                  Sign In to Join
-                </ThemedText>
-              </TouchableOpacity>
+              />
 
               {sessionId && (
-                <TouchableOpacity
+                <Button
+                  title="View Session"
+                  variant="outlined"
+                  textColor="#007AFF"
                   style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                   onPress={() => router.push(`/sessions/${sessionId}`)}
-                >
-                  <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
-                    View Session
-                  </ThemedText>
-                </TouchableOpacity>
+                />
               )}
             </>
           )}
@@ -255,24 +260,25 @@ export default function InviteScreen() {
             <>
               {!isFull ? (
                 <>
-                  <TouchableOpacity
+                  <Button
+                    title="Join Session"
+                    variant="filled"
+                    buttonColor="#007AFF"
+                    textColor="#fff"
                     style={styles.primaryButton}
+                    contentStyle={styles.primaryButtonContent}
+                    labelStyle={styles.primaryButtonLabel}
                     onPress={handleManualJoin}
-                  >
-                    <ThemedText type="titleLarge" lightColor="#fff" darkColor="#fff">
-                      Join Session
-                    </ThemedText>
-                  </TouchableOpacity>
+                  />
 
                   {sessionId && (
-                    <TouchableOpacity
+                    <Button
+                      title="View Details"
+                      variant="outlined"
+                      textColor="#007AFF"
                       style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                       onPress={() => router.push(`/sessions/${sessionId}`)}
-                    >
-                      <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
-                        View Details
-                      </ThemedText>
-                    </TouchableOpacity>
+                    />
                   )}
                 </>
               ) : (
@@ -284,14 +290,13 @@ export default function InviteScreen() {
                   </View>
 
                   {sessionId && (
-                    <TouchableOpacity
+                    <Button
+                      title="View Session Anyway"
+                      variant="outlined"
+                      textColor="#007AFF"
                       style={[styles.secondaryButton, { backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#f0f0f0' }]}
                       onPress={() => router.push(`/sessions/${sessionId}`)}
-                    >
-                      <ThemedText type="titleMedium" lightColor="#007AFF" darkColor="#0a84ff">
-                        View Session Anyway
-                      </ThemedText>
-                    </TouchableOpacity>
+                    />
                   )}
                 </>
               )}
@@ -394,22 +399,30 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   primaryButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+  },
+  primaryButtonContent: {
+    minHeight: 56,
+  },
+  primaryButtonLabel: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
   },
   secondaryButton: {
-    padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
   },
   button: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
+  },
+  buttonContent: {
+    minHeight: 52,
+    paddingHorizontal: 20,
+  },
+  buttonLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   fullMessage: {
     padding: 16,

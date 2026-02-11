@@ -5,9 +5,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View,
-  TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
   Image,
   ScrollView,
@@ -18,6 +16,8 @@ import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Card } from '@/components/ui/paper';
+import { ActivityIndicator, FAB } from 'react-native-paper';
 
 export default function SessionsListScreenV2() {
   const router = useRouter();
@@ -27,11 +27,7 @@ export default function SessionsListScreenV2() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // Pagination state
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
 
   // Planned sessions state
@@ -42,19 +38,7 @@ export default function SessionsListScreenV2() {
 
   const LIMIT = 20;
 
-  useEffect(() => {
-    loadSessions();
-    loadPlannedSessions();
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadSessions(true);
-      loadPlannedSessions();
-    }, [])
-  );
-
-  const loadSessions = async (refresh = false) => {
+  const loadSessions = useCallback(async (refresh = false) => {
     try {
       if (refresh) {
         setIsRefreshing(true);
@@ -62,23 +46,13 @@ export default function SessionsListScreenV2() {
         setIsLoading(true);
       }
 
-      const currentOffset = refresh ? 0 : offset;
-
       const response = await sessionsAPIStoreV2.listSessions({
         status: 'active',
         limit: LIMIT,
-        offset: currentOffset,
+        offset: 0,
       });
 
-      if (refresh) {
-        setSessions(response.sessions);
-        setOffset(response.sessions.length);
-      } else {
-        setSessions((prev) => (currentOffset === 0 ? response.sessions : [...prev, ...response.sessions]));
-        setOffset(currentOffset + response.sessions.length);
-      }
-
-      setHasMore(response.pagination.hasMore);
+      setSessions(response.sessions);
       setTotal(response.pagination.total);
     } catch (error) {
       logger.error('Failed to load sessions', {
@@ -87,11 +61,10 @@ export default function SessionsListScreenV2() {
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
-      setIsLoadingMore(false);
     }
-  };
+  }, [LIMIT, sessions.length]);
 
-  const loadPlannedSessions = async () => {
+  const loadPlannedSessions = useCallback(async () => {
     try {
       setPlannedLoading(true);
       setPlannedError(null);
@@ -110,19 +83,24 @@ export default function SessionsListScreenV2() {
     } finally {
       setPlannedLoading(false);
     }
-  };
+  }, [LIMIT]);
+
+  useEffect(() => {
+    loadSessions();
+    loadPlannedSessions();
+  }, [loadPlannedSessions, loadSessions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSessions(true);
+      loadPlannedSessions();
+    }, [loadPlannedSessions, loadSessions])
+  );
 
   const handleRefresh = useCallback(() => {
     loadSessions(true);
     loadPlannedSessions();
-  }, []);
-
-  const handleLoadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore && !isRefreshing) {
-      setIsLoadingMore(true);
-      loadSessions();
-    }
-  }, [isLoadingMore, hasMore, isRefreshing, offset]);
+  }, [loadPlannedSessions, loadSessions]);
 
   const formatRelativeTime = (isoString: string): string => {
     const date = new Date(isoString);
@@ -150,133 +128,127 @@ export default function SessionsListScreenV2() {
     const isFull = item.currentParticipants >= item.maxParticipants;
 
     return (
-      <TouchableOpacity
+      <Card
         style={styles.sessionCard}
+        mode="elevated"
         onPress={() => router.push(`/sessions/${item.id}`)}
       >
-        {item.game.thumbnailUrl ? (
-          <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
-        ) : (
-          <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
-            <ThemedText
-              type="displaySmall"
-              lightColor="#999"
-              darkColor="#666"
-              style={styles.thumbnailPlaceholderText}
-            >
-              {item.game.gameName?.[0] || '?'}
-            </ThemedText>
-          </View>
-        )}
+        <View style={styles.sessionCardContent}>
+          {item.game.thumbnailUrl ? (
+            <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
+          ) : (
+            <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+              <ThemedText
+                type="displaySmall"
+                lightColor="#999"
+                darkColor="#666"
+                style={styles.thumbnailPlaceholderText}
+              >
+                {item.game.gameName?.[0] || '?'}
+              </ThemedText>
+            </View>
+          )}
 
-        <View style={styles.sessionInfo}>
-          <View style={styles.titleRow}>
+          <View style={styles.sessionInfo}>
+            <View style={styles.titleRow}>
+              <ThemedText
+                type="titleMedium"
+                lightColor="#333"
+                darkColor="#fff"
+                numberOfLines={1}
+                style={styles.title}
+              >
+                {item.title || item.game.gameName || 'Roblox Session'}
+              </ThemedText>
+              {isPlanned && (
+                <View style={styles.hostBadge}>
+                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                    Host
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+
             <ThemedText
-              type="titleMedium"
-              lightColor="#333"
-              darkColor="#fff"
+              type="bodyMedium"
+              lightColor="#666"
+              darkColor="#aaa"
               numberOfLines={1}
-              style={styles.title}
+              style={styles.gameName}
             >
-              {item.title || item.game.gameName || 'Roblox Session'}
+              {item.game.gameName || 'Roblox Game'}
             </ThemedText>
+
+            <View style={styles.participants}>
+              <ThemedText
+                type="labelMedium"
+                lightColor={isFull ? "#ff3b30" : "#007AFF"}
+                darkColor={isFull ? "#ff453a" : "#0a84ff"}
+                style={styles.participantText}
+              >
+                {item.currentParticipants}/{item.maxParticipants} players
+              </ThemedText>
+              {isFull && (
+                <View style={styles.fullBadge}>
+                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                    FULL
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+
+            {item.scheduledStart && (
+              <ThemedText
+                type="bodySmall"
+                lightColor="#888"
+                darkColor="#999"
+                style={styles.timeText}
+              >
+                {formatRelativeTime(item.scheduledStart)}
+              </ThemedText>
+            )}
+
             {isPlanned && (
-              <View style={styles.hostBadge}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  Host
+              <View style={styles.metadataRow}>
+                <ThemedText
+                  type="labelSmall"
+                  lightColor="#666"
+                  darkColor="#aaa"
+                >
+                  {item.visibility === 'public' ? 'Public' : item.visibility === 'friends' ? 'Friends Only' : 'Invite Only'}
+                </ThemedText>
+                <ThemedText
+                  type="labelSmall"
+                  lightColor="#666"
+                  darkColor="#aaa"
+                  style={styles.metadataSeparator}
+                >
+                  •
+                </ThemedText>
+                <ThemedText
+                  type="labelSmall"
+                  lightColor="#666"
+                  darkColor="#aaa"
+                >
+                  {item.status === 'scheduled' ? 'Scheduled' : 'Active'}
+                </ThemedText>
+              </View>
+            )}
+
+            {!isPlanned && item.visibility !== 'public' && (
+              <View style={styles.visibilityBadge}>
+                <ThemedText
+                  type="labelSmall"
+                  lightColor="#666"
+                  darkColor="#aaa"
+                >
+                  {item.visibility === 'friends' ? 'Friends' : 'Invite Only'}
                 </ThemedText>
               </View>
             )}
           </View>
-
-          <ThemedText
-            type="bodyMedium"
-            lightColor="#666"
-            darkColor="#aaa"
-            numberOfLines={1}
-            style={styles.gameName}
-          >
-            {item.game.gameName || 'Roblox Game'}
-          </ThemedText>
-
-          <View style={styles.participants}>
-            <ThemedText
-              type="labelMedium"
-              lightColor={isFull ? "#ff3b30" : "#007AFF"}
-              darkColor={isFull ? "#ff453a" : "#0a84ff"}
-              style={styles.participantText}
-            >
-              {item.currentParticipants}/{item.maxParticipants} players
-            </ThemedText>
-            {isFull && (
-              <View style={styles.fullBadge}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  FULL
-                </ThemedText>
-              </View>
-            )}
-          </View>
-
-          {item.scheduledStart && (
-            <ThemedText
-              type="bodySmall"
-              lightColor="#888"
-              darkColor="#999"
-              style={styles.timeText}
-            >
-              {formatRelativeTime(item.scheduledStart)}
-            </ThemedText>
-          )}
-
-          {isPlanned && (
-            <View style={styles.metadataRow}>
-              <ThemedText
-                type="labelSmall"
-                lightColor="#666"
-                darkColor="#aaa"
-              >
-                {item.visibility === 'public' ? 'Public' : item.visibility === 'friends' ? 'Friends Only' : 'Invite Only'}
-              </ThemedText>
-              <ThemedText
-                type="labelSmall"
-                lightColor="#666"
-                darkColor="#aaa"
-                style={styles.metadataSeparator}
-              >
-                •
-              </ThemedText>
-              <ThemedText
-                type="labelSmall"
-                lightColor="#666"
-                darkColor="#aaa"
-              >
-                {item.status === 'scheduled' ? 'Scheduled' : 'Active'}
-              </ThemedText>
-            </View>
-          )}
-
-          {!isPlanned && item.visibility !== 'public' && (
-            <View style={styles.visibilityBadge}>
-              <ThemedText
-                type="labelSmall"
-                lightColor="#666"
-                darkColor="#aaa"
-              >
-                {item.visibility === 'friends' ? 'Friends' : 'Invite Only'}
-              </ThemedText>
-            </View>
-          )}
         </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderFooter = () => {
-    if (!isLoadingMore) return null;
-    return (
-      <View style={styles.footer}>
-        <ActivityIndicator size="small" color="#007AFF" />
-      </View>
+      </Card>
     );
   };
 
@@ -387,18 +359,14 @@ export default function SessionsListScreenV2() {
             {renderSession({ item: session, isPlanned: false })}
           </View>
         ))}
-
-        {renderFooter()}
       </ScrollView>
 
-      <TouchableOpacity
+      <FAB
+        icon="plus"
         style={styles.fab}
+        color="#fff"
         onPress={() => router.push('/sessions/create')}
-      >
-        <ThemedText type="displaySmall" lightColor="#fff" darkColor="#fff" style={styles.fabText}>
-          +
-        </ThemedText>
-      </TouchableOpacity>
+      />
     </View>
   );
 }
@@ -449,8 +417,6 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   sessionCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
@@ -459,6 +425,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  sessionCardContent: {
+    flexDirection: 'row',
   },
   thumbnail: {
     width: 100,
@@ -537,19 +506,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 8,
-  },
-  fabText: {
-    // Font from displaySmall token
   },
 });

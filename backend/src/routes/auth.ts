@@ -182,7 +182,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   /**
    * GET /auth/me
-   * Get current user info
+   * Get current user info with avatar
    */
   fastify.get('/me', {
     preHandler: authenticate,
@@ -192,14 +192,22 @@ export async function authRoutes(fastify: FastifyInstance) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
     }
 
+    // Fetch avatar with caching (non-blocking on failure)
+    let avatarHeadshotUrl: string | null = null;
+    try {
+      avatarHeadshotUrl = await userService.getAvatarHeadshotUrl(
+        user.id,
+        user.robloxUserId
+      );
+    } catch (error) {
+      // Log but don't fail the request if avatar fetch fails
+      fastify.log.warn(`Failed to fetch avatar for user ${user.id}:`, error);
+    }
+
     return {
-      user: {
-        id: user.id,
-        robloxUserId: user.robloxUserId,
-        robloxUsername: user.robloxUsername,
-        robloxDisplayName: user.robloxDisplayName,
-        robloxProfileUrl: user.robloxProfileUrl,
-      },
+      id: user.id,
+      robloxUserId: user.robloxUserId,
+      avatarHeadshotUrl,
     };
   });
 }

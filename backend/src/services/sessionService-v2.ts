@@ -1,6 +1,8 @@
 import { getSupabase } from '../config/supabase.js';
 import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/errors.js';
 import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
+import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
+import { logger } from '../lib/logger.js';
 
 export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
@@ -34,6 +36,7 @@ export interface SessionWithInvite {
       canonicalWebUrl: string;
       canonicalStartUrl: string;
       gameName?: string;
+      thumbnailUrl?: string;
     };
     createdAt: string;
   };
@@ -55,9 +58,11 @@ function generateInviteCode(): string {
 
 export class SessionServiceV2 {
   private normalizer: RobloxLinkNormalizer;
+  private enrichmentService: RobloxEnrichmentService;
 
   constructor() {
     this.normalizer = new RobloxLinkNormalizer();
+    this.enrichmentService = new RobloxEnrichmentService();
   }
 
   private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
@@ -224,6 +229,18 @@ export class SessionServiceV2 {
 
     const canonicalUrl = normalized?.canonicalWebUrl ?? share?.canonicalUrl ?? input.robloxUrl;
 
+    // Enrich game data in background (non-blocking)
+    if (placeIdForGame && placeIdForGame > 0) {
+      this.enrichmentService
+        .enrichGame(placeIdForGame)
+        .catch((err) => {
+          logger.warn(
+            { placeId: placeIdForGame, sessionId: sessionData.id, error: err.message },
+            'Game enrichment failed during session creation'
+          );
+        });
+    }
+
     return {
       session: {
         id: sessionData.id,
@@ -241,6 +258,7 @@ export class SessionServiceV2 {
           canonicalWebUrl: canonicalUrl,
           canonicalStartUrl: canonicalUrl,
           gameName: gameData?.game_name,
+          thumbnailUrl: gameData?.thumbnail_url,
         },
         createdAt: sessionData.created_at,
       },
@@ -315,6 +333,7 @@ export class SessionServiceV2 {
       game: {
         placeId: row.games?.place_id ?? row.place_id ?? 0,
         gameName: row.games?.game_name,
+        thumbnailUrl: row.games?.thumbnail_url,
         canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
         canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
       },
@@ -383,6 +402,7 @@ export class SessionServiceV2 {
       game: {
         placeId: row.games?.place_id ?? row.place_id ?? 0,
         gameName: row.games?.game_name,
+        thumbnailUrl: row.games?.thumbnail_url,
         canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
         canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
       },
@@ -439,6 +459,7 @@ export class SessionServiceV2 {
       game: {
         placeId: sessionData.games?.place_id ?? sessionData.place_id ?? 0,
         gameName: sessionData.games?.game_name,
+        thumbnailUrl: sessionData.games?.thumbnail_url,
         canonicalWebUrl: sessionData.games?.canonical_web_url ?? sessionData.original_input_url,
         canonicalStartUrl: sessionData.games?.canonical_start_url ?? sessionData.original_input_url,
       },

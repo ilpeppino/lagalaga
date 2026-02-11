@@ -158,7 +158,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
             },
           },
@@ -204,7 +203,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
             },
           },

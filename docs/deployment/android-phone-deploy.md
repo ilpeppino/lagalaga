@@ -177,6 +177,12 @@ Expected behavior:
   - Confirm Render service is running and `/health` responds.
   - If you used EAS, confirm EAS env vars are set for the build profile; `.env` is not uploaded by default.
 
+- App crashes with `Missing required env var EXPO_PUBLIC_API_URL`
+  - Ensure `EXPO_PUBLIC_API_URL` is set before building (local shell env or EAS profile env).
+  - In app code, access Expo public env vars with static keys only (for example `process.env.EXPO_PUBLIC_API_URL`).
+  - Do not use dynamic env access like `process.env[name]` for Expo-inlined vars.
+  - Rebuild and reinstall the APK after fixing env access.
+
 - OAuth returns to sign-in or fails callback
   - Verify both Render and Roblox use exactly `lagalaga://auth/roblox`.
   - Confirm frontend `.env` uses the same redirect URI.

@@ -1,5 +1,16 @@
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
+function requireEnv(name: string, value: string | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) {
+    throw new Error(
+      `Missing required env var ${name}. Configure EAS env vars for the active build profile.`
+    );
+  }
+  return normalized;
+}
+
+function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
+  // Expo inlines only static process.env access (not dynamic process.env[name]).
+  const value = process.env.EXPO_PUBLIC_API_URL;
   if (!value) {
     throw new Error(
       `Missing required env var ${name}. Configure EAS env vars for the active build profile.`
@@ -18,4 +29,6 @@ function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
-export const API_URL = normalizeBaseUrl(requireEnv('EXPO_PUBLIC_API_URL'));
+export const API_URL = normalizeBaseUrl(
+  requireEnv('EXPO_PUBLIC_API_URL', readPublicEnv('EXPO_PUBLIC_API_URL'))
+);

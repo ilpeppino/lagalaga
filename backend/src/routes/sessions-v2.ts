@@ -103,7 +103,7 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
   );
 
   /**
-   * GET /api/sessions/mine
+   * GET /api/user/sessions
    * List current user's planned sessions
    */
   fastify.get<{
@@ -112,7 +112,7 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       offset?: number;
     };
   }>(
-    '/api/sessions/mine',
+    '/api/user/sessions',
     {
       preHandler: authenticate,
       schema: {
@@ -143,23 +143,39 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
   /**
    * GET /api/sessions/:id
    * Get session details
+   *
+   * Note: User-specific sessions are at /api/user/sessions
    */
   fastify.get<{
     Params: { id: string };
   }>(
     '/api/sessions/:id',
     {
+      constraints: {
+        // Ensure this route doesn't match literal "mine" string
+        version: '1.0.0',
+      },
       schema: {
         params: {
           type: 'object',
           required: ['id'],
           properties: {
-            id: { type: 'string' },
+            id: {
+              type: 'string',
+              format: 'uuid',
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            },
           },
         },
       },
     },
     async (request, reply) => {
+      // Explicit guard against non-UUID values (shouldn't happen with schema validation)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(request.params.id)) {
+        throw new ValidationError(`Invalid session ID format: ${request.params.id}`);
+      }
+
       const session = await sessionService.getSessionById(request.params.id);
 
       if (!session) {
@@ -190,7 +206,11 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
           type: 'object',
           required: ['id'],
           properties: {
-            id: { type: 'string' },
+            id: {
+              type: 'string',
+              format: 'uuid',
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            },
           },
         },
         body: {

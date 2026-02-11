@@ -197,7 +197,7 @@ class SessionsAPIStoreV2 {
     if (params.offset) queryParams.append('offset', params.offset.toString());
 
     const response = await fetchWithAuth<{ success: boolean; data: ListSessionsResponse }>(
-      `/api/sessions/mine?${queryParams.toString()}`
+      `/api/user/sessions?${queryParams.toString()}`
     );
 
     if (!response.success) {

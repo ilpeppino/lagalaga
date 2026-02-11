@@ -358,7 +358,7 @@ export const sessionsStore = USE_BACKEND
 **Planned Sessions**:
 - Shown in user's profile or dashboard (future feature)
 - Fetched via `listMyPlannedSessions({ limit: 20 })`
-- Endpoint: `GET /api/sessions/mine`
+- Endpoint: `GET /api/user/sessions`
 - Backend filters to sessions where user is host or participant
 - Implementation: `backend/src/services/sessionService-v2.ts:listUserPlannedSessions()`
 
@@ -454,7 +454,7 @@ fastify.register(robloxRoutes)
 
 - `POST /api/sessions` - Create session (authenticated)
 - `GET /api/sessions` - List sessions (public, with filters)
-- `GET /api/sessions/mine` - List user's planned sessions (authenticated)
+- `GET /api/user/sessions` - List user's planned sessions (authenticated)
 - `GET /api/sessions/:id` - Get session details (public)
 - `POST /api/sessions/:id/join` - Join session (authenticated)
 - `GET /api/invites/:code` - Get session by invite code (public)

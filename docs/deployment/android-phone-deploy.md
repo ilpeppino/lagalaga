@@ -11,7 +11,9 @@ This guide explains how to configure the app and deploy it to a physical Android
 ## Prerequisites
 
 - Android phone with internet access.
-- Expo/EAS account.
+- Node.js + npm installed.
+- Android Studio (or Android SDK + platform tools) installed.
+- `adb` available in your shell.
 - Render backend already deployed.
 - Roblox OAuth app configured for this project.
 
@@ -60,7 +62,54 @@ In Roblox Creator Dashboard, make sure allowed redirect URIs include:
 
 If this value does not match exactly, sign-in callback will fail.
 
-## 5. Build Android App (EAS Internal Distribution)
+## 5. Deploy To Phone (Without EAS)
+
+You can install directly from your local machine without consuming EAS build quota.
+
+### Option A: Local Dev Build (recommended)
+
+Use this when you want fast iteration and repeated installs during testing.
+
+1. Enable Developer options + USB debugging on your Android phone.
+2. Connect phone by USB and verify:
+
+```sh
+adb devices
+```
+
+3. Build and install from repo root:
+
+```sh
+npm install
+npx expo run:android --device
+```
+
+4. Start Metro for dev client:
+
+```sh
+npx expo start --dev-client -c
+```
+
+Notes:
+- This installs a debug/dev build directly on the phone.
+- The app still uses your public Render API URL from `.env`.
+
+### Option B: Local APK Build + Manual Install
+
+Use this when you want an APK file without EAS.
+
+```sh
+npm install
+cd android
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Then open the app on the phone.
+
+## 6. Optional: EAS Internal Distribution
+
+If you prefer cloud builds, EAS remains available:
 
 From repo root:
 
@@ -73,14 +122,14 @@ npx eas build --platform android --profile preview
 Why `preview`:
 - The repo `eas.json` has `preview.distribution=internal`, which is suitable for device testing outside Play Store.
 
-## 6. Install On Android Phone
+## 7. Install On Android Phone (EAS path only)
 
 1. Open the EAS build link on your Android phone.
 2. Download the generated APK.
 3. Allow "Install unknown apps" if Android prompts.
 4. Install and open the app.
 
-## 7. Test On Wi-Fi And Mobile Data
+## 8. Test On Wi-Fi And Mobile Data
 
 1. Connect phone to Wi-Fi.
 2. Open app and test:
@@ -92,11 +141,12 @@ Why `preview`:
 Expected behavior:
 - App works on both networks because it calls the public Render URL.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 - `Network request failed`
   - Check `.env` `EXPO_PUBLIC_API_URL` points to valid Render HTTPS URL.
   - Confirm Render service is running and `/health` responds.
+  - If you used EAS, confirm EAS env vars are set for the build profile; `.env` is not uploaded by default.
 
 - OAuth returns to sign-in or fails callback
   - Verify both Render and Roblox use exactly `lagalaga://auth/roblox`.
@@ -104,3 +154,4 @@ Expected behavior:
 
 - Build installs but app is old
   - Rebuild with EAS and reinstall the newest APK from the latest build link.
+  - For local build, run `npx expo run:android --device` again or reinstall latest debug APK via `adb install -r`.

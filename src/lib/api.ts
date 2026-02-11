@@ -259,7 +259,7 @@ class ApiClient {
       });
     },
 
-    me: async (): Promise<{ user: AuthResponse['user'] }> => {
+    me: async (): Promise<{ id: string; robloxUserId: string; avatarHeadshotUrl: string | null }> => {
       return this.request('/auth/me', {
         method: 'GET',
       });

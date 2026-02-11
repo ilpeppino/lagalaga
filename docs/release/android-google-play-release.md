@@ -1,17 +1,20 @@
 # Android Release And Google Play Submission
 
-This guide explains how to configure the app for production, build the Android release artifact, and publish it through Google Play Console.
+This guide explains how to configure the app for production, build a signed Android App Bundle (`.aab`) locally, and publish it through Google Play Console.
 
 ## Scope
 
 - Platform: Android
-- Build system: Expo + EAS Build
+- Build system: Expo + native Android Gradle (no EAS)
 - Distribution: Google Play Store (Internal testing, then Production)
 
 ## 1. Prerequisites
 
 - Google Play Console account (active).
-- Expo account with access to this project.
+- Local Android release toolchain:
+  - JDK 17
+  - Android SDK
+  - `android/` folder present in this repo (already true here)
 - Backend deployed (Render) and reachable over HTTPS.
 - Roblox OAuth app configured for production redirect.
 
@@ -59,24 +62,106 @@ Allowed redirect URIs must include:
 
 The value must match exactly across frontend, backend, and Roblox dashboard.
 
-## 5. Build Release Artifact (AAB) With EAS
+## 5. Create Android Upload Keystore (One-Time)
 
-Google Play requires an Android App Bundle (`.aab`) for store releases.
+Run once (keep this file safe and backed up):
+
+```sh
+keytool -genkeypair -v \
+  -storetype PKCS12 \
+  -keystore android/app/lagalaga-upload-key.keystore \
+  -alias lagalaga-upload \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000
+```
+
+Store these values securely:
+- keystore path
+- keystore password
+- key alias
+- key password
+
+Losing this key can block future app updates in Play.
+
+## 6. Configure Gradle Signing For Release
+
+Add signing secrets to `~/.gradle/gradle.properties` (machine-local, do not commit):
+
+```properties
+LAGALAGA_UPLOAD_STORE_FILE=lagalaga-upload-key.keystore
+LAGALAGA_UPLOAD_KEY_ALIAS=lagalaga-upload
+LAGALAGA_UPLOAD_STORE_PASSWORD=<STORE_PASSWORD>
+LAGALAGA_UPLOAD_KEY_PASSWORD=<KEY_PASSWORD>
+```
+
+Then update `android/app/build.gradle` release signing config:
+
+```groovy
+signingConfigs {
+    debug {
+        storeFile file('debug.keystore')
+        storePassword 'android'
+        keyAlias 'androiddebugkey'
+        keyPassword 'android'
+    }
+    release {
+        if (project.hasProperty('LAGALAGA_UPLOAD_STORE_FILE')) {
+            storeFile file(LAGALAGA_UPLOAD_STORE_FILE)
+            storePassword LAGALAGA_UPLOAD_STORE_PASSWORD
+            keyAlias LAGALAGA_UPLOAD_KEY_ALIAS
+            keyPassword LAGALAGA_UPLOAD_KEY_PASSWORD
+        }
+    }
+}
+
+buildTypes {
+    debug {
+        signingConfig signingConfigs.debug
+    }
+    release {
+        signingConfig signingConfigs.release
+        // existing shrink/proguard settings...
+    }
+}
+```
+
+Current repo note: `android/app/build.gradle` is still using `signingConfigs.debug` for `release`; change that before publishing.
+
+## 7. Bump Android Version For Each Release
+
+Before each Play upload, increment in `android/app/build.gradle`:
+
+- `versionCode` (must strictly increase each release)
+- `versionName` (user-facing, e.g. `1.0.1`)
+
+Example:
+
+```groovy
+defaultConfig {
+    // ...
+    versionCode 2
+    versionName "1.0.1"
+}
+```
+
+## 8. Build Signed AAB Locally (No EAS)
 
 From repo root:
 
 ```sh
 npm install
-npx eas login
-npx eas build --platform android --profile production
+cd android
+./gradlew clean bundleRelease
 ```
 
-Notes:
-- `eas.json` already contains a `production` profile.
-- EAS will manage signing credentials if you allow it (recommended for most teams).
-- `autoIncrement` is enabled for production in this project, so versionCode is incremented remotely.
+Generated file:
 
-## 6. Create/Configure App In Play Console
+- `android/app/build/outputs/bundle/release/app-release.aab`
+
+If signing properties are missing, Gradle will fail the release task; fix signing config first.
+
+## 9. Create/Configure App In Play Console
 
 1. Create a new app in Google Play Console (if not already created).
 2. Complete required store information:
@@ -92,19 +177,19 @@ Notes:
 
 Without these fields, release submission may be blocked.
 
-## 7. Upload To Internal Testing First (Recommended)
+## 10. Upload To Internal Testing First (Recommended)
 
 1. In Play Console, open your app.
 2. Go to `Testing` -> `Internal testing`.
 3. Create a new release.
-4. Upload the generated `.aab` from EAS.
+4. Upload `android/app/build/outputs/bundle/release/app-release.aab`.
 5. Add release notes.
 6. Save and roll out to internal testers.
 
 Why first:
 - Validates signing, install, auth, and backend behavior on real devices before production.
 
-## 8. Validate Internal Release
+## 11. Validate Internal Release
 
 On tester Android devices, verify:
 
@@ -114,7 +199,7 @@ On tester Android devices, verify:
 - Core user flows work on Wi-Fi and mobile data.
 - No crashes during startup, sign-in, and session flows.
 
-## 9. Promote To Production
+## 12. Promote To Production
 
 1. Go to `Release` -> `Production`.
 2. Create a new production release (or promote tested build).
@@ -124,31 +209,23 @@ On tester Android devices, verify:
 
 After approval by Google Play review, the version will become available by rollout settings.
 
-## 10. Optional: Submit From CLI
-
-If you want to use EAS Submit:
-
-```sh
-npx eas submit --platform android --profile production
-```
-
-This can automate upload, but Play Console setup items (policy/listing) still must be complete.
-
-## 11. Release Checklist
+## 13. Release Checklist
 
 - `.env.production` points to Render production URL.
 - `app.json` package/scheme/deep link values are correct.
 - Render + Roblox redirect URI values are aligned.
-- Production `eas build` completed and artifact generated.
+- Upload keystore is created, backed up, and configured in Gradle.
+- `versionCode` incremented for this release.
+- Local `bundleRelease` completed and `.aab` generated.
 - Internal testing release validated on physical Android devices.
 - Store listing and policy forms completed.
 - Production rollout executed and monitored.
 
-## 12. Rollback Strategy
+## 14. Rollback Strategy
 
 If a production issue appears:
 
 - Halt/stop the rollout in Play Console.
-- Fix and produce a new build (`eas build --profile production`).
-- Release a new version with notes describing the fix.
-
+- Fix the issue in code/config.
+- Increment `versionCode` again.
+- Build a new signed AAB (`./gradlew bundleRelease`) and publish a new release.

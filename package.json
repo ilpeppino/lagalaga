@@ -4,10 +4,16 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:dev": "APP_VARIANT=dev expo start --dev-client",
+    "start:prod": "APP_VARIANT=prod expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "generate:assets": "node scripts/generate-assets.mjs",
     "android": "expo run:android",
+    "android:dev": "APP_VARIANT=dev expo run:android",
+    "android:prod": "APP_VARIANT=prod expo run:android",
     "ios": "expo run:ios",
+    "ios:dev": "APP_VARIANT=dev expo run:ios",
+    "ios:prod": "APP_VARIANT=prod expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"
   },

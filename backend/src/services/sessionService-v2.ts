@@ -531,7 +531,7 @@ export class SessionServiceV2 {
       .single();
 
     if (existing && existing.state === 'joined') {
-      throw new SessionError(ErrorCodes.BAD_REQUEST, 'You have already joined this session', 400);
+      throw new SessionError(ErrorCodes.SESSION_ALREADY_JOINED, 'You have already joined this session', 400);
     }
 
     // Insert participant

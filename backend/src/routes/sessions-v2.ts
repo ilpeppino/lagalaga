@@ -159,7 +159,7 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
             id: {
               type: 'string',
               format: 'uuid',
-              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
             },
           },
         },
@@ -205,7 +205,7 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
             id: {
               type: 'string',
               format: 'uuid',
-              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
             },
           },
         },
@@ -218,6 +218,12 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      // Explicit guard against non-UUID values (shouldn't happen with schema validation)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(request.params.id)) {
+        throw new ValidationError(`Invalid session ID format: ${request.params.id}`);
+      }
+
       // SessionError / AppError thrown by service will propagate to global handler
       const result = await sessionService.joinSession(
         request.params.id,

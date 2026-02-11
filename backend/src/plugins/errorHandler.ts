@@ -74,7 +74,15 @@ export async function errorHandlerPlugin(fastify: FastifyInstance) {
 
       // Handle Fastify validation errors
       if ((error as FastifyError).validation) {
-        logError(error, { requestId }, 'Validation error');
+        logError(
+          error,
+          {
+            requestId,
+            validation: (error as FastifyError).validation,
+            params: (error as any).params,
+          },
+          'Validation error'
+        );
 
         return reply.status(400).send(
           buildErrorResponse(

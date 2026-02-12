@@ -2,7 +2,7 @@
  * Epic 4 Story 4.3: Browse Sessions UI
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -22,6 +22,32 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Card } from '@/components/ui/paper';
 import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
 import { useErrorHandler } from '@/src/lib/errors';
+
+/**
+ * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
+ * Moved outside component to avoid recreation on every render
+ */
+function formatRelativeTime(isoString: string): string {
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 0) {
+    const absMins = Math.abs(diffMins);
+    if (absMins < 60) return `${absMins}m ago`;
+    const hours = Math.floor(absMins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  } else {
+    if (diffMins < 60) return `in ${diffMins}m`;
+    const hours = Math.floor(diffMins / 60);
+    if (hours < 24) return `in ${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `in ${days}d`;
+  }
+}
 
 export default function SessionsListScreenV2() {
   const router = useRouter();
@@ -52,7 +78,7 @@ export default function SessionsListScreenV2() {
     try {
       if (refresh) {
         setIsRefreshing(true);
-      } else if (sessions.length === 0) {
+      } else {
         setIsLoading(true);
       }
 
@@ -72,7 +98,7 @@ export default function SessionsListScreenV2() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [LIMIT, sessions.length]);
+  }, []); // LIMIT is a constant, no need in deps
 
   const loadPlannedSessions = useCallback(async () => {
     try {
@@ -93,12 +119,7 @@ export default function SessionsListScreenV2() {
     } finally {
       setPlannedLoading(false);
     }
-  }, [LIMIT]);
-
-  useEffect(() => {
-    loadSessions();
-    loadPlannedSessions();
-  }, [loadPlannedSessions, loadSessions]);
+  }, []); // LIMIT is a constant, no need in deps
 
   useFocusEffect(
     useCallback(() => {
@@ -189,28 +210,6 @@ export default function SessionsListScreenV2() {
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, []);
-
-  const formatRelativeTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 0) {
-      const absMins = Math.abs(diffMins);
-      if (absMins < 60) return `${absMins}m ago`;
-      const hours = Math.floor(absMins / 60);
-      if (hours < 24) return `${hours}h ago`;
-      const days = Math.floor(hours / 24);
-      return `${days}d ago`;
-    } else {
-      if (diffMins < 60) return `in ${diffMins}m`;
-      const hours = Math.floor(diffMins / 60);
-      if (hours < 24) return `in ${hours}h`;
-      const days = Math.floor(hours / 24);
-      return `in ${days}d`;
-    }
-  };
 
   const renderDeleteAction = () => (
     <View style={styles.deleteAction}>

@@ -298,4 +298,94 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       });
     }
   );
+
+  /**
+   * DELETE /api/sessions/:id
+   * Delete a session (soft delete by setting status to 'cancelled')
+   */
+  fastify.delete<{
+    Params: { id: string };
+  }>(
+    '/api/sessions/:id',
+    {
+      preHandler: authenticate,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      // Explicit guard against non-UUID values
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(request.params.id)) {
+        throw new ValidationError(`Invalid session ID format: ${request.params.id}`);
+      }
+
+      await sessionService.deleteSession(request.params.id, request.user.userId);
+
+      return reply.send({
+        success: true,
+        requestId: String(request.id),
+      });
+    }
+  );
+
+  /**
+   * POST /api/sessions/bulk-delete
+   * Bulk delete sessions (soft delete by setting status to 'cancelled')
+   */
+  fastify.post<{
+    Body: { ids: string[] };
+  }>(
+    '/api/sessions/bulk-delete',
+    {
+      preHandler: authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['ids'],
+          properties: {
+            ids: {
+              type: 'array',
+              items: {
+                type: 'string',
+                pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { ids } = request.body;
+
+      if (!Array.isArray(ids)) {
+        throw new ValidationError('ids must be an array');
+      }
+
+      // Validate all IDs are UUIDs
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      for (const id of ids) {
+        if (!uuidRegex.test(id)) {
+          throw new ValidationError(`Invalid session ID format: ${id}`);
+        }
+      }
+
+      const deletedCount = await sessionService.bulkDeleteSessions(ids, request.user.userId);
+
+      return reply.send({
+        success: true,
+        data: { deletedCount },
+        requestId: String(request.id),
+      });
+    }
+  );
 }

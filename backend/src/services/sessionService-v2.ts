@@ -421,6 +421,82 @@ export class SessionServiceV2 {
   }
 
   /**
+   * Delete a session (soft delete by setting status to 'cancelled')
+   * Only the host can delete their session
+   */
+  async deleteSession(sessionId: string, userId: string): Promise<void> {
+    const supabase = getSupabase();
+
+    // Verify session exists and user is the host
+    const { data: session, error: fetchError } = await supabase
+      .from('sessions')
+      .select('host_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (fetchError || !session) {
+      throw new SessionError(ErrorCodes.SESSION_NOT_FOUND, 'Session not found', 404);
+    }
+
+    if (session.host_id !== userId) {
+      throw new SessionError(ErrorCodes.FORBIDDEN, 'Only the host can delete this session', 403);
+    }
+
+    // Soft delete by updating status to 'cancelled'
+    const { error: updateError } = await supabase
+      .from('sessions')
+      .update({ status: 'cancelled' })
+      .eq('id', sessionId);
+
+    if (updateError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to delete session: ${updateError.message}`);
+    }
+  }
+
+  /**
+   * Bulk delete sessions (soft delete by setting status to 'cancelled')
+   * Only deletes sessions hosted by the requester
+   */
+  async bulkDeleteSessions(sessionIds: string[], userId: string): Promise<number> {
+    const supabase = getSupabase();
+
+    if (sessionIds.length === 0) {
+      return 0;
+    }
+
+    // Fetch sessions to verify ownership
+    const { data: sessions, error: fetchError } = await supabase
+      .from('sessions')
+      .select('id, host_id')
+      .in('id', sessionIds);
+
+    if (fetchError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to fetch sessions: ${fetchError.message}`);
+    }
+
+    // Filter to only sessions hosted by the user
+    const validSessionIds = (sessions || [])
+      .filter((session: any) => session.host_id === userId)
+      .map((session: any) => session.id);
+
+    if (validSessionIds.length === 0) {
+      return 0;
+    }
+
+    // Soft delete by updating status to 'cancelled'
+    const { error: updateError } = await supabase
+      .from('sessions')
+      .update({ status: 'cancelled' })
+      .in('id', validSessionIds);
+
+    if (updateError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to delete sessions: ${updateError.message}`);
+    }
+
+    return validSessionIds.length;
+  }
+
+  /**
    * Get session details with participants
    */
   async getSessionById(sessionId: string): Promise<any | null> {

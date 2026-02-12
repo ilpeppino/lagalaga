@@ -24,7 +24,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
           properties: {
             robloxUrl: { type: 'string' },
             title: { type: 'string' },
-            description: { type: 'string' },
             visibility: { type: 'string', enum: ['public', 'friends', 'invite_only'] },
             maxParticipants: { type: 'number', minimum: 2, maximum: 50 },
             scheduledStart: { type: 'string' },
@@ -33,7 +32,7 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { robloxUrl, title, description, visibility, maxParticipants, scheduledStart } = request.body;
+      const { robloxUrl, title, visibility, maxParticipants, scheduledStart } = request.body;
 
       if (!robloxUrl || !title) {
         throw new ValidationError('robloxUrl and title are required');
@@ -43,7 +42,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
         hostUserId: request.user.userId,
         robloxUrl,
         title,
-        description,
         visibility,
         maxParticipants,
         scheduledStart,

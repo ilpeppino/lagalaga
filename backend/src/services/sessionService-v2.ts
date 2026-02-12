@@ -14,7 +14,6 @@ export interface CreateSessionInput {
   hostUserId: string;
   robloxUrl: string;
   title: string;
-  description?: string;
   visibility?: SessionVisibility;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp
@@ -216,7 +215,6 @@ export class SessionServiceV2 {
         place_id: normalized?.placeId ?? placeIdForSession,
         host_id: input.hostUserId,
         title: input.title,
-        description: input.description,
         visibility: input.visibility || 'public',
         max_participants: input.maxParticipants || 10,
         scheduled_start: input.scheduledStart,

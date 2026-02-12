@@ -3,6 +3,7 @@ import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/er
 import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
 import { logger } from '../lib/logger.js';
+import { request } from 'undici';
 
 export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
@@ -96,6 +97,43 @@ export class SessionServiceV2 {
     return { canonicalUrl: canonical.toString(), normalizedFrom: 'share_link' };
   }
 
+  private async resolveShareLinkPlaceId(canonicalUrl: string): Promise<number | null> {
+    try {
+      const response = await request(canonicalUrl, {
+        method: 'GET',
+        headers: {
+          'user-agent': 'lagalaga-backend/1.0',
+          accept: 'text/html',
+        },
+      });
+
+      if (response.statusCode >= 400) {
+        logger.warn({ canonicalUrl, statusCode: response.statusCode }, 'Share link lookup returned non-2xx status');
+        return null;
+      }
+
+      const html = await response.body.text();
+
+      // Roblox share pages expose start place id in meta tags.
+      const metaMatch = html.match(/name=["']roblox:start_place_id["']\s+content=["'](\d+)["']/i);
+      if (metaMatch?.[1]) {
+        const parsed = Number.parseInt(metaMatch[1], 10);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+      }
+
+      return null;
+    } catch (error) {
+      logger.warn(
+        {
+          canonicalUrl,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to resolve placeId from Roblox share link'
+      );
+      return null;
+    }
+  }
+
   /**
    * Create a new session with host participant and invite link
    * This is an atomic operation that:
@@ -110,6 +148,12 @@ export class SessionServiceV2 {
 
     const share = this.parseShareLink(input.robloxUrl);
     const sharePlaceholderPlaceId = 0;
+    const shareResolvedPlaceId = share
+      ? await this.resolveShareLinkPlaceId(share.canonicalUrl)
+      : null;
+    const placeIdForSession = share
+      ? (shareResolvedPlaceId ?? sharePlaceholderPlaceId)
+      : null;
 
     // Step 1: Normalize Roblox link (placeId-based), unless this is a share link.
     let normalized:
@@ -124,7 +168,7 @@ export class SessionServiceV2 {
         .from('games')
         .upsert(
           {
-            place_id: sharePlaceholderPlaceId,
+            place_id: placeIdForSession,
             canonical_web_url: canonicalUrl,
             canonical_start_url: canonicalUrl,
           },
@@ -169,7 +213,7 @@ export class SessionServiceV2 {
     const { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
       .insert({
-        place_id: normalized?.placeId ?? (share ? sharePlaceholderPlaceId : null),
+        place_id: normalized?.placeId ?? placeIdForSession,
         host_id: input.hostUserId,
         title: input.title,
         description: input.description,
@@ -217,7 +261,7 @@ export class SessionServiceV2 {
 
     // Step 6: Get game data for response (if we have placeId)
     let gameData: any = null;
-    const placeIdForGame = normalized?.placeId ?? (share ? sharePlaceholderPlaceId : null);
+    const placeIdForGame = normalized?.placeId ?? placeIdForSession;
     if (placeIdForGame !== null) {
       const { data } = await supabase
         .from('games')

@@ -74,6 +74,22 @@ Notes:
 - On first run, Xcode may prompt for signing fixes.
 - If install is blocked, verify iPhone `Settings -> Privacy & Security -> Developer Mode`.
 
+### Recommended For Physical Device OAuth Testing (Standalone-like)
+
+If iPhone OAuth opens an Expo dev page instead of returning directly to the app, build and install using **Release** configuration:
+
+```sh
+rm -rf ios/build
+rm -rf ~/Library/Developer/Xcode/DerivedData/lagalaga-*
+npx expo run:ios --device --configuration Release
+```
+
+Why:
+- `Debug` dev builds can route through Expo dev-launcher behavior on physical devices.
+- `Release` behaves closer to a standalone app and fixes custom-scheme callback handling for OAuth.
+
+After install, open the app icon directly on iPhone and test sign-in again.
+
 ## 5. Deploy With EAS (Internal Distribution)
 
 Use this when you want cloud builds and shareable install links (via TestFlight/App Store Connect pipeline).
@@ -115,6 +131,12 @@ Expected behavior:
     - frontend env
     - Render backend env
     - Roblox OAuth allowlist
+
+- iPhone opens Expo page (dev build) instead of app callback
+  - Use a physical-device **Release** install:
+    - `npx expo run:ios --device --configuration Release`
+  - Remove old dev builds / Expo Go from device before retesting.
+  - Open the installed app icon directly (do not launch via Expo Go/QR flow).
 
 - App installs but does not open on device
   - Re-check iOS signing/certificates in Xcode.

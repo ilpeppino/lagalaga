@@ -1,0 +1,97 @@
+{
+  "expo": {
+    "name": "lagalaga",
+    "slug": "lagalaga",
+    "owner": "ilpeppino",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/generated/icon.png",
+    "scheme": "lagalaga",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "splash": {
+      "image": "./assets/generated/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A2A6C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": [
+          "roblox"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.ilpeppino.lagalaga"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A2A6C",
+        "foregroundImage": "./assets/generated/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/generated/adaptive-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "lagalaga",
+              "host": "auth",
+              "pathPrefix": "/roblox"
+            }
+          ]
+        }
+      ],
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.ilpeppino.lagalaga"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/generated/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/generated/splash.png",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#1A2A6C",
+          "dark": {
+            "backgroundColor": "#1A2A6C"
+          }
+        }
+      ],
+      "expo-sqlite",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/BitcountSingle-Regular.ttf",
+            "./assets/fonts/BitcountSingle-Bold.ttf"
+          ]
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "36b14711-e62b-452d-82bf-e8e7f9128fe6"
+      }
+    }
+  }
+}

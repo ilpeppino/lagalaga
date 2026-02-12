@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Linking, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
-import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -66,23 +66,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await AsyncStorage.setItem('pkce_state', state);
 
-      // Create the return URL for our app
-      // In development builds, use the development scheme (exp+lagalaga)
-      // In production, use the standard scheme (lagalaga)
-      const isDevelopment = __DEV__ || Constants.appOwnership === 'expo';
-      const scheme = isDevelopment ? 'exp+lagalaga' : 'lagalaga';
-      const returnUrl = `${scheme}://auth/roblox`;
+      // Always use app scheme for dev builds / standalone.
+      // Expo Auth Proxy URL should be used only when explicitly configured.
+      const returnUrl =
+        process.env.EXPO_PUBLIC_ROBLOX_REDIRECT_URI?.trim() || 'lagalaga://auth/roblox';
 
       logger.info('Starting OAuth flow', {
         returnUrl,
-        isDevelopment,
         authUrl: authorizationUrl.substring(0, 100)
       });
 
-      // For development builds and production, use direct OAuth (no auth proxy)
-      // The authorizationUrl from backend already has the correct redirect_uri
-      const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
+      // iOS dev-client can route auth sessions through Expo pages.
+      // Opening URL directly in browser preserves custom scheme callback handling.
+      if (Platform.OS === 'ios') {
+        await Linking.openURL(authorizationUrl);
+        logger.info('Opened OAuth URL in iOS browser');
+        return;
+      }
 
+      // Android: keep auth session flow.
+      const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
       logger.info('OAuth session finished', {
         type: result.type,
         url: result.type === 'success' ? (result as any).url : undefined

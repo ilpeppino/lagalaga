@@ -1,10 +1,13 @@
 import { getSupabase } from '../config/supabase.js';
-import { logger } from '../lib/logger.js';
-import { ExternalServiceError, ValidationError } from '../utils/errors.js';
+import { logger, logWithCorrelation } from '../lib/logger.js';
+import { AppError } from '../utils/errors.js';
 
-interface ResolveExperienceResult {
-  placeId?: string;
-  universeId?: string;
+export interface ResolveExperienceResult {
+  placeId: number;
+  universeId: number;
+  gameName: string;
+  canonicalUrl: string;
+  // Backward compatibility for existing consumers
   name?: string;
 }
 
@@ -17,51 +20,97 @@ interface CacheRow {
   updated_at: string;
 }
 
+interface RobloxGameMetadata {
+  placeId: number;
+  universeId: number;
+  gameName: string;
+  canonicalUrl: string;
+  description?: string;
+  creatorName?: string;
+}
+
+interface ResolveShareOptions {
+  fetchFn?: typeof fetch;
+  correlationId?: string;
+}
+
 const RESOLVE_TIMEOUT_MS = 4000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class RobloxExperienceResolverService {
-  async resolveExperienceFromUrl(url: string): Promise<ResolveExperienceResult> {
+  async resolveExperienceFromUrl(url: string, correlationId?: string): Promise<ResolveExperienceResult> {
     const trimmedUrl = url.trim();
-    const placeId = this.extractPlaceId(trimmedUrl);
-
-    if (!placeId) {
-      throw new ValidationError('Could not find a Roblox placeId in URL. Expected /games/<placeId>.');
+    if (!trimmedUrl) {
+      throw new AppError('NOT_FOUND_RESOURCE', 'Could not resolve Roblox share link', 404, {
+        severity: 'warning',
+      });
     }
 
-    const cached = await this.getBestCachedEntry(trimmedUrl, placeId);
+    const preParsedPlaceId = extractPlaceIdFromString(trimmedUrl);
+    const cached = preParsedPlaceId
+      ? await this.getBestCachedEntry(trimmedUrl, String(preParsedPlaceId))
+      : await this.getCacheByUrl(trimmedUrl);
+
     if (cached && this.isFresh(cached.updated_at)) {
       return this.toResponse(cached);
     }
 
     try {
-      const universeId = await this.resolveUniverseId(placeId);
-      const name = await this.resolveExperienceName(universeId);
+      const resolved = await resolveRobloxShareUrl(trimmedUrl, { correlationId });
 
-      const resolved: ResolveExperienceResult = {
-        placeId,
-        universeId,
-        name,
+      await this.upsertCache(trimmedUrl, {
+        placeId: resolved.placeId,
+        universeId: resolved.universeId,
+        gameName: resolved.gameName,
+      });
+
+      return {
+        placeId: resolved.placeId,
+        universeId: resolved.universeId,
+        gameName: resolved.gameName,
+        canonicalUrl: resolved.canonicalUrl,
+        name: resolved.gameName,
       };
-
-      await this.upsertCache(trimmedUrl, resolved);
-      return resolved;
     } catch (error) {
-      logger.warn(
+      logWithCorrelation(
+        'warn',
         {
           url: trimmedUrl,
-          placeId,
           error: error instanceof Error ? error.message : String(error),
         },
-        'Failed to resolve Roblox experience from upstream APIs'
+        'Roblox share URL resolution failed',
+        undefined,
+        correlationId
       );
 
       if (cached) {
         return this.toResponse(cached);
       }
 
-      throw new ExternalServiceError('Roblox', 'Could not resolve experience metadata right now');
+      throw new AppError('NOT_FOUND_RESOURCE', 'Could not resolve Roblox share link', 404, {
+        severity: 'warning',
+      });
     }
+  }
+
+  private async getCacheByUrl(url: string): Promise<CacheRow | null> {
+    const supabase = getSupabase();
+
+    const result = await supabase
+      .from('roblox_experience_cache')
+      .select('platform_key,url,place_id,universe_id,name,updated_at')
+      .eq('platform_key', 'roblox')
+      .eq('url', url)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<CacheRow>();
+
+    if (result.error) {
+      logger.warn({ error: result.error.message, url }, 'Failed to read roblox_experience_cache by url');
+      return null;
+    }
+
+    return result.data ?? null;
   }
 
   private async getBestCachedEntry(url: string, placeId: string): Promise<CacheRow | null> {
@@ -102,7 +151,10 @@ export class RobloxExperienceResolverService {
     return Date.parse(urlRow.updated_at) >= Date.parse(placeRow.updated_at) ? urlRow : placeRow;
   }
 
-  private async upsertCache(url: string, resolved: ResolveExperienceResult): Promise<void> {
+  private async upsertCache(
+    url: string,
+    resolved: { placeId: number; universeId: number; gameName: string }
+  ): Promise<void> {
     const supabase = getSupabase();
 
     const { error } = await supabase
@@ -111,9 +163,9 @@ export class RobloxExperienceResolverService {
         {
           platform_key: 'roblox',
           url,
-          place_id: resolved.placeId,
-          universe_id: resolved.universeId,
-          name: resolved.name,
+          place_id: String(resolved.placeId),
+          universe_id: String(resolved.universeId),
+          name: resolved.gameName,
           updated_at: new Date().toISOString(),
         },
         {
@@ -137,90 +189,348 @@ export class RobloxExperienceResolverService {
   }
 
   private toResponse(row: CacheRow): ResolveExperienceResult {
+    const parsedPlaceId = Number.parseInt(row.place_id, 10);
+    const parsedUniverseId = row.universe_id ? Number.parseInt(row.universe_id, 10) : Number.NaN;
+
     return {
-      placeId: row.place_id,
-      universeId: row.universe_id ?? undefined,
-      name: row.name ?? undefined,
+      placeId: Number.isNaN(parsedPlaceId) ? 0 : parsedPlaceId,
+      universeId: Number.isNaN(parsedUniverseId) ? 0 : parsedUniverseId,
+      gameName: row.name ?? 'Roblox Experience',
+      canonicalUrl: Number.isNaN(parsedPlaceId)
+        ? row.url
+        : `https://www.roblox.com/games/${parsedPlaceId}`,
+      name: row.name ?? 'Roblox Experience',
     };
   }
+}
 
-  private extractPlaceId(rawUrl: string): string | null {
-    if (!rawUrl) {
-      return null;
+export async function resolveRobloxShareUrl(
+  rawUrl: string,
+  options: ResolveShareOptions = {}
+): Promise<RobloxGameMetadata> {
+  const fetchFn = options.fetchFn ?? fetch;
+  const parsed = parseRobloxInputUrl(rawUrl);
+  const correlationId = options.correlationId;
+
+  let canonicalUrl: string;
+  let placeId: number | null;
+
+  if (parsed.protocol === 'roblox:') {
+    placeId = extractPlaceIdFromUrl(parsed) ?? extractPlaceIdFromString(rawUrl);
+    if (!placeId) {
+      throw new Error('No placeId found in Roblox deeplink');
+    }
+    canonicalUrl = `https://www.roblox.com/games/${placeId}`;
+  } else {
+    const host = parsed.hostname.toLowerCase();
+    if (!['www.roblox.com', 'roblox.com'].includes(host)) {
+      throw new Error('Unsupported Roblox host');
     }
 
-    const normalizedUrl = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(rawUrl)
-      ? rawUrl
-      : `https://${rawUrl}`;
+    placeId = extractPlaceIdFromUrl(parsed);
+    if (placeId) {
+      canonicalUrl = `https://www.roblox.com/games/${placeId}`;
+    } else if (isSharePath(parsed.pathname)) {
+      const normalizedShareUrl = normalizeShareUrl(parsed).toString();
+      logWithCorrelation(
+        'info',
+        { normalizedUrl: normalizedShareUrl },
+        'Normalized Roblox share URL',
+        undefined,
+        correlationId
+      );
 
-    try {
-      const parsed = new URL(normalizedUrl);
-      const host = parsed.hostname.toLowerCase();
-      if (!(host === 'www.roblox.com' || host === 'roblox.com')) {
-        return null;
+      const shareResolution = await resolvePlaceIdFromShareUrl(normalizedShareUrl, fetchFn, correlationId);
+      placeId = shareResolution.placeId;
+      canonicalUrl = shareResolution.canonicalUrl;
+    } else {
+      throw new Error('No placeId found in URL');
+    }
+  }
+
+  if (!placeId) {
+    throw new Error('Failed to resolve placeId');
+  }
+
+  const universeId = await resolveUniverseId(placeId, fetchFn);
+  logWithCorrelation(
+    'info',
+    { placeId, universeId },
+    'Resolved Roblox universeId',
+    undefined,
+    correlationId
+  );
+
+  const gameDetails = await resolveGameDetails(universeId, fetchFn);
+  logWithCorrelation(
+    'info',
+    {
+      placeId,
+      universeId,
+      gameName: gameDetails.name,
+    },
+    'Resolved Roblox game metadata',
+    undefined,
+    correlationId
+  );
+
+  return {
+    placeId,
+    universeId,
+    gameName: gameDetails.name,
+    canonicalUrl,
+    description: gameDetails.description,
+    creatorName: gameDetails.creator?.name,
+  };
+}
+
+function isSharePath(pathname: string): boolean {
+  return pathname === '/share' || pathname === '/share-links';
+}
+
+function parseRobloxInputUrl(rawUrl: string): URL {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    throw new Error('Empty URL');
+  }
+
+  if (trimmed.startsWith('roblox://')) {
+    return new URL(trimmed);
+  }
+
+  const withScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+
+  return new URL(withScheme);
+}
+
+function normalizeShareUrl(url: URL): URL {
+  const normalized = new URL('https://www.roblox.com/share-links');
+  const code = url.searchParams.get('code');
+  const type = url.searchParams.get('type');
+
+  if (code) normalized.searchParams.set('code', code);
+  if (type) normalized.searchParams.set('type', type);
+
+  return normalized;
+}
+
+async function resolvePlaceIdFromShareUrl(
+  normalizedShareUrl: string,
+  fetchFn: typeof fetch,
+  correlationId?: string
+): Promise<{ placeId: number; canonicalUrl: string }> {
+  let currentUrl = normalizedShareUrl;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetchTextResponseWithTimeout(currentUrl, fetchFn);
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) {
+        throw new Error('Share URL redirect missing Location header');
       }
 
-      const pathMatch = parsed.pathname.match(/\/games\/(\d+)/i);
-      return pathMatch?.[1] ?? null;
-    } catch {
-      const fallbackMatch = rawUrl.match(/(?:https?:\/\/)?(?:www\.)?roblox\.com\/games\/(\d+)/i);
-      return fallbackMatch?.[1] ?? null;
-    }
-  }
-
-  private async resolveUniverseId(placeId: string): Promise<string> {
-    const detailsUrl = `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${encodeURIComponent(placeId)}`;
-    const payload = await this.fetchJsonWithTimeout(detailsUrl);
-
-    if (!Array.isArray(payload) || payload.length === 0) {
-      throw new Error('Roblox place details response is empty');
-    }
-
-    const universeId = payload[0]?.universeId;
-    if (universeId === undefined || universeId === null) {
-      throw new Error('Universe ID missing in Roblox place details response');
-    }
-
-    return String(universeId);
-  }
-
-  private async resolveExperienceName(universeId: string): Promise<string> {
-    const gamesUrl = `https://games.roblox.com/v1/games?universeIds=${encodeURIComponent(universeId)}`;
-    const payload = await this.fetchJsonWithTimeout(gamesUrl);
-
-    if (!payload || !Array.isArray(payload.data) || payload.data.length === 0) {
-      throw new Error('Roblox games response is empty');
-    }
-
-    const name = payload.data[0]?.name;
-    if (typeof name !== 'string' || !name.trim()) {
-      throw new Error('Experience name missing in Roblox games response');
-    }
-
-    return name.trim();
-  }
-
-  private async fetchJsonWithTimeout(url: string): Promise<any> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          accept: 'application/json',
-          'user-agent': 'lagalaga-backend/1.0',
+      const redirectedUrl = new URL(location, currentUrl);
+      logWithCorrelation(
+        'info',
+        {
+          from: currentUrl,
+          to: redirectedUrl.toString(),
+          status: response.status,
         },
-        signal: controller.signal,
-      });
+        'Detected Roblox share redirect',
+        undefined,
+        correlationId
+      );
 
-      if (!response.ok) {
-        throw new Error(`Roblox API responded with ${response.status}`);
+      const redirectHost = redirectedUrl.hostname.toLowerCase();
+      if (!['www.roblox.com', 'roblox.com'].includes(redirectHost)) {
+        throw new Error(`Unexpected redirect host: ${redirectHost}`);
       }
 
-      return await response.json();
-    } finally {
-      clearTimeout(timeout);
+      const redirectPlaceId = extractPlaceIdFromUrl(redirectedUrl);
+      if (redirectPlaceId) {
+        return {
+          placeId: redirectPlaceId,
+          canonicalUrl: `https://www.roblox.com/games/${redirectPlaceId}`,
+        };
+      }
+
+      currentUrl = redirectedUrl.toString();
+      continue;
     }
+
+    if (!response.ok) {
+      throw new Error(`Share URL returned HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const parsed = extractCanonicalAndPlaceIdFromHtml(html);
+
+    if (parsed.placeId) {
+      return {
+        placeId: parsed.placeId,
+        canonicalUrl: parsed.canonicalUrl ?? `https://www.roblox.com/games/${parsed.placeId}`,
+      };
+    }
+
+    throw new Error('Could not extract placeId from share page HTML');
+  }
+
+  throw new Error('Could not resolve share URL to placeId');
+}
+
+function extractCanonicalAndPlaceIdFromHtml(html: string): {
+  placeId: number | null;
+  canonicalUrl: string | null;
+} {
+  const canonicalMatch = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  const ogUrlMatch = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
+
+  const canonicalCandidate = canonicalMatch?.[1] ?? ogUrlMatch?.[1] ?? null;
+  if (canonicalCandidate) {
+    const parsedCandidate = safeParseUrl(canonicalCandidate);
+    const placeIdFromCanonical = parsedCandidate ? extractPlaceIdFromUrl(parsedCandidate) : null;
+    if (placeIdFromCanonical) {
+      return {
+        placeId: placeIdFromCanonical,
+        canonicalUrl: `https://www.roblox.com/games/${placeIdFromCanonical}`,
+      };
+    }
+  }
+
+  const gameLinkMatch = html.match(/https?:\/\/(?:www\.)?roblox\.com\/games\/(\d+)[^"'\s<]*/i);
+  if (gameLinkMatch?.[1]) {
+    const placeId = Number.parseInt(gameLinkMatch[1], 10);
+    if (!Number.isNaN(placeId) && placeId > 0) {
+      return {
+        placeId,
+        canonicalUrl: `https://www.roblox.com/games/${placeId}`,
+      };
+    }
+  }
+
+  return { placeId: null, canonicalUrl: null };
+}
+
+function extractPlaceIdFromUrl(url: URL): number | null {
+  const pathMatch = url.pathname.match(/^\/games\/(\d+)/i);
+  if (pathMatch?.[1]) {
+    const placeId = Number.parseInt(pathMatch[1], 10);
+    if (!Number.isNaN(placeId) && placeId > 0) {
+      return placeId;
+    }
+  }
+
+  const placeIdParam = url.searchParams.get('placeId') ?? url.searchParams.get('gameId');
+  if (placeIdParam && /^\d+$/.test(placeIdParam)) {
+    const placeId = Number.parseInt(placeIdParam, 10);
+    return placeId > 0 ? placeId : null;
+  }
+
+  return null;
+}
+
+function extractPlaceIdFromString(value: string): number | null {
+  const match = value.match(/(?:\/games\/|placeId=|gameId=)(\d+)/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const placeId = Number.parseInt(match[1], 10);
+  return Number.isNaN(placeId) || placeId <= 0 ? null : placeId;
+}
+
+function safeParseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveUniverseId(placeId: number, fetchFn: typeof fetch): Promise<number> {
+  const universeUrl = `https://apis.roblox.com/universes/v1/places/${encodeURIComponent(String(placeId))}/universe`;
+  const payload = await fetchJsonWithTimeout(universeUrl, fetchFn);
+  const universeId = payload?.universeId;
+
+  if (typeof universeId !== 'number' || !Number.isFinite(universeId) || universeId <= 0) {
+    throw new Error('Universe ID missing or invalid in Roblox universe response');
+  }
+
+  return universeId;
+}
+
+async function resolveGameDetails(
+  universeId: number,
+  fetchFn: typeof fetch
+): Promise<{
+  name: string;
+  description?: string;
+  rootPlaceId?: number;
+  creator?: { id?: number; name?: string; type?: string };
+}> {
+  const gamesUrl = `https://games.roblox.com/v1/games?universeIds=${encodeURIComponent(String(universeId))}`;
+  const payload = await fetchJsonWithTimeout(gamesUrl, fetchFn);
+
+  if (!payload || !Array.isArray(payload.data) || payload.data.length === 0) {
+    throw new Error('Roblox games response is empty');
+  }
+
+  const game = payload.data[0];
+  if (!game || typeof game.name !== 'string' || !game.name.trim()) {
+    throw new Error('Experience name missing in Roblox games response');
+  }
+
+  return {
+    name: game.name.trim(),
+    description: typeof game.description === 'string' ? game.description : undefined,
+    rootPlaceId: typeof game.rootPlaceId === 'number' ? game.rootPlaceId : undefined,
+    creator: game.creator,
+  };
+}
+
+async function fetchJsonWithTimeout(url: string, fetchFn: typeof fetch): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
+
+  try {
+    const response = await fetchFn(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'lagalaga-backend/1.0',
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Roblox API responded with ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchTextResponseWithTimeout(url: string, fetchFn: typeof fetch): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
+
+  try {
+    return await fetchFn(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        accept: 'text/html,application/xhtml+xml',
+        'user-agent': 'lagalaga-backend/1.0',
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
 }

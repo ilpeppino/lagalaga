@@ -1,11 +1,22 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { RobloxLinkNormalizer, NormalizedFrom } from '../roblox-link-normalizer.js';
 
 describe('RobloxLinkNormalizer', () => {
   let normalizer: RobloxLinkNormalizer;
+  let fetchSpy: jest.SpiedFunction<typeof fetch> | undefined;
+
+  const mockFetchRedirect = (url: string) => {
+    fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({ url } as Response);
+    return fetchSpy;
+  };
 
   beforeEach(() => {
     normalizer = new RobloxLinkNormalizer();
+  });
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+    fetchSpy = undefined;
   });
 
   describe('Web Games URL', () => {
@@ -94,11 +105,7 @@ describe('RobloxLinkNormalizer', () => {
     });
 
     it('should follow redirects for ro.blox.com without af_web_dp', async () => {
-      // Mock fetch to simulate redirect
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
-        url: 'https://www.roblox.com/games/606849621/Jailbreak',
-      } as Response);
-      global.fetch = mockFetch;
+      const mockFetch = mockFetchRedirect('https://www.roblox.com/games/606849621/Jailbreak');
 
       const result = await normalizer.normalize('https://ro.blox.com/Ebh5');
 
@@ -111,10 +118,7 @@ describe('RobloxLinkNormalizer', () => {
     });
 
     it('should handle ro.blox.com redirect to start URL', async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
-        url: 'https://www.roblox.com/games/start?placeId=606849621',
-      } as Response);
-      global.fetch = mockFetch;
+      mockFetchRedirect('https://www.roblox.com/games/start?placeId=606849621');
 
       const result = await normalizer.normalize('https://ro.blox.com/xyz');
 
@@ -167,8 +171,7 @@ describe('RobloxLinkNormalizer', () => {
     });
 
     it('should throw error for malformed ro.blox.com with failed redirect', async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockRejectedValue(new Error('Network error'));
-      global.fetch = mockFetch;
+      fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
 
       await expect(normalizer.normalize('https://ro.blox.com/invalid')).rejects.toThrow(
         'Unable to extract placeId'
@@ -215,10 +218,7 @@ describe('RobloxLinkNormalizer', () => {
     });
 
     it('should correctly identify roblox_shortlink_redirect source', async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
-        url: 'https://www.roblox.com/games/606849621',
-      } as Response);
-      global.fetch = mockFetch;
+      mockFetchRedirect('https://www.roblox.com/games/606849621');
 
       const result = await normalizer.normalize('https://ro.blox.com/Ebh5');
       expect(result.normalizedFrom).toBe(NormalizedFrom.ROBLOX_SHORTLINK_REDIRECT);

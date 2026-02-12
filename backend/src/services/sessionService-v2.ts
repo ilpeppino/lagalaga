@@ -268,6 +268,7 @@ export class SessionServiceV2 {
 
   /**
    * List sessions with filtering and pagination
+   * Uses optimized PostgreSQL function to eliminate N+1 query problem
    */
   async listSessions(params: {
     status?: SessionStatus;
@@ -289,31 +290,16 @@ export class SessionServiceV2 {
     const limit = params.limit || 20;
     const offset = params.offset || 0;
 
-    let query = supabase
-      .from('sessions')
-      .select(
-        `
-        *,
-        games(*),
-        session_participants(count)
-      `,
-        { count: 'exact' }
-      )
-      .eq('status', params.status || 'active');
-
-    if (params.visibility) {
-      query = query.eq('visibility', params.visibility);
-    }
-    if (params.placeId) {
-      query = query.eq('place_id', params.placeId);
-    }
-    if (params.hostId) {
-      query = query.eq('host_id', params.hostId);
-    }
-
-    const { data, error, count } = await query
-      .order('scheduled_start', { ascending: true, nullsFirst: false })
-      .range(offset, offset + limit - 1);
+    // Use optimized RPC function instead of nested selects
+    // This eliminates N+1 query problem (1 query instead of 41)
+    const { data, error } = await supabase.rpc('list_sessions_optimized', {
+      p_status: params.status || null,
+      p_visibility: params.visibility || null,
+      p_place_id: params.placeId || null,
+      p_host_id: params.hostId || null,
+      p_limit: limit,
+      p_offset: offset,
+    });
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list sessions: ${error.message}`);
@@ -328,31 +314,34 @@ export class SessionServiceV2 {
       visibility: row.visibility,
       status: row.status,
       maxParticipants: row.max_participants,
-      currentParticipants: row.session_participants?.[0]?.count || 0,
+      currentParticipants: Number(row.participant_count) || 0,
       scheduledStart: row.scheduled_start,
       game: {
-        placeId: row.games?.place_id ?? row.place_id ?? 0,
-        gameName: row.games?.game_name,
-        thumbnailUrl: row.games?.thumbnail_url,
-        canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
-        canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
+        placeId: row.game_place_id ?? row.place_id ?? 0,
+        gameName: row.game_name,
+        thumbnailUrl: row.thumbnail_url,
+        canonicalWebUrl: row.canonical_web_url ?? row.original_input_url,
+        canonicalStartUrl: row.canonical_start_url ?? row.original_input_url,
       },
       createdAt: row.created_at,
     }));
 
+    const total = data && data.length > 0 ? Number(data[0].total_count) : 0;
+
     return {
       sessions,
       pagination: {
-        total: count || 0,
+        total,
         limit,
         offset,
-        hasMore: offset + limit < (count || 0),
+        hasMore: offset + limit < total,
       },
     };
   }
 
   /**
    * List user's planned sessions (scheduled or active sessions they are hosting)
+   * Uses optimized PostgreSQL function to eliminate N+1 query problem
    */
   async listUserPlannedSessions(
     userId: string,
@@ -369,20 +358,13 @@ export class SessionServiceV2 {
   }> {
     const supabase = getSupabase();
 
-    const { data, error, count } = await supabase
-      .from('sessions')
-      .select(
-        `
-        *,
-        games(*),
-        session_participants(count)
-      `,
-        { count: 'exact' }
-      )
-      .eq('host_id', userId)
-      .in('status', ['scheduled', 'active'])
-      .order('scheduled_start', { ascending: true, nullsFirst: false })
-      .range(offset, offset + limit - 1);
+    // Use optimized RPC function instead of nested selects
+    // This eliminates N+1 query problem and uses composite index
+    const { data, error } = await supabase.rpc('list_user_planned_sessions_optimized', {
+      p_user_id: userId,
+      p_limit: limit,
+      p_offset: offset,
+    });
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list user sessions: ${error.message}`);
@@ -397,25 +379,27 @@ export class SessionServiceV2 {
       visibility: row.visibility,
       status: row.status,
       maxParticipants: row.max_participants,
-      currentParticipants: row.session_participants?.[0]?.count || 0,
+      currentParticipants: Number(row.participant_count) || 0,
       scheduledStart: row.scheduled_start,
       game: {
-        placeId: row.games?.place_id ?? row.place_id ?? 0,
-        gameName: row.games?.game_name,
-        thumbnailUrl: row.games?.thumbnail_url,
-        canonicalWebUrl: row.games?.canonical_web_url ?? row.original_input_url,
-        canonicalStartUrl: row.games?.canonical_start_url ?? row.original_input_url,
+        placeId: row.game_place_id ?? row.place_id ?? 0,
+        gameName: row.game_name,
+        thumbnailUrl: row.thumbnail_url,
+        canonicalWebUrl: row.canonical_web_url ?? row.original_input_url,
+        canonicalStartUrl: row.canonical_start_url ?? row.original_input_url,
       },
       createdAt: row.created_at,
     }));
 
+    const total = data && data.length > 0 ? Number(data[0].total_count) : 0;
+
     return {
       sessions,
       pagination: {
-        total: count || 0,
+        total,
         limit,
         offset,
-        hasMore: offset + limit < (count || 0),
+        hasMore: offset + limit < total,
       },
     };
   }

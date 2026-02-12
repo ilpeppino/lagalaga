@@ -15,6 +15,12 @@ import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
 import { API_URL } from '@/src/lib/runtimeConfig';
 
+export interface RobloxExperienceResolution {
+  placeId?: string;
+  universeId?: string;
+  name?: string;
+}
+
 function generateCorrelationId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -96,6 +102,19 @@ class SessionsAPIStoreV2 {
     }
 
     return response.data;
+  }
+
+  /**
+   * Resolve Roblox experience metadata from a pasted URL.
+   */
+  async resolveExperience(url: string): Promise<RobloxExperienceResolution> {
+    return fetchWithAuth<RobloxExperienceResolution>(
+      '/roblox/resolve-experience',
+      {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      }
+    );
   }
 
   /**

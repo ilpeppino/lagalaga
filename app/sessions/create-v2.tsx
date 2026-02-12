@@ -3,7 +3,7 @@
  *
  * Features:
  * - URL input with paste button
- * - Title and description
+ * - Title input (auto-filled from pasted Roblox link when available)
  * - Visibility selector (public/friends/invite_only)
  * - Max participants slider (2-50)
  * - Optional scheduled start date/time
@@ -11,7 +11,7 @@
  * - Error handling via useErrorHandler
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -36,6 +36,8 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'invite_only', label: 'Invite Only' },
 ];
 
+const GAME_NAME_RESOLVE_ERROR = "Couldn't fetch game name. You can type a title manually.";
+
 export default function CreateSessionScreenV2() {
   const router = useRouter();
   const { handleError, getErrorMessage } = useErrorHandler();
@@ -44,7 +46,6 @@ export default function CreateSessionScreenV2() {
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [maxParticipants, setMaxParticipants] = useState(10);
   const [scheduledStart, setScheduledStart] = useState<Date | null>(null);
@@ -53,17 +54,99 @@ export default function CreateSessionScreenV2() {
   // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isResolvingGameName, setIsResolvingGameName] = useState(false);
+  const [gameNameResolveError, setGameNameResolveError] = useState<string | null>(null);
+
+  const lastAutoFilledTitleRef = useRef<string | null>(null);
+  const resolveRequestIdRef = useRef(0);
+
+  const resolveGameNameFromUrl = async (url: string) => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setGameNameResolveError(null);
+      return;
+    }
+
+    const requestId = ++resolveRequestIdRef.current;
+    setIsResolvingGameName(true);
+    setGameNameResolveError(null);
+
+    try {
+      const result = await sessionsAPIStoreV2.resolveExperience(trimmedUrl);
+      if (requestId !== resolveRequestIdRef.current) {
+        return;
+      }
+
+      const resolvedName = result.name?.trim();
+      if (!resolvedName) {
+        setGameNameResolveError(GAME_NAME_RESOLVE_ERROR);
+        return;
+      }
+
+      let didAutofill = false;
+      const previousAutoFilledTitle = lastAutoFilledTitleRef.current;
+
+      setTitle((currentTitle) => {
+        const shouldAutofill =
+          currentTitle.trim().length === 0 ||
+          (previousAutoFilledTitle !== null && currentTitle === previousAutoFilledTitle);
+
+        if (!shouldAutofill) {
+          return currentTitle;
+        }
+
+        didAutofill = true;
+        return resolvedName;
+      });
+
+      if (didAutofill) {
+        lastAutoFilledTitleRef.current = resolvedName;
+      }
+    } catch (err) {
+      if (requestId !== resolveRequestIdRef.current) {
+        return;
+      }
+
+      setGameNameResolveError(GAME_NAME_RESOLVE_ERROR);
+      handleError(err, { fallbackMessage: GAME_NAME_RESOLVE_ERROR });
+    } finally {
+      if (requestId === resolveRequestIdRef.current) {
+        setIsResolvingGameName(false);
+      }
+    }
+  };
+
+  const handlePastedText = (text: string) => {
+    const pasted = text.trim();
+    if (!pasted) {
+      return;
+    }
+
+    setRobloxUrl(pasted);
+    void resolveGameNameFromUrl(pasted);
+  };
 
   /**
-   * Handle paste from clipboard
+   * Handle paste from clipboard fallback (web/android and unsupported environments)
    */
   const handlePaste = async () => {
     try {
       const text = await Clipboard.getStringAsync();
-      setRobloxUrl(text);
+      handlePastedText(text);
     } catch (err) {
       handleError(err, { fallbackMessage: 'Failed to paste from clipboard' });
     }
+  };
+
+  /**
+   * Handle native iOS paste button payload (text only)
+   */
+  const handleNativePastePress = (payload: Clipboard.PasteEventPayload) => {
+    if (payload.type !== 'text') {
+      return;
+    }
+
+    handlePastedText(payload.text);
   };
 
   /**
@@ -127,7 +210,6 @@ export default function CreateSessionScreenV2() {
       const result = await sessionsAPIStoreV2.createSession({
         robloxUrl: robloxUrl.trim(),
         title: title.trim(),
-        description: description.trim() || undefined,
         visibility,
         maxParticipants,
         scheduledStart: scheduledStart?.toISOString(),
@@ -174,15 +256,23 @@ export default function CreateSessionScreenV2() {
             autoCorrect={false}
             variant="outlined"
           />
-          <Button
-            title="Paste"
-            variant="filled"
-            onPress={handlePaste}
-            buttonColor="#007AFF"
-            style={styles.pasteButton}
-            contentStyle={styles.pasteButtonContent}
-            labelStyle={styles.buttonLabel}
-          />
+          {Clipboard.isPasteButtonAvailable ? (
+            <Clipboard.ClipboardPasteButton
+              acceptedContentTypes={['plain-text']}
+              onPress={handleNativePastePress}
+              style={styles.nativePasteButton}
+            />
+          ) : (
+            <Button
+              title="Paste"
+              variant="filled"
+              onPress={handlePaste}
+              buttonColor="#007AFF"
+              style={styles.pasteButton}
+              contentStyle={styles.pasteButtonContent}
+              labelStyle={styles.buttonLabel}
+            />
+          )}
         </View>
         <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
           e.g., https://www.roblox.com/games/606849621/Jailbreak
@@ -202,24 +292,16 @@ export default function CreateSessionScreenV2() {
           maxLength={100}
           variant="outlined"
         />
-      </View>
-
-      {/* Description */}
-      <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Description (optional)
-        </ThemedText>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="What are you planning?"
-          multiline
-          numberOfLines={3}
-          maxLength={500}
-          variant="outlined"
-          contentStyle={styles.textAreaContent}
-        />
+        {isResolvingGameName && (
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.resolveHint}>
+            Fetching game name...
+          </ThemedText>
+        )}
+        {gameNameResolveError && (
+          <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
+            {gameNameResolveError}
+          </ThemedText>
+        )}
       </View>
 
       {/* Visibility */}
@@ -340,15 +422,11 @@ const styles = StyleSheet.create({
   helperText: {
     marginTop: 4,
   },
+  resolveHint: {
+    marginTop: 6,
+  },
   input: {
     borderRadius: 8,
-  },
-  textArea: {
-    minHeight: 80,
-  },
-  textAreaContent: {
-    minHeight: 80,
-    textAlignVertical: 'top',
   },
   inputWithButton: {
     flexDirection: 'row',
@@ -359,6 +437,11 @@ const styles = StyleSheet.create({
   },
   pasteButton: {
     borderRadius: 8,
+    justifyContent: 'center',
+  },
+  nativePasteButton: {
+    width: 88,
+    height: 56,
     justifyContent: 'center',
   },
   pasteButtonContent: {

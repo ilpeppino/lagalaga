@@ -45,7 +45,6 @@ export interface SessionParticipant {
 export interface CreateSessionInput {
   robloxUrl: string;
   title: string;
-  description?: string;
   visibility?: SessionVisibility;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp

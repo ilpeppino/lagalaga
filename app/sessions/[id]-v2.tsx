@@ -22,6 +22,7 @@ import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
+import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -35,6 +36,7 @@ export default function SessionDetailScreenV2() {
   const colorScheme = useColorScheme();
 
   const [session, setSession] = useState<SessionDetail | null>(null);
+  const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
   const hasShownCreatedPromptRef = useRef(false);
@@ -68,6 +70,25 @@ export default function SessionDetailScreenV2() {
   useEffect(() => {
     loadSession();
   }, [loadSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const placeId = session?.game.placeId;
+    if (!session || session.game.thumbnailUrl || !placeId || placeId <= 0) {
+      setFallbackThumbnail(null);
+      return;
+    }
+
+    getRobloxGameThumbnail(placeId).then((url) => {
+      if (!cancelled) {
+        setFallbackThumbnail(url);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   useEffect(() => {
     if (justCreated !== 'true' || !paramInviteLink || hasShownCreatedPromptRef.current) {
@@ -176,8 +197,8 @@ export default function SessionDetailScreenV2() {
       contentContainerStyle={styles.content}
     >
       {/* Header Banner */}
-      {session.game.thumbnailUrl ? (
-        <Image source={{ uri: session.game.thumbnailUrl }} style={styles.banner} />
+      {session.game.thumbnailUrl || fallbackThumbnail ? (
+        <Image source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }} style={styles.banner} />
       ) : (
         <View style={[styles.banner, styles.bannerPlaceholder]}>
           <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">

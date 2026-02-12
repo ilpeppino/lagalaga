@@ -2,7 +2,7 @@
  * Epic 4 Story 4.3: Browse Sessions UI
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -22,6 +22,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Card } from '@/components/ui/paper';
 import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
 import { useErrorHandler } from '@/src/lib/errors';
+import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 
 /**
  * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
@@ -71,6 +72,7 @@ export default function SessionsListScreenV2() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [fallbackThumbnails, setFallbackThumbnails] = useState<Record<number, string>>({});
 
   const LIMIT = 20;
 
@@ -211,6 +213,31 @@ export default function SessionsListScreenV2() {
     setSelectedIds(new Set());
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const placeIds = Array.from(
+      new Set(
+        [...sessions, ...plannedSessions]
+          .filter((s) => !s.game.thumbnailUrl && s.game.placeId > 0)
+          .map((s) => s.game.placeId)
+      )
+    );
+
+    if (placeIds.length === 0) return;
+
+    placeIds.forEach((placeId) => {
+      if (fallbackThumbnails[placeId]) return;
+      getRobloxGameThumbnail(placeId).then((url) => {
+        if (!url || cancelled) return;
+        setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessions, plannedSessions, fallbackThumbnails]);
+
   const renderDeleteAction = () => (
     <View style={styles.deleteAction}>
       <ThemedText type="labelLarge" lightColor="#fff" darkColor="#fff">
@@ -222,6 +249,7 @@ export default function SessionsListScreenV2() {
   const renderSession = ({ item, isPlanned = false }: { item: Session; isPlanned?: boolean }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
     const isSelected = selectedIds.has(item.id);
+    const thumbnailUrl = item.game.thumbnailUrl || fallbackThumbnails[item.game.placeId];
 
     const sessionCard = (
       <Card
@@ -255,8 +283,8 @@ export default function SessionsListScreenV2() {
             </View>
           )}
 
-          {item.game.thumbnailUrl ? (
-            <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
+          {thumbnailUrl ? (
+            <Image source={{ uri: thumbnailUrl }} style={styles.thumbnail} />
           ) : (
             <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
               <ThemedText
@@ -428,31 +456,31 @@ export default function SessionsListScreenV2() {
       <Stack.Screen
         options={{
           title: selectionMode ? `${selectedIds.size} Selected` : 'Sessions',
-          headerLeft: selectionMode
-            ? () => (
-                <IconButton
-                  icon="close"
-                  onPress={handleExitSelectionMode}
-                  disabled={isDeleting}
-                />
-              )
-            : undefined,
-          headerRight: selectionMode
-            ? () => (
-                <View style={styles.headerActions}>
+          ...(selectionMode
+            ? {
+                headerLeft: () => (
                   <IconButton
-                    icon={allPlannedSelected ? 'checkbox-marked' : 'checkbox-blank-outline'}
-                    onPress={handleToggleAll}
-                    disabled={isDeleting || plannedSessions.length === 0}
+                    icon="close"
+                    onPress={handleExitSelectionMode}
+                    disabled={isDeleting}
                   />
-                  <IconButton
-                    icon="delete"
-                    onPress={handleBulkDelete}
-                    disabled={isDeleting || selectedIds.size === 0}
-                  />
-                </View>
-              )
-            : undefined,
+                ),
+                headerRight: () => (
+                  <View style={styles.headerActions}>
+                    <IconButton
+                      icon={allPlannedSelected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      onPress={handleToggleAll}
+                      disabled={isDeleting || plannedSessions.length === 0}
+                    />
+                    <IconButton
+                      icon="delete"
+                      onPress={handleBulkDelete}
+                      disabled={isDeleting || selectedIds.size === 0}
+                    />
+                  </View>
+                ),
+              }
+            : {}),
         }}
       />
       <ScrollView

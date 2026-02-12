@@ -116,3 +116,15 @@ export function isApiError(error: unknown): error is ApiError {
 export function isNetworkError(error: unknown): error is NetworkError {
   return error instanceof NetworkError;
 }
+
+/**
+ * Hook to handle errors with user-friendly presentation.
+ * Returns a presentError function that can be used to display errors.
+ */
+export function useErrorHandler() {
+  // Import presentError dynamically to avoid circular dependency
+  const { presentError: _presentError } = require('./errorPresenter');
+  return {
+    presentError: _presentError,
+  };
+}

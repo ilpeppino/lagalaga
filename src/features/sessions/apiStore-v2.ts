@@ -210,6 +210,49 @@ class SessionsAPIStoreV2 {
 
     return response.data;
   }
+
+  /**
+   * Delete a session
+   */
+  async deleteSession(id: string): Promise<void> {
+    const response = await fetchWithAuth<{ success: boolean }>(
+      `/api/sessions/${id}`,
+      {
+        method: 'DELETE',
+      }
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_006',
+        message: 'Failed to delete session',
+        statusCode: 500,
+      });
+    }
+  }
+
+  /**
+   * Bulk delete sessions
+   */
+  async bulkDeleteSessions(ids: string[]): Promise<number> {
+    const response = await fetchWithAuth<{ success: boolean; data: { deletedCount: number } }>(
+      '/api/sessions/bulk-delete',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_007',
+        message: 'Failed to bulk delete sessions',
+        statusCode: 500,
+      });
+    }
+
+    return response.data.deletedCount;
+  }
 }
 
 export const sessionsAPIStoreV2 = new SessionsAPIStoreV2();

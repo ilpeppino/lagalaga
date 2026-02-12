@@ -30,12 +30,19 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
   const correlationId = generateCorrelationId();
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     'X-Correlation-ID': correlationId,
   };
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  const incomingHeaders = (options.headers as Record<string, string> | undefined) ?? {};
+  const hasContentTypeHeader = Object.keys(incomingHeaders).some(
+    (k) => k.toLowerCase() === 'content-type'
+  );
+  if (options.body != null && !hasContentTypeHeader) {
+    headers['Content-Type'] = 'application/json';
   }
 
   let response: Response;
@@ -44,7 +51,7 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
       ...options,
       headers: {
         ...headers,
-        ...(options.headers as Record<string, string>),
+        ...incomingHeaders,
       },
     });
   } catch (err) {

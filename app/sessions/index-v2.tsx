@@ -9,19 +9,24 @@ import {
   RefreshControl,
   Image,
   ScrollView,
+  TouchableOpacity,
+  Platform,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, Stack } from 'expo-router';
+import { Swipeable } from 'react-native-gesture-handler';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Card } from '@/components/ui/paper';
-import { ActivityIndicator, FAB } from 'react-native-paper';
+import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
+import { useErrorHandler } from '@/src/lib/errors';
 
 export default function SessionsListScreenV2() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const { presentError } = useErrorHandler();
 
   // Active sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -35,6 +40,11 @@ export default function SessionsListScreenV2() {
   const [plannedLoading, setPlannedLoading] = useState(true);
   const [plannedError, setPlannedError] = useState<string | null>(null);
   const [plannedTotal, setPlannedTotal] = useState(0);
+
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const LIMIT = 20;
 
@@ -102,6 +112,84 @@ export default function SessionsListScreenV2() {
     loadPlannedSessions();
   }, [loadPlannedSessions, loadSessions]);
 
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    try {
+      setIsDeleting(true);
+      await sessionsAPIStoreV2.deleteSession(sessionId);
+
+      // Optimistically remove from UI
+      setPlannedSessions(prev => prev.filter(s => s.id !== sessionId));
+      setPlannedTotal(prev => prev - 1);
+
+      logger.info('Session deleted successfully', { sessionId });
+    } catch (error) {
+      presentError(error);
+      // Reload to ensure consistency
+      await loadPlannedSessions();
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [loadPlannedSessions, presentError]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+
+    try {
+      setIsDeleting(true);
+      const idsToDelete = Array.from(selectedIds);
+      const deletedCount = await sessionsAPIStoreV2.bulkDeleteSessions(idsToDelete);
+
+      // Optimistically remove from UI
+      setPlannedSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
+      setPlannedTotal(prev => prev - deletedCount);
+
+      // Exit selection mode
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+
+      logger.info('Sessions deleted successfully', { count: deletedCount });
+    } catch (error) {
+      presentError(error);
+      // Reload to ensure consistency
+      await loadPlannedSessions();
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [selectedIds, loadPlannedSessions, presentError]);
+
+  const handleLongPress = useCallback((sessionId: string) => {
+    setSelectionMode(true);
+    setSelectedIds(new Set([sessionId]));
+  }, []);
+
+  const handleToggleSelection = useCallback((sessionId: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sessionId)) {
+        newSet.delete(sessionId);
+      } else {
+        newSet.add(sessionId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleToggleAll = useCallback(() => {
+    const allPlannedIds = plannedSessions.map(s => s.id);
+    const allSelected = allPlannedIds.every(id => selectedIds.has(id));
+
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allPlannedIds));
+    }
+  }, [plannedSessions, selectedIds]);
+
+  const handleExitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
   const formatRelativeTime = (isoString: string): string => {
     const date = new Date(isoString);
     const now = new Date();
@@ -124,16 +212,50 @@ export default function SessionsListScreenV2() {
     }
   };
 
+  const renderDeleteAction = () => (
+    <View style={styles.deleteAction}>
+      <ThemedText type="labelLarge" lightColor="#fff" darkColor="#fff">
+        Delete
+      </ThemedText>
+    </View>
+  );
+
   const renderSession = ({ item, isPlanned = false }: { item: Session; isPlanned?: boolean }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
+    const isSelected = selectedIds.has(item.id);
 
-    return (
+    const sessionCard = (
       <Card
-        style={styles.sessionCard}
+        style={[
+          styles.sessionCard,
+          isSelected && styles.sessionCardSelected,
+        ]}
         mode="elevated"
-        onPress={() => router.push(`/sessions/${item.id}`)}
+        onPress={() => {
+          if (selectionMode && isPlanned) {
+            handleToggleSelection(item.id);
+          } else {
+            router.push(`/sessions/${item.id}`);
+          }
+        }}
+        onLongPress={isPlanned ? () => handleLongPress(item.id) : undefined}
       >
         <View style={styles.sessionCardContent}>
+          {isPlanned && selectionMode && (
+            <View style={styles.checkboxContainer}>
+              <View style={[
+                styles.checkbox,
+                isSelected && styles.checkboxSelected,
+              ]}>
+                {isSelected && (
+                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                    ✓
+                  </ThemedText>
+                )}
+              </View>
+            </View>
+          )}
+
           {item.game.thumbnailUrl ? (
             <Image source={{ uri: item.game.thumbnailUrl }} style={styles.thumbnail} />
           ) : (
@@ -250,6 +372,38 @@ export default function SessionsListScreenV2() {
         </View>
       </Card>
     );
+
+    // Wrap in Swipeable only for planned sessions when not in selection mode
+    if (isPlanned && !selectionMode && Platform.OS !== 'web') {
+      return (
+        <Swipeable
+          renderRightActions={renderDeleteAction}
+          onSwipeableOpen={() => handleDeleteSession(item.id)}
+          overshootRight={false}
+        >
+          {sessionCard}
+        </Swipeable>
+      );
+    }
+
+    // For web or when in selection mode, provide a simple delete button (optional)
+    if (isPlanned && !selectionMode && Platform.OS === 'web') {
+      return (
+        <View style={styles.webDeleteContainer}>
+          {sessionCard}
+          <TouchableOpacity
+            style={styles.webDeleteButton}
+            onPress={() => handleDeleteSession(item.id)}
+          >
+            <ThemedText type="labelSmall" lightColor="#ff3b30" darkColor="#ff453a">
+              Delete
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return sessionCard;
   };
 
   if (isLoading && sessions.length === 0 && plannedLoading) {
@@ -268,8 +422,40 @@ export default function SessionsListScreenV2() {
     );
   }
 
+  const allPlannedSelected = plannedSessions.length > 0 && plannedSessions.every(s => selectedIds.has(s.id));
+
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
+      <Stack.Screen
+        options={{
+          title: selectionMode ? `${selectedIds.size} Selected` : 'Sessions',
+          headerLeft: selectionMode
+            ? () => (
+                <IconButton
+                  icon="close"
+                  onPress={handleExitSelectionMode}
+                  disabled={isDeleting}
+                />
+              )
+            : undefined,
+          headerRight: selectionMode
+            ? () => (
+                <View style={styles.headerActions}>
+                  <IconButton
+                    icon={allPlannedSelected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                    onPress={handleToggleAll}
+                    disabled={isDeleting || plannedSessions.length === 0}
+                  />
+                  <IconButton
+                    icon="delete"
+                    onPress={handleBulkDelete}
+                    disabled={isDeleting || selectedIds.size === 0}
+                  />
+                </View>
+              )
+            : undefined,
+        }}
+      />
       <ScrollView
         contentContainerStyle={styles.list}
         refreshControl={
@@ -361,12 +547,14 @@ export default function SessionsListScreenV2() {
         ))}
       </ScrollView>
 
-      <FAB
-        icon="plus"
-        style={styles.fab}
-        color="#fff"
-        onPress={() => router.push('/sessions/create')}
-      />
+      {!selectionMode && (
+        <FAB
+          icon="plus"
+          style={styles.fab}
+          color="#fff"
+          onPress={() => router.push('/sessions/create')}
+        />
+      )}
     </View>
   );
 }
@@ -383,6 +571,10 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sectionHeader: {
     padding: 16,
@@ -426,8 +618,29 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  sessionCardSelected: {
+    backgroundColor: '#e3f2fd',
+  },
   sessionCardContent: {
     flexDirection: 'row',
+  },
+  checkboxContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 40,
+    paddingLeft: 8,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#007AFF',
   },
   thumbnail: {
     width: 100,
@@ -497,6 +710,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#f0f0f0',
     borderRadius: 4,
+  },
+  deleteAction: {
+    backgroundColor: '#ff3b30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  webDeleteContainer: {
+    position: 'relative',
+  },
+  webDeleteButton: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ff3b30',
   },
   footer: {
     paddingVertical: 20,

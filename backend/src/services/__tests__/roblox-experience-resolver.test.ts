@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { ErrorCodes } from '../../../../shared/errors/codes.js';
 
 const mockSupabase = {
   from: jest.fn(),
@@ -100,7 +101,45 @@ describe('resolveRobloxShareUrl', () => {
     expect(result.canonicalUrl).toBe('https://www.roblox.com/games/606849621');
 
     expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.roblox.com/share?code=XYZ&type=ExperienceDetails&stamp=abc',
+      expect.objectContaining({ redirect: 'manual' })
+    );
+  });
+
+  it('falls back from /share-links to /share when /share-links is rate limited', async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(responseWith({ status: 429 }))
+      .mockResolvedValueOnce(
+        responseWith({
+          status: 302,
+          headers: { location: 'https://www.roblox.com/games/606849621/Jailbreak' },
+        })
+      )
+      .mockResolvedValueOnce(responseWith({ status: 200, json: { universeId: 12345 } }))
+      .mockResolvedValueOnce(
+        responseWith({
+          status: 200,
+          json: {
+            data: [{ id: 12345, name: 'Jailbreak' }],
+          },
+        })
+      );
+
+    const result = await resolveRobloxShareUrl(
       'https://www.roblox.com/share-links?code=XYZ&type=ExperienceDetails',
+      { fetchFn: fetchMock }
+    );
+
+    expect(result.placeId).toBe(606849621);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://www.roblox.com/share-links?code=XYZ&type=ExperienceDetails',
+      expect.objectContaining({ redirect: 'manual' })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://www.roblox.com/share?code=XYZ&type=ExperienceDetails',
       expect.objectContaining({ redirect: 'manual' })
     );
   });
@@ -172,6 +211,12 @@ describe('resolveRobloxShareUrl', () => {
           status: 200,
           text: '<html><head><title>Invalid</title></head><body>Not found</body></html>',
         })
+      )
+      .mockResolvedValueOnce(
+        responseWith({
+          status: 200,
+          text: '<html><head><title>Invalid</title></head><body>Not found</body></html>',
+        })
       );
 
     await expect(
@@ -184,6 +229,12 @@ describe('resolveRobloxShareUrl', () => {
   it('throws for unexpected redirect host (ro.blox.com)', async () => {
     const fetchMock = jest
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        responseWith({
+          status: 302,
+          headers: { location: 'https://ro.blox.com/Ebh5?af_web_dp=...' },
+        })
+      )
       .mockResolvedValueOnce(
         responseWith({
           status: 302,
@@ -225,6 +276,19 @@ describe('RobloxExperienceResolverService', () => {
       code: 'NOT_FOUND_RESOURCE',
       statusCode: 404,
       message: 'Could not resolve Roblox share link',
+    });
+  });
+
+  it('throws AppError 429 when Roblox share lookup is rate limited', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(responseWith({ status: 429 }));
+
+    const service = new RobloxExperienceResolverService();
+
+    await expect(
+      service.resolveExperienceFromUrl('https://www.roblox.com/share-links?code=BAD&type=ExperienceDetails')
+    ).rejects.toMatchObject({
+      code: ErrorCodes.RATE_LIMIT_EXCEEDED,
+      statusCode: 429,
     });
   });
 });

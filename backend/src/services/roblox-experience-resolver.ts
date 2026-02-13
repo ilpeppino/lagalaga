@@ -1,6 +1,6 @@
 import { getSupabase } from '../config/supabase.js';
 import { logger, logWithCorrelation } from '../lib/logger.js';
-import { AppError } from '../utils/errors.js';
+import { AppError, ErrorCodes } from '../utils/errors.js';
 
 export interface ResolveExperienceResult {
   placeId: number;
@@ -85,6 +85,15 @@ export class RobloxExperienceResolverService {
 
       if (cached) {
         return this.toResponse(cached);
+      }
+
+      if (error instanceof ShareLookupHttpError && error.statusCode === 429) {
+        throw new AppError(
+          ErrorCodes.RATE_LIMIT_EXCEEDED,
+          'Roblox share link is temporarily rate limited. Please retry shortly.',
+          429,
+          { severity: 'warning' }
+        );
       }
 
       throw new AppError('NOT_FOUND_RESOURCE', 'Could not resolve Roblox share link', 404, {
@@ -231,16 +240,35 @@ export async function resolveRobloxShareUrl(
     if (placeId) {
       canonicalUrl = `https://www.roblox.com/games/${placeId}`;
     } else if (isSharePath(parsed.pathname)) {
-      const normalizedShareUrl = normalizeShareUrl(parsed).toString();
-      logWithCorrelation(
-        'info',
-        { normalizedUrl: normalizedShareUrl },
-        'Normalized Roblox share URL',
-        undefined,
-        correlationId
-      );
+      const shareCandidates = buildShareUrlCandidates(parsed);
+      logWithCorrelation('info', { shareCandidates }, 'Prepared Roblox share URL candidates', undefined, correlationId);
 
-      const shareResolution = await resolvePlaceIdFromShareUrl(normalizedShareUrl, fetchFn, correlationId);
+      let lastError: unknown = null;
+      let shareResolution: { placeId: number; canonicalUrl: string } | null = null;
+
+      for (const candidate of shareCandidates) {
+        try {
+          shareResolution = await resolvePlaceIdFromShareUrl(candidate, fetchFn, correlationId);
+          break;
+        } catch (error) {
+          lastError = error;
+          logWithCorrelation(
+            'warn',
+            {
+              candidate,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'Roblox share URL candidate failed',
+            undefined,
+            correlationId
+          );
+        }
+      }
+
+      if (!shareResolution) {
+        throw lastError instanceof Error ? lastError : new Error('Could not resolve share URL from candidates');
+      }
+
       placeId = shareResolution.placeId;
       canonicalUrl = shareResolution.canonicalUrl;
     } else {
@@ -305,15 +333,30 @@ function parseRobloxInputUrl(rawUrl: string): URL {
   return new URL(withScheme);
 }
 
-function normalizeShareUrl(url: URL): URL {
-  const normalized = new URL('https://www.roblox.com/share-links');
+function buildShareUrlCandidates(url: URL): string[] {
+  const shareLinksUrl = new URL('https://www.roblox.com/share-links');
+  const shareUrl = new URL('https://www.roblox.com/share');
   const code = url.searchParams.get('code');
   const type = url.searchParams.get('type');
+  const stamp = url.searchParams.get('stamp');
 
-  if (code) normalized.searchParams.set('code', code);
-  if (type) normalized.searchParams.set('type', type);
+  if (code) {
+    shareLinksUrl.searchParams.set('code', code);
+    shareUrl.searchParams.set('code', code);
+  }
+  if (type) {
+    shareLinksUrl.searchParams.set('type', type);
+    shareUrl.searchParams.set('type', type);
+  }
+  if (stamp) {
+    shareUrl.searchParams.set('stamp', stamp);
+  }
 
-  return normalized;
+  // Prioritize path form the caller provided, then try the alternate.
+  const preferred = url.pathname === '/share' ? shareUrl.toString() : shareLinksUrl.toString();
+  const alternate = url.pathname === '/share' ? shareLinksUrl.toString() : shareUrl.toString();
+
+  return preferred === alternate ? [preferred] : [preferred, alternate];
 }
 
 async function resolvePlaceIdFromShareUrl(
@@ -363,7 +406,7 @@ async function resolvePlaceIdFromShareUrl(
     }
 
     if (!response.ok) {
-      throw new Error(`Share URL returned HTTP ${response.status}`);
+      throw new ShareLookupHttpError(response.status, currentUrl);
     }
 
     const html = await response.text();
@@ -380,6 +423,13 @@ async function resolvePlaceIdFromShareUrl(
   }
 
   throw new Error('Could not resolve share URL to placeId');
+}
+
+class ShareLookupHttpError extends Error {
+  constructor(public readonly statusCode: number, public readonly requestedUrl: string) {
+    super(`Share URL returned HTTP ${statusCode}`);
+    this.name = 'ShareLookupHttpError';
+  }
 }
 
 function extractCanonicalAndPlaceIdFromHtml(html: string): {

@@ -35,6 +35,15 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'invite_only', label: 'Invite Only' },
 ];
 
+function getFavoriteDisplayName(favorite: RobloxFavoriteGame): string {
+  const name = favorite.name?.trim();
+  if (name) {
+    return name;
+  }
+
+  return 'Unnamed Experience';
+}
+
 export default function CreateSessionScreenV2() {
   const router = useRouter();
   const { handleError, getErrorMessage } = useErrorHandler();
@@ -91,7 +100,7 @@ export default function CreateSessionScreenV2() {
     setSelectedFavorite(favorite);
     setRobloxUrl(favorite.canonicalWebUrl ?? '');
 
-    const preferredTitle = favorite.name?.trim() || (favorite.placeId ? `Place ${favorite.placeId}` : '');
+    const preferredTitle = getFavoriteDisplayName(favorite);
     if (preferredTitle) {
       setTitle(preferredTitle);
       lastAutoFilledTitleRef.current = preferredTitle;
@@ -229,7 +238,7 @@ export default function CreateSessionScreenV2() {
               <Button
                 title={
                   selectedFavorite
-                    ? (selectedFavorite.name || (selectedFavorite.placeId ? `Place ${selectedFavorite.placeId}` : 'Selected favorite'))
+                    ? getFavoriteDisplayName(selectedFavorite)
                     : 'Select from your Roblox favorites'
                 }
                 variant="outlined"
@@ -243,7 +252,7 @@ export default function CreateSessionScreenV2() {
           >
             {favorites.map((favorite) => {
               const key = `${favorite.universeId}-${favorite.placeId ?? 'none'}`;
-              const label = favorite.name || (favorite.placeId ? `Place ${favorite.placeId}` : `Universe ${favorite.universeId}`);
+              const label = getFavoriteDisplayName(favorite);
               return (
                 <Menu.Item
                   key={key}

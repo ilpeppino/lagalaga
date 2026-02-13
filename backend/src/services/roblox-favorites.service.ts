@@ -172,11 +172,12 @@ export class RobloxFavoritesService {
 
   private async mapFavoriteItem(item: Record<string, unknown>): Promise<FavoriteGameResult> {
     const universeId = this.extractUniverseId(item);
+    const upstreamName = this.extractFavoriteName(item);
     if (!universeId) {
       return {
         universeId: 0,
         placeId: null,
-        name: null,
+        name: upstreamName,
         thumbnailUrl: null,
         canonicalWebUrl: null,
         canonicalStartUrl: null,
@@ -188,7 +189,7 @@ export class RobloxFavoritesService {
       return {
         universeId,
         placeId: null,
-        name: null,
+        name: upstreamName,
         thumbnailUrl: null,
         canonicalWebUrl: null,
         canonicalStartUrl: null,
@@ -217,7 +218,7 @@ export class RobloxFavoritesService {
       return {
         universeId,
         placeId,
-        name: enriched.name ?? null,
+        name: enriched.name ?? upstreamName,
         thumbnailUrl: enriched.thumbnailUrl ?? null,
         canonicalWebUrl,
         canonicalStartUrl,
@@ -236,12 +237,27 @@ export class RobloxFavoritesService {
       return {
         universeId,
         placeId,
-        name: afterFailure?.game_name ?? null,
+        name: afterFailure?.game_name ?? upstreamName,
         thumbnailUrl: afterFailure?.thumbnail_url ?? null,
         canonicalWebUrl: afterFailure?.canonical_web_url ?? canonicalWebUrl,
         canonicalStartUrl: afterFailure?.canonical_start_url ?? canonicalStartUrl,
       };
     }
+  }
+
+  private extractFavoriteName(item: Record<string, unknown>): string | null {
+    const directName = item.name;
+    if (typeof directName === 'string' && directName.trim().length > 0) {
+      return directName.trim();
+    }
+
+    const gameObj = item.game as Record<string, unknown> | undefined;
+    const nestedName = gameObj?.name;
+    if (typeof nestedName === 'string' && nestedName.trim().length > 0) {
+      return nestedName.trim();
+    }
+
+    return null;
   }
 
   private extractUniverseId(item: Record<string, unknown>): number | null {

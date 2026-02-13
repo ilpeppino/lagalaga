@@ -165,6 +165,32 @@ describe('RobloxFavoritesService', () => {
     ]);
   });
 
+  it('uses favorites endpoint game name when place resolution fails', async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        makeJsonResponse(200, {
+          data: [{ universeId: 999, name: 'Natural Disaster Survival' }],
+          nextPageCursor: null,
+          previousPageCursor: null,
+        })
+      )
+      .mockResolvedValueOnce(makeJsonResponse(503, { message: 'unavailable' }));
+
+    const service = new RobloxFavoritesService({
+      supabase: createSupabaseMock({
+        robloxUserId: '123',
+        appUsersRobloxUserId: null,
+        gamesByPlaceId: new Map(),
+      }) as any,
+      fetchFn: fetchMock,
+      enrichmentService: { enrichGame: jest.fn() } as any,
+    });
+
+    const result = await service.getFavoritesForUser('user-1');
+    expect(result.favorites[0]?.name).toBe('Natural Disaster Survival');
+  });
+
   it('uses cached game data and skips enrichment', async () => {
     const enrichGame = jest.fn();
     const fetchMock = jest

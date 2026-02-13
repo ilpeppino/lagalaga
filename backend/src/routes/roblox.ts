@@ -2,10 +2,16 @@ import { FastifyInstance } from 'fastify';
 import { RobloxLinkNormalizer } from '../services/roblox-link-normalizer.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { RobloxExperienceResolverService } from '../services/roblox-experience-resolver.js';
+import { RobloxExperienceResolverService as RobloxExperienceByPlaceResolverService } from '../services/roblox-experience-resolver.service.js';
 
-export async function robloxRoutes(fastify: FastifyInstance) {
+interface RobloxRoutesOptions {
+  experienceByPlaceResolver?: Pick<RobloxExperienceByPlaceResolverService, 'resolveExperienceByPlaceId'>;
+}
+
+export async function robloxRoutes(fastify: FastifyInstance, options: RobloxRoutesOptions = {}) {
   const normalizer = new RobloxLinkNormalizer();
   const experienceResolver = new RobloxExperienceResolverService();
+  const experienceByPlaceResolver = options.experienceByPlaceResolver ?? new RobloxExperienceByPlaceResolverService();
 
   /**
    * POST /roblox/normalize-link
@@ -136,6 +142,47 @@ export async function robloxRoutes(fastify: FastifyInstance) {
         correlationId
       );
       return reply.send(resolved);
+    }
+  );
+
+  /**
+   * GET /api/roblox/experience-by-place/:placeId
+   * Resolve Roblox experience metadata from placeId (no auth required).
+   */
+  fastify.get<{
+    Params: {
+      placeId: string;
+    };
+  }>(
+    '/api/roblox/experience-by-place/:placeId',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['placeId'],
+          properties: {
+            placeId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const placeId = Number.parseInt(request.params.placeId, 10);
+      if (!Number.isInteger(placeId) || placeId <= 0) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'placeId must be a positive integer',
+          },
+        });
+      }
+
+      const data = await experienceByPlaceResolver.resolveExperienceByPlaceId(placeId);
+      return reply.send({
+        success: true,
+        data,
+      });
     }
   );
 }

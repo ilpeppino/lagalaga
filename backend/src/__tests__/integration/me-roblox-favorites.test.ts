@@ -7,6 +7,7 @@ import { RobloxFavoritesService } from '../../services/roblox-favorites.service.
 
 interface MockDbState {
   robloxUserId: string | null;
+  appUsersRobloxUserId: string | null;
   gamesByPlaceId: Map<number, {
     game_name: string | null;
     thumbnail_url: string | null;
@@ -57,6 +58,19 @@ function createSupabaseMock(state: MockDbState) {
             });
             return { error: null };
           }),
+        };
+      }
+
+      if (table === 'app_users') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              maybeSingle: async () => ({
+                data: state.appUsersRobloxUserId ? { roblox_user_id: state.appUsersRobloxUserId } : null,
+                error: null,
+              }),
+            })),
+          })),
         };
       }
 
@@ -123,6 +137,7 @@ describe('GET /api/me/roblox/favorites', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
       fetchFn: fetchMock,
@@ -150,6 +165,7 @@ describe('GET /api/me/roblox/favorites', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: null,
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
       fetchFn: jest.fn<typeof fetch>(),
@@ -172,6 +188,7 @@ describe('GET /api/me/roblox/favorites', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
       fetchFn: fetchMock,
@@ -202,6 +219,7 @@ describe('GET /api/me/roblox/favorites', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map([
           [2002, {
             game_name: 'Cached Favorite',
@@ -225,5 +243,34 @@ describe('GET /api/me/roblox/favorites', () => {
       thumbnailUrl: 'https://tr.rbxcdn.com/cached.png',
     });
     expect(enrichGame).not.toHaveBeenCalled();
+  });
+
+  it('falls back to app_users.roblox_user_id for connected users', async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        makeJsonResponse(200, {
+          data: [],
+          nextPageCursor: null,
+          previousPageCursor: null,
+        })
+      );
+
+    const service = new RobloxFavoritesService({
+      supabase: createSupabaseMock({
+        robloxUserId: null,
+        appUsersRobloxUserId: '999',
+        gamesByPlaceId: new Map(),
+      }) as any,
+      fetchFn: fetchMock,
+      enrichmentService: { enrichGame: jest.fn() } as any,
+    });
+
+    const app = await buildTestApp(service);
+    const res = await request(app.server).get('/api/me/roblox/favorites');
+    await app.close();
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.robloxUserId).toBe('999');
   });
 });

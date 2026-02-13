@@ -9,6 +9,7 @@ import {
   SessionWithInvite,
   ListSessionsParams,
   ListSessionsResponse,
+  RobloxFavoritesResponse,
 } from './types-v2';
 import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
@@ -115,6 +116,33 @@ class SessionsAPIStoreV2 {
         body: JSON.stringify({ url }),
       }
     );
+  }
+
+  /**
+   * List current user's Roblox favorite games.
+   */
+  async listMyRobloxFavorites(params: {
+    limit?: number;
+    cursor?: string;
+  } = {}): Promise<RobloxFavoritesResponse> {
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.append('limit', params.limit.toString());
+    if (params.cursor) queryParams.append('cursor', params.cursor);
+
+    const query = queryParams.toString();
+    const response = await fetchWithAuth<{ success: boolean; data: RobloxFavoritesResponse }>(
+      `/api/me/roblox/favorites${query ? `?${query}` : ''}`
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to load Roblox favorites',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
   }
 
   /**

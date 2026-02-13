@@ -99,14 +99,30 @@ export class RobloxFavoritesService {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load Roblox link: ${error.message}`, 500);
     }
 
-    const robloxUserId = data?.platform_user_id?.trim();
-    if (!robloxUserId) {
-      throw new AppError('ROBLOX_NOT_CONNECTED', 'Roblox account is not connected', 409, {
-        severity: 'warning',
-      });
+    const platformRobloxUserId = data?.platform_user_id?.trim();
+    if (platformRobloxUserId) {
+      return platformRobloxUserId;
     }
 
-    return robloxUserId;
+    // Backward compatibility: current OAuth flow persists Roblox identity in app_users.
+    const { data: appUserData, error: appUserError } = await this.supabase
+      .from('app_users')
+      .select('roblox_user_id')
+      .eq('id', userId)
+      .maybeSingle<{ roblox_user_id: string | null }>();
+
+    if (appUserError) {
+      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load Roblox link: ${appUserError.message}`, 500);
+    }
+
+    const appUserRobloxUserId = appUserData?.roblox_user_id?.trim();
+    if (appUserRobloxUserId) {
+      return appUserRobloxUserId;
+    }
+
+    throw new AppError('ROBLOX_NOT_CONNECTED', 'Roblox account is not connected', 409, {
+      severity: 'warning',
+    });
   }
 
   private async fetchFavorites(robloxUserId: string, limit: number, cursor?: string): Promise<FavoritesResponse> {

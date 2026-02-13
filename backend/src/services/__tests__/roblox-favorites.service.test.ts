@@ -3,6 +3,7 @@ import { RobloxFavoritesService } from '../roblox-favorites.service.js';
 
 interface MockDbState {
   robloxUserId: string | null;
+  appUsersRobloxUserId: string | null;
   gamesByPlaceId: Map<number, {
     game_name: string | null;
     thumbnail_url: string | null;
@@ -66,6 +67,19 @@ function createSupabaseMock(state: MockDbState) {
         };
       }
 
+      if (table === 'app_users') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              maybeSingle: async () => ({
+                data: state.appUsersRobloxUserId ? { roblox_user_id: state.appUsersRobloxUserId } : null,
+                error: null,
+              }),
+            })),
+          })),
+        };
+      }
+
       throw new Error(`Unexpected table: ${table}`);
     }),
   };
@@ -79,6 +93,7 @@ describe('RobloxFavoritesService', () => {
   it('throws ROBLOX_NOT_CONNECTED when user has no linked roblox account', async () => {
     const supabase = createSupabaseMock({
       robloxUserId: null,
+      appUsersRobloxUserId: null,
       gamesByPlaceId: new Map(),
     });
 
@@ -102,6 +117,7 @@ describe('RobloxFavoritesService', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
       fetchFn: fetchMock,
@@ -129,6 +145,7 @@ describe('RobloxFavoritesService', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
       fetchFn: fetchMock,
@@ -164,6 +181,7 @@ describe('RobloxFavoritesService', () => {
     const service = new RobloxFavoritesService({
       supabase: createSupabaseMock({
         robloxUserId: '123',
+        appUsersRobloxUserId: null,
         gamesByPlaceId: new Map([
           [606849621, {
             game_name: 'Jailbreak',
@@ -186,5 +204,30 @@ describe('RobloxFavoritesService', () => {
       thumbnailUrl: 'https://tr.rbxcdn.com/cached.png',
     });
     expect(enrichGame).not.toHaveBeenCalled();
+  });
+
+  it('falls back to app_users.roblox_user_id when user_platforms has no row', async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        makeJsonResponse(200, {
+          data: [],
+          nextPageCursor: null,
+          previousPageCursor: null,
+        })
+      );
+
+    const service = new RobloxFavoritesService({
+      supabase: createSupabaseMock({
+        robloxUserId: null,
+        appUsersRobloxUserId: '456789',
+        gamesByPlaceId: new Map(),
+      }) as any,
+      fetchFn: fetchMock,
+      enrichmentService: { enrichGame: jest.fn() } as any,
+    });
+
+    const result = await service.getFavoritesForUser('user-1');
+    expect(result.robloxUserId).toBe('456789');
   });
 });

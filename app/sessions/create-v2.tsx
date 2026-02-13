@@ -11,7 +11,7 @@
  * - Error handling via useErrorHandler
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,24 +19,21 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import type { SessionVisibility } from '@/src/features/sessions/types-v2';
+import type { RobloxFavoriteGame, SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button, TextInput } from '@/components/ui/paper';
-import { SegmentedButtons } from 'react-native-paper';
+import { ActivityIndicator, Menu, SegmentedButtons } from 'react-native-paper';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'public', label: 'Public' },
   { value: 'friends', label: 'Friends Only' },
   { value: 'invite_only', label: 'Invite Only' },
 ];
-
-const GAME_NAME_RESOLVE_ERROR = "Couldn't fetch game name. You can type a title manually.";
 
 export default function CreateSessionScreenV2() {
   const router = useRouter();
@@ -45,6 +42,8 @@ export default function CreateSessionScreenV2() {
 
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
+  const [favorites, setFavorites] = useState<RobloxFavoriteGame[]>([]);
+  const [selectedFavorite, setSelectedFavorite] = useState<RobloxFavoriteGame | null>(null);
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [maxParticipants, setMaxParticipants] = useState(10);
@@ -54,99 +53,49 @@ export default function CreateSessionScreenV2() {
   // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isResolvingGameName, setIsResolvingGameName] = useState(false);
-  const [gameNameResolveError, setGameNameResolveError] = useState<string | null>(null);
+  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
 
   const lastAutoFilledTitleRef = useRef<string | null>(null);
-  const resolveRequestIdRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingFavorites(true);
+    setFavoritesError(null);
 
-  const resolveGameNameFromUrl = async (url: string) => {
-    const trimmedUrl = url.trim();
-    if (!trimmedUrl) {
-      setGameNameResolveError(null);
-      return;
-    }
-
-    const requestId = ++resolveRequestIdRef.current;
-    setIsResolvingGameName(true);
-    setGameNameResolveError(null);
-
-    try {
-      const result = await sessionsAPIStoreV2.resolveExperience(trimmedUrl);
-      if (requestId !== resolveRequestIdRef.current) {
-        return;
-      }
-
-      const resolvedName = result.name?.trim();
-      if (!resolvedName) {
-        setGameNameResolveError(GAME_NAME_RESOLVE_ERROR);
-        return;
-      }
-
-      let didAutofill = false;
-      const previousAutoFilledTitle = lastAutoFilledTitleRef.current;
-
-      setTitle((currentTitle) => {
-        const shouldAutofill =
-          currentTitle.trim().length === 0 ||
-          (previousAutoFilledTitle !== null && currentTitle === previousAutoFilledTitle);
-
-        if (!shouldAutofill) {
-          return currentTitle;
+    sessionsAPIStoreV2.listMyRobloxFavorites({ limit: 100 })
+      .then((data) => {
+        if (cancelled) return;
+        const available = data.favorites.filter((game) => game.placeId && game.canonicalWebUrl);
+        setFavorites(available);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setFavorites([]);
+        setFavoritesError('Could not load your Roblox favorites');
+        handleError(err, { fallbackMessage: 'Could not load your Roblox favorites' });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingFavorites(false);
         }
-
-        didAutofill = true;
-        return resolvedName;
       });
 
-      if (didAutofill) {
-        lastAutoFilledTitleRef.current = resolvedName;
-      }
-    } catch (err) {
-      if (requestId !== resolveRequestIdRef.current) {
-        return;
-      }
+    return () => {
+      cancelled = true;
+    };
+  }, [handleError]);
 
-      setGameNameResolveError(GAME_NAME_RESOLVE_ERROR);
-      handleError(err, { fallbackMessage: GAME_NAME_RESOLVE_ERROR });
-    } finally {
-      if (requestId === resolveRequestIdRef.current) {
-        setIsResolvingGameName(false);
-      }
+  const handleSelectFavorite = (favorite: RobloxFavoriteGame) => {
+    setFavoritesMenuVisible(false);
+    setSelectedFavorite(favorite);
+    setRobloxUrl(favorite.canonicalWebUrl ?? '');
+
+    const preferredTitle = favorite.name?.trim() || (favorite.placeId ? `Place ${favorite.placeId}` : '');
+    if (preferredTitle) {
+      setTitle(preferredTitle);
+      lastAutoFilledTitleRef.current = preferredTitle;
     }
-  };
-
-  const handlePastedText = (text: string) => {
-    const pasted = text.trim();
-    if (!pasted) {
-      return;
-    }
-
-    setRobloxUrl(pasted);
-    void resolveGameNameFromUrl(pasted);
-  };
-
-  /**
-   * Handle paste from clipboard fallback (web/android and unsupported environments)
-   */
-  const handlePaste = async () => {
-    try {
-      const text = await Clipboard.getStringAsync();
-      handlePastedText(text);
-    } catch (err) {
-      handleError(err, { fallbackMessage: 'Failed to paste from clipboard' });
-    }
-  };
-
-  /**
-   * Handle native iOS paste button payload (text only)
-   */
-  const handleNativePastePress = (payload: Clipboard.PasteEventPayload) => {
-    if (payload.type !== 'text') {
-      return;
-    }
-
-    handlePastedText(payload.text);
   };
 
   /**
@@ -195,8 +144,8 @@ export default function CreateSessionScreenV2() {
     setError(null);
 
     // Validation
-    if (!robloxUrl.trim()) {
-      setError('Roblox game link is required');
+    if (!selectedFavorite || !robloxUrl.trim()) {
+      setError('Please select a favorite Roblox game');
       return;
     }
     if (!title.trim()) {
@@ -240,43 +189,79 @@ export default function CreateSessionScreenV2() {
       ]}
       contentContainerStyle={styles.content}
     >
-      {/* Roblox URL Input */}
+      {/* Roblox URL Input (disabled, auto-filled from favorite selection) */}
       <View style={styles.field}>
         <ThemedText type="titleMedium" style={styles.label}>
           Roblox Game Link *
         </ThemedText>
-        <View style={styles.inputWithButton}>
-          <TextInput
-            style={[styles.inputWithButtonField, styles.input]}
-            value={robloxUrl}
-            onChangeText={setRobloxUrl}
-            placeholder="Paste any Roblox link"
-            autoCapitalize="none"
-            keyboardType="url"
-            autoCorrect={false}
-            variant="outlined"
-          />
-          {Clipboard.isPasteButtonAvailable ? (
-            <Clipboard.ClipboardPasteButton
-              acceptedContentTypes={['plain-text']}
-              onPress={handleNativePastePress}
-              style={styles.nativePasteButton}
-            />
-          ) : (
-            <Button
-              title="Paste"
-              variant="filled"
-              onPress={handlePaste}
-              buttonColor="#007AFF"
-              style={styles.pasteButton}
-              contentStyle={styles.pasteButtonContent}
-              labelStyle={styles.buttonLabel}
-            />
-          )}
-        </View>
+        <TextInput
+          style={styles.input}
+          value={robloxUrl}
+          placeholder="Auto-filled from your favorite game selection"
+          autoCapitalize="none"
+          keyboardType="url"
+          autoCorrect={false}
+          variant="outlined"
+          editable={false}
+        />
         <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
-          e.g., https://www.roblox.com/games/606849621/Jailbreak
+          Direct editing is disabled. Choose a game from Favorites below.
         </ThemedText>
+      </View>
+
+      {/* Favorites Dropdown */}
+      <View style={styles.field}>
+        <ThemedText type="titleMedium" style={styles.label}>
+          Favorite Game *
+        </ThemedText>
+        {isLoadingFavorites ? (
+          <View style={styles.favoritesLoading}>
+            <ActivityIndicator size="small" color="#007AFF" />
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+              Loading Roblox favorites...
+            </ThemedText>
+          </View>
+        ) : (
+          <Menu
+            visible={favoritesMenuVisible}
+            onDismiss={() => setFavoritesMenuVisible(false)}
+            anchor={(
+              <Button
+                title={
+                  selectedFavorite
+                    ? (selectedFavorite.name || (selectedFavorite.placeId ? `Place ${selectedFavorite.placeId}` : 'Selected favorite'))
+                    : 'Select from your Roblox favorites'
+                }
+                variant="outlined"
+                style={styles.dropdownButton}
+                contentStyle={styles.dropdownButtonContent}
+                labelStyle={styles.dropdownButtonLabel}
+                onPress={() => setFavoritesMenuVisible(true)}
+                disabled={favorites.length === 0}
+              />
+            )}
+          >
+            {favorites.map((favorite) => {
+              const key = `${favorite.universeId}-${favorite.placeId ?? 'none'}`;
+              const label = favorite.name || (favorite.placeId ? `Place ${favorite.placeId}` : `Universe ${favorite.universeId}`);
+              return (
+                <Menu.Item
+                  key={key}
+                  title={label}
+                  onPress={() => handleSelectFavorite(favorite)}
+                />
+              );
+            })}
+            {favorites.length === 0 && (
+              <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
+            )}
+          </Menu>
+        )}
+        {favoritesError && (
+          <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
+            {favoritesError}
+          </ThemedText>
+        )}
       </View>
 
       {/* Title */}
@@ -292,16 +277,6 @@ export default function CreateSessionScreenV2() {
           maxLength={100}
           variant="outlined"
         />
-        {isResolvingGameName && (
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.resolveHint}>
-            Fetching game name...
-          </ThemedText>
-        )}
-        {gameNameResolveError && (
-          <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
-            {gameNameResolveError}
-          </ThemedText>
-        )}
       </View>
 
       {/* Visibility */}
@@ -399,7 +374,7 @@ export default function CreateSessionScreenV2() {
         labelStyle={styles.submitButtonLabel}
         onPress={handleCreate}
         loading={isCreating}
-        disabled={isCreating || !robloxUrl || !title}
+        disabled={isCreating || !selectedFavorite || !robloxUrl || !title}
       />
     </ScrollView>
   );
@@ -428,29 +403,21 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: 8,
   },
-  inputWithButton: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  inputWithButtonField: {
-    flex: 1,
-  },
-  pasteButton: {
+  dropdownButton: {
     borderRadius: 8,
+  },
+  dropdownButtonContent: {
+    minHeight: 52,
     justifyContent: 'center',
   },
-  nativePasteButton: {
-    width: 88,
-    height: 56,
-    justifyContent: 'center',
+  dropdownButtonLabel: {
+    textAlign: 'left',
+    width: '100%',
   },
-  pasteButtonContent: {
-    minHeight: 56,
-    paddingHorizontal: 12,
-  },
-  buttonLabel: {
-    color: '#fff',
-    fontWeight: '600',
+  favoritesLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   visibilityPicker: {
     marginTop: 4,

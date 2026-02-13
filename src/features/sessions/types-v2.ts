@@ -50,6 +50,26 @@ export interface CreateSessionInput {
   scheduledStart?: string; // ISO 8601 timestamp
 }
 
+export interface RobloxFavoriteGame {
+  universeId: number;
+  placeId: number | null;
+  name: string | null;
+  thumbnailUrl: string | null;
+  canonicalWebUrl: string | null;
+  canonicalStartUrl: string | null;
+}
+
+export interface RobloxFavoritesResponse {
+  robloxUserId: string;
+  favorites: RobloxFavoriteGame[];
+  pagination: {
+    limit: number;
+    cursor: string | null;
+    nextCursor: string | null;
+    previousCursor: string | null;
+  };
+}
+
 export interface SessionWithInvite {
   session: Session;
   inviteLink: string;

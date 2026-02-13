@@ -12,9 +12,11 @@ import { authRoutes } from './routes/auth.js';
 import { sessionsRoutes } from './routes/sessions.js';
 import { sessionsRoutesV2 } from './routes/sessions-v2.js';
 import { robloxRoutes } from './routes/roblox.js';
+import { meRoutes } from './routes/me.routes.js';
 import { monitoring } from './lib/monitoring.js';
+import { fileURLToPath } from 'node:url';
 
-async function buildServer() {
+export async function buildServer() {
   const fastify = Fastify({
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -56,6 +58,7 @@ async function buildServer() {
   await fastify.register(sessionsRoutes);
   await fastify.register(sessionsRoutesV2);
   await fastify.register(robloxRoutes);
+  await fastify.register(meRoutes, { prefix: '/api/me' });
 
   return fastify;
 }
@@ -79,4 +82,9 @@ async function start() {
   }
 }
 
-start();
+const modulePath = fileURLToPath(import.meta.url);
+const isEntrypoint = process.argv[1] === modulePath;
+
+if (isEntrypoint) {
+  void start();
+}

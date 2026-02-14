@@ -8,6 +8,7 @@ import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
+import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 
 export default function RobloxCallback() {
   const router = useRouter();
@@ -28,6 +29,15 @@ export default function RobloxCallback() {
       if (!code || !state) {
         logger.error('Missing code or state parameter in OAuth callback');
         router.replace('/auth/sign-in');
+        return;
+      }
+
+      const connectState = await AsyncStorage.getItem('roblox_connect_state');
+      if (connectState && connectState === state) {
+        await AsyncStorage.removeItem('roblox_connect_state');
+        await sessionsAPIStoreV2.completeRobloxConnect(code, state);
+        await reloadUser();
+        router.replace('/sessions');
         return;
       }
 

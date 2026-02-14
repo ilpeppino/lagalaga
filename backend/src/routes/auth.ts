@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RobloxOAuthService } from '../services/robloxOAuth.js';
 import { UserService } from '../services/userService.js';
+import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { TokenService } from '../services/tokenService.js';
 import {
   generateSignedOAuthState,
@@ -12,6 +13,7 @@ import { authenticate } from '../middleware/authenticate.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
+  const robloxConnectionService = new RobloxConnectionService(fastify);
   const userService = new UserService();
   const tokenService = new TokenService(fastify);
 
@@ -92,6 +94,21 @@ export async function authRoutes(fastify: FastifyInstance) {
       robloxDisplayName: userInfo.nickname,
       robloxProfileUrl: userInfo.profile,
     });
+
+    // Best-effort Roblox connection persistence for Presence APIs.
+    // Login should still succeed even if token persistence fails.
+    try {
+      await robloxConnectionService.saveConnection({
+        userId: user.id,
+        userInfo,
+        tokenResponse,
+      });
+    } catch (connectionError) {
+      fastify.log.warn(
+        { error: connectionError instanceof Error ? connectionError.message : String(connectionError), userId: user.id },
+        'Failed to persist Roblox OAuth connection during sign-in'
+      );
+    }
 
     // Generate our JWT tokens
     const tokens = tokenService.generateTokens({
@@ -197,6 +214,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       id: user.id,
       robloxUserId: user.robloxUserId,
       avatarHeadshotUrl,
+      robloxConnected: true,
     };
   });
 }

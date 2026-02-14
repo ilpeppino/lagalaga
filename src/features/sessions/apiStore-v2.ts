@@ -6,6 +6,7 @@ import {
   CreateSessionInput,
   Session,
   SessionDetail,
+  ParticipantHandoffState,
   SessionWithInvite,
   ListSessionsParams,
   ListSessionsResponse,
@@ -20,6 +21,17 @@ export interface RobloxExperienceResolution {
   placeId?: string;
   universeId?: string;
   name?: string;
+}
+
+export interface RobloxPresencePayload {
+  available: boolean;
+  reason?: string;
+  statuses?: Array<{
+    userId: string;
+    status: 'offline' | 'online' | 'in_game' | 'in_studio' | 'unknown';
+    lastOnline?: string | null;
+    placeId?: number | null;
+  }>;
 }
 
 function generateCorrelationId(): string {
@@ -213,6 +225,43 @@ class SessionsAPIStoreV2 {
     }
 
     return response.data.session;
+  }
+
+  async updateHandoffState(
+    sessionId: string,
+    state: Exclude<ParticipantHandoffState, 'rsvp_joined'>
+  ): Promise<void> {
+    const path = state === 'opened_roblox'
+      ? 'opened'
+      : state === 'confirmed_in_game'
+        ? 'confirmed'
+        : 'stuck';
+
+    await fetchWithAuth<{ success: boolean }>(
+      `/api/sessions/${sessionId}/handoff/${path}`,
+      { method: 'POST' }
+    );
+  }
+
+  async getRobloxPresence(userIds: string[]): Promise<RobloxPresencePayload> {
+    if (userIds.length === 0) {
+      return { available: false, reason: 'NO_USERS' };
+    }
+
+    const params = new URLSearchParams();
+    params.set('userIds', userIds.join(','));
+    return fetchWithAuth<RobloxPresencePayload>(`/api/presence/roblox/users?${params.toString()}`);
+  }
+
+  async getRobloxConnectUrl(): Promise<{ authorizationUrl: string; state: string }> {
+    return fetchWithAuth<{ authorizationUrl: string; state: string }>('/api/auth/roblox/start');
+  }
+
+  async completeRobloxConnect(code: string, state: string): Promise<{ connected: boolean }> {
+    return fetchWithAuth<{ connected: boolean }>('/api/auth/roblox/callback', {
+      method: 'POST',
+      body: JSON.stringify({ code, state }),
+    });
   }
 
   /**

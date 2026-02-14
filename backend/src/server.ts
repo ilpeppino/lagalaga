@@ -9,6 +9,7 @@ import { healthCheckPlugin } from './plugins/healthCheck.js';
 import { metricsPlugin } from './plugins/metrics.js';
 import { requestLoggingPlugin } from './middleware/logging.middleware.js';
 import { authRoutes } from './routes/auth.js';
+import { robloxConnectRoutes } from './routes/roblox-connect.routes.js';
 import { sessionsRoutes } from './routes/sessions.js';
 import { sessionsRoutesV2 } from './routes/sessions-v2.js';
 import { robloxRoutes } from './routes/roblox.js';
@@ -55,6 +56,7 @@ export async function buildServer() {
 
   // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
+  await fastify.register(robloxConnectRoutes, { prefix: '/api/auth' });
   await fastify.register(sessionsRoutes);
   await fastify.register(sessionsRoutesV2);
   await fastify.register(robloxRoutes);

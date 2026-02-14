@@ -87,6 +87,44 @@ export class RobloxOAuthService {
     }
   }
 
+  async refreshAccessToken(refreshToken: string): Promise<RobloxTokenResponse> {
+    const body = new URLSearchParams({
+      client_id: this.fastify.config.ROBLOX_CLIENT_ID,
+      client_secret: this.fastify.config.ROBLOX_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      redirect_uri: this.fastify.config.ROBLOX_REDIRECT_URI,
+    });
+
+    try {
+      const response = await request(this.tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+
+      if (response.statusCode !== 200) {
+        const errorData = await response.body.json();
+        throw new AuthError(
+          ErrorCodes.AUTH_OAUTH_FAILED,
+          `Roblox token refresh failed: ${JSON.stringify(errorData)}`
+        );
+      }
+
+      return await response.body.json() as RobloxTokenResponse;
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError(
+        ErrorCodes.AUTH_OAUTH_FAILED,
+        `Failed to refresh token: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
   /**
    * Get user info from Roblox using access token
    */

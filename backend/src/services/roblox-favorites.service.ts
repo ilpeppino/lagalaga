@@ -59,6 +59,13 @@ export class RobloxFavoritesService {
     params: { limit?: number; cursor?: string } = {}
   ): Promise<RobloxFavoritesResult> {
     const robloxUserId = await this.getRobloxUserId(userId);
+    return this.getFavoritesForRobloxUserId(robloxUserId, params);
+  }
+
+  async getFavoritesForRobloxUserId(
+    robloxUserId: string,
+    params: { limit?: number; cursor?: string } = {}
+  ): Promise<RobloxFavoritesResult> {
     const limit = this.normalizeLimit(params.limit);
     const favoritesPayload = await this.fetchFavorites(robloxUserId, limit, params.cursor);
     const favoritesRaw = Array.isArray(favoritesPayload.data) ? favoritesPayload.data : [];

@@ -1,17 +1,20 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/authenticate.js';
 import { RobloxFavoritesService } from '../services/roblox-favorites.service.js';
+import { FavoriteExperiencesService } from '../services/favorite-experiences.service.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 interface MeRoutesDeps {
   favoritesService?: RobloxFavoritesService;
+  favoriteExperiencesService?: FavoriteExperiencesService;
   authPreHandler?: AuthPreHandler;
 }
 
 export function buildMeRoutes(deps: MeRoutesDeps = {}) {
   return async function meRoutes(fastify: FastifyInstance) {
     const favoritesService = deps.favoritesService ?? new RobloxFavoritesService();
+    const favoriteExperiencesService = deps.favoriteExperiencesService;
     const authPreHandler = deps.authPreHandler ?? authenticate;
 
     fastify.get<{
@@ -47,6 +50,33 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
           data,
           requestId: String(request.id),
         });
+      }
+    );
+
+    fastify.get(
+      '/favorite-experiences',
+      {
+        preHandler: authPreHandler,
+      },
+      async (request, reply) => {
+        const service = favoriteExperiencesService ?? new FavoriteExperiencesService();
+        const ifNoneMatchHeader = Array.isArray(request.headers['if-none-match'])
+          ? request.headers['if-none-match'].join(',')
+          : request.headers['if-none-match'];
+
+        const result = await service.getFavoriteExperiences(
+          request.user.userId,
+          request.user.robloxUserId,
+          ifNoneMatchHeader
+        );
+
+        if (result.kind === 'not_modified') {
+          reply.header('ETag', result.etag);
+          return reply.status(304).send();
+        }
+
+        reply.header('ETag', result.payload.etag);
+        return reply.send(result.payload);
       }
     );
   };

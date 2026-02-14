@@ -67,24 +67,6 @@ export class SessionServiceV2 {
     this.enrichmentService = new RobloxEnrichmentService();
   }
 
-  private isMissingColumnError(error: any, column: string): boolean {
-    const message = String(error?.message || '');
-    return message.includes('column') && message.includes(column) && message.includes('does not exist');
-  }
-
-  private isSchemaCompatibilityError(error: any, token: string): boolean {
-    const message = String(error?.message || '');
-    return (
-      message.includes(token) &&
-      (
-        message.includes('does not exist')
-        || message.includes('Could not find the function')
-        || message.includes('Could not find a relationship')
-        || message.includes('schema cache')
-      )
-    );
-  }
-
   private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
     let url: URL;
     try {
@@ -250,7 +232,7 @@ export class SessionServiceV2 {
     }
 
     // Step 4: Add host as participant
-    let { error: participantError } = await supabase.from('session_participants').insert({
+    const { error: participantError } = await supabase.from('session_participants').insert({
       session_id: sessionData.id,
       user_id: input.hostUserId,
       role: 'host',
@@ -258,24 +240,14 @@ export class SessionServiceV2 {
       handoff_state: 'rsvp_joined',
     });
 
-    // Backward compatibility: environments without handoff_state column.
-    if (participantError && this.isMissingColumnError(participantError, 'handoff_state')) {
-      logger.warn('session_participants.handoff_state missing; retrying host insert without it');
-      const fallback = await supabase.from('session_participants').insert({
-        session_id: sessionData.id,
-        user_id: input.hostUserId,
-        role: 'host',
-        state: 'joined',
-      });
-      participantError = fallback.error;
-    }
-
     if (participantError) {
+      // Structural consistency: do not leave orphan session if host participant insert fails.
+      await supabase.from('sessions').delete().eq('id', sessionData.id);
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to add host participant: ${participantError.message}`);
     }
 
     // Step 5: Generate invite code and create invite record
-    let inviteCode: string | null = generateInviteCode();
+    const inviteCode = generateInviteCode();
     const { error: inviteError } = await supabase
       .from('session_invites')
       .insert({
@@ -287,19 +259,10 @@ export class SessionServiceV2 {
       .single();
 
     if (inviteError) {
-      if (
-        this.isSchemaCompatibilityError(inviteError, 'session_invites')
-        || this.isMissingColumnError(inviteError, 'created_by')
-        || this.isMissingColumnError(inviteError, 'invite_code')
-      ) {
-        logger.warn(
-          { error: inviteError.message },
-          'session_invites schema mismatch; continuing without invite link'
-        );
-        inviteCode = null;
-      } else {
-        throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
-      }
+      // Structural consistency: rollback previous writes when invite creation fails.
+      await supabase.from('session_participants').delete().eq('session_id', sessionData.id);
+      await supabase.from('sessions').delete().eq('id', sessionData.id);
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
     }
 
     // Step 6: Get game data for response (if we have placeId)
@@ -349,7 +312,7 @@ export class SessionServiceV2 {
         },
         createdAt: sessionData.created_at,
       },
-      inviteLink: inviteCode ? `lagalaga://invite/${inviteCode}` : '',
+      inviteLink: `lagalaga://invite/${inviteCode}`,
     };
   }
 
@@ -592,49 +555,16 @@ export class SessionServiceV2 {
   async getSessionById(sessionId: string, requesterId?: string | null): Promise<any | null> {
     const supabase = getSupabase();
 
-    const fullSelect = `
-      *,
-      games(*),
-      session_participants(*),
-      session_invites(invite_code)
-    `;
-    const noInvitesSelect = `
-      *,
-      games(*),
-      session_participants(*)
-    `;
-    const minimalSelect = `
-      *,
-      games(*)
-    `;
-
-    let { data: sessionData, error: sessionError } = await supabase
+    const { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
-      .select(fullSelect)
+      .select(
+        `
+        *,
+        games(*)
+      `
+      )
       .eq('id', sessionId)
       .single() as { data: any; error: any };
-
-    if (sessionError && this.isSchemaCompatibilityError(sessionError, 'session_invites')) {
-      logger.warn({ error: sessionError.message }, 'Falling back session detail query without session_invites');
-      const fallback = await supabase
-        .from('sessions')
-        .select(noInvitesSelect)
-        .eq('id', sessionId)
-        .single() as { data: any; error: any };
-      sessionData = fallback.data;
-      sessionError = fallback.error;
-    }
-
-    if (sessionError && this.isSchemaCompatibilityError(sessionError, 'session_participants')) {
-      logger.warn({ error: sessionError.message }, 'Falling back session detail query without session_participants');
-      const fallback = await supabase
-        .from('sessions')
-        .select(minimalSelect)
-        .eq('id', sessionId)
-        .single() as { data: any; error: any };
-      sessionData = fallback.data;
-      sessionError = fallback.error;
-    }
 
     if (sessionError) {
       if (sessionError.code === 'PGRST116') {
@@ -649,6 +579,25 @@ export class SessionServiceV2 {
       if (!allowed) {
         return null;
       }
+    }
+
+    const { data: participantsData, error: participantsError } = await supabase
+      .from('session_participants')
+      .select('*')
+      .eq('session_id', sessionId);
+
+    if (participantsError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get participants: ${participantsError.message}`);
+    }
+
+    const { data: inviteData, error: inviteError } = await supabase
+      .from('session_invites')
+      .select('invite_code')
+      .eq('session_id', sessionId)
+      .limit(1);
+
+    if (inviteError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get invites: ${inviteError.message}`);
     }
 
     const { data: hostProfile, error: hostProfileError } = await supabase
@@ -678,7 +627,7 @@ export class SessionServiceV2 {
         canonicalWebUrl: sessionData.games?.canonical_web_url ?? sessionData.original_input_url,
         canonicalStartUrl: sessionData.games?.canonical_start_url ?? sessionData.original_input_url,
       },
-      participants: (sessionData.session_participants ?? []).map((p: any) => ({
+      participants: (participantsData ?? []).map((p: any) => ({
         userId: p.user_id,
         role: p.role,
         state: p.state,
@@ -691,8 +640,8 @@ export class SessionServiceV2 {
         robloxDisplayName: hostProfile?.roblox_display_name ?? null,
         avatarHeadshotUrl: hostProfile?.avatar_headshot_url ?? null,
       },
-      inviteLink: sessionData.session_invites?.[0]?.invite_code
-        ? `lagalaga://invite/${sessionData.session_invites[0].invite_code}`
+      inviteLink: inviteData?.[0]?.invite_code
+        ? `lagalaga://invite/${inviteData[0].invite_code}`
         : null,
       createdAt: sessionData.created_at,
     };
@@ -711,12 +660,7 @@ export class SessionServiceV2 {
     // Fetch session
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
-      .select(
-        `
-        *,
-        session_participants(count)
-      `
-      )
+      .select('*')
       .eq('id', sessionId)
       .single();
 
@@ -733,8 +677,17 @@ export class SessionServiceV2 {
     }
 
     // Check capacity
-    const currentCount = session.session_participants[0]?.count || 0;
-    if (currentCount >= session.max_participants) {
+    const { count: currentCount, error: countError } = await supabase
+      .from('session_participants')
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .eq('state', 'joined');
+
+    if (countError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to count participants: ${countError.message}`);
+    }
+
+    if ((currentCount ?? 0) >= session.max_participants) {
       throw new SessionError(ErrorCodes.SESSION_FULL, 'This session is at maximum capacity', 400);
     }
 
@@ -789,7 +742,7 @@ export class SessionServiceV2 {
     }
 
     // Insert participant (or update if they left previously)
-    let { error: participantError } = await supabase.from('session_participants').upsert({
+    const { error: participantError } = await supabase.from('session_participants').upsert({
       session_id: sessionId,
       user_id: userId,
       role: 'member',
@@ -797,19 +750,6 @@ export class SessionServiceV2 {
       handoff_state: 'rsvp_joined',
       joined_at: existing?.joined_at || new Date().toISOString(), // Keep original join time if re-joining
     });
-
-    // Backward compatibility: environments without handoff_state column.
-    if (participantError && this.isMissingColumnError(participantError, 'handoff_state')) {
-      logger.warn('session_participants.handoff_state missing; retrying join upsert without it');
-      const fallback = await supabase.from('session_participants').upsert({
-        session_id: sessionId,
-        user_id: userId,
-        role: 'member',
-        state: 'joined',
-        joined_at: existing?.joined_at || new Date().toISOString(),
-      });
-      participantError = fallback.error;
-    }
 
     if (participantError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to join session: ${participantError.message}`);
@@ -891,11 +831,6 @@ export class SessionServiceV2 {
       .update({ handoff_state: handoffState })
       .eq('session_id', sessionId)
       .eq('user_id', userId);
-
-    if (updateError && this.isMissingColumnError(updateError, 'handoff_state')) {
-      logger.warn('session_participants.handoff_state missing; skipping handoff update');
-      return { sessionId, userId, handoffState };
-    }
 
     if (updateError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update handoff state: ${updateError.message}`);

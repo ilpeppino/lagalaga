@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
+import { warmFavorites } from '../favorites/service';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { user: userData } = await apiClient.auth.me();
       setUser(userData);
+      void warmFavorites(userData.id);
     } catch (error) {
       logger.error('Failed to load user', {
         error: error instanceof Error ? error.message : String(error),

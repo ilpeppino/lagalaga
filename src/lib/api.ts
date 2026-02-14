@@ -22,6 +22,16 @@ interface RefreshResponse {
   refreshToken: string;
 }
 
+export interface ApiGetOptions {
+  headers?: Record<string, string>;
+}
+
+export interface ApiGetResponse<T> {
+  status: number;
+  headers: Headers;
+  data: T | null;
+}
+
 function generateCorrelationId(): string {
   // Use crypto.randomUUID if available, otherwise fall back
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -218,6 +228,55 @@ class ApiClient {
     return await response.json();
   }
 
+  async getRaw(endpoint: string, options: ApiGetOptions = {}): Promise<Response> {
+    const correlationId = generateCorrelationId();
+    const requestHeaders: Record<string, string> = {
+      ...(await this.getAuthHeaders()),
+      'X-Correlation-ID': correlationId,
+      ...(options.headers ?? {}),
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'GET',
+        headers: requestHeaders,
+      });
+    } catch (err) {
+      throw new NetworkError(
+        'Network request failed',
+        err instanceof Error ? err : undefined
+      );
+    }
+
+    if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
+      try {
+        await this.refreshAccessToken();
+        const retryHeaders: Record<string, string> = {
+          ...(await this.getAuthHeaders()),
+          'X-Correlation-ID': correlationId,
+          ...(options.headers ?? {}),
+        };
+        try {
+          response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'GET',
+            headers: retryHeaders,
+          });
+        } catch (err) {
+          throw new NetworkError(
+            'Network request failed',
+            err instanceof Error ? err : undefined
+          );
+        }
+      } catch (error) {
+        await tokenStorage.clearTokens();
+        throw error;
+      }
+    }
+
+    return response;
+  }
+
   // Auth endpoints
   auth = {
     startRobloxAuth: async (codeChallenge: string): Promise<{ authorizationUrl: string; state: string }> => {
@@ -346,3 +405,28 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+export async function apiGet<T>(path: string, options: ApiGetOptions = {}): Promise<ApiGetResponse<T>> {
+  const response = await apiClient.getRaw(path, options);
+
+  if (!response.ok && response.status !== 304) {
+    throw await parseApiError(response);
+  }
+
+  if (response.status === 304 || response.status === 204) {
+    return {
+      status: response.status,
+      headers: response.headers,
+      data: null,
+    };
+  }
+
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as T) : null;
+
+  return {
+    status: response.status,
+    headers: response.headers,
+    data,
+  };
+}

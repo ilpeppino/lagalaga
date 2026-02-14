@@ -41,6 +41,13 @@ function getValidStateEntry(state: string, userId: string): OAuthStateEntry | nu
   return entry;
 }
 
+function consumeValidStateEntry(state: string, userId: string): OAuthStateEntry | null {
+  const entry = getValidStateEntry(state, userId);
+  if (!entry) return null;
+  oauthStateStore.delete(state);
+  return entry;
+}
+
 export async function robloxConnectRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
   const connectionService = new RobloxConnectionService(fastify);
@@ -78,7 +85,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_STATE, 'Invalid or expired state parameter');
     }
 
-    const entry = getValidStateEntry(state, request.user.userId);
+    const entry = consumeValidStateEntry(state, request.user.userId);
     if (!entry) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_STATE, 'Invalid OAuth state for this user');
     }
@@ -91,8 +98,6 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       userInfo,
       tokenResponse,
     });
-
-    oauthStateStore.delete(state);
 
     return {
       connected: true,

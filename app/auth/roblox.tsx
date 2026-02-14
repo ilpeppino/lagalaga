@@ -10,6 +10,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 
+// Module-level guard prevents duplicate processing across StrictMode remounts.
+const processedCallbackKeys = new Set<string>();
+
 export default function RobloxCallback() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
@@ -18,6 +21,17 @@ export default function RobloxCallback() {
   const { code, state, error } = params;
 
   const handleCallback = useCallback(async () => {
+    const callbackKey = `${error ?? ''}|${code ?? ''}|${state ?? ''}`;
+    if (processedCallbackKeys.has(callbackKey)) {
+      logger.warn('Skipping duplicate OAuth callback processing', {
+        hasCode: !!code,
+        hasState: !!state,
+        hasError: !!error,
+      });
+      return;
+    }
+    processedCallbackKeys.add(callbackKey);
+
     try {
       // Check for OAuth error
       if (error) {
@@ -34,8 +48,8 @@ export default function RobloxCallback() {
 
       const connectState = await AsyncStorage.getItem('roblox_connect_state');
       if (connectState && connectState === state) {
-        await AsyncStorage.removeItem('roblox_connect_state');
         await sessionsAPIStoreV2.completeRobloxConnect(code, state);
+        await AsyncStorage.removeItem('roblox_connect_state');
         await reloadUser();
         router.replace('/sessions');
         return;
@@ -93,10 +107,9 @@ export default function RobloxCallback() {
       hasCode: !!code,
       hasState: !!state,
       hasError: !!error,
-      allParams: params
     });
-    handleCallback();
-  }, [code, error, handleCallback, params, state]);
+    void handleCallback();
+  }, [code, error, handleCallback, state]);
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>

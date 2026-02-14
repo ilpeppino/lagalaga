@@ -14,6 +14,7 @@ export interface FavoritesCachePayload {
 }
 
 const memoryStore = new Map<string, FavoritesCachePayload>();
+const listenersByUser = new Map<string, Set<(payload: FavoritesCachePayload | null) => void>>();
 
 export function buildKeys(userId: string): { dataKey: string; etagKey: string; cachedAtKey: string } {
   return {
@@ -66,6 +67,7 @@ export async function saveCachedFavorites(userId: string, payload: FavoritesCach
   }
 
   memoryStore.set(userId, payload);
+  notifyListeners(userId, payload);
 
   const { dataKey, etagKey, cachedAtKey } = buildKeys(userId);
   try {
@@ -85,6 +87,7 @@ export async function clearCachedFavorites(userId: string): Promise<void> {
   }
 
   memoryStore.delete(userId);
+  notifyListeners(userId, null);
 
   const { dataKey, etagKey, cachedAtKey } = buildKeys(userId);
   try {
@@ -95,5 +98,37 @@ export async function clearCachedFavorites(userId: string): Promise<void> {
     ]);
   } catch {
     // No-op.
+  }
+}
+
+export function subscribeCachedFavorites(
+  userId: string,
+  listener: (payload: FavoritesCachePayload | null) => void
+): () => void {
+  const listeners = listenersByUser.get(userId) ?? new Set();
+  listeners.add(listener);
+  listenersByUser.set(userId, listeners);
+
+  return () => {
+    const nextListeners = listenersByUser.get(userId);
+    if (!nextListeners) {
+      return;
+    }
+
+    nextListeners.delete(listener);
+    if (nextListeners.size === 0) {
+      listenersByUser.delete(userId);
+    }
+  };
+}
+
+function notifyListeners(userId: string, payload: FavoritesCachePayload | null): void {
+  const listeners = listenersByUser.get(userId);
+  if (!listeners) {
+    return;
+  }
+
+  for (const listener of listeners) {
+    listener(payload);
   }
 }

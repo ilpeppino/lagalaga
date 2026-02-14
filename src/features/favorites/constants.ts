@@ -1,0 +1,1 @@
+export const REFRESH_MIN_INTERVAL_MS = 60_000;

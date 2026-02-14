@@ -10,10 +10,11 @@ import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AuthProvider } from '@/src/features/auth/useAuth';
+import { AuthProvider, useAuth } from '@/src/features/auth/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
 import { DarkPaperTheme, LightPaperTheme } from '@/constants/paperTheme';
+import { useFavoritesForegroundRefresh } from '@/src/features/favorites/useFavoritesForegroundRefresh';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -63,6 +64,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary level="screen">
         <AuthProvider>
+          <FavoritesForegroundRefreshBridge />
           <PaperProvider theme={paperTheme}>
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
               <Stack>
@@ -79,4 +81,10 @@ export default function RootLayout() {
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
+}
+
+function FavoritesForegroundRefreshBridge() {
+  const { user } = useAuth();
+  useFavoritesForegroundRefresh(user?.id);
+  return null;
 }

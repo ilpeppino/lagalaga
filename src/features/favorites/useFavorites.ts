@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Favorite, loadCachedFavorites } from './cache';
+import { Favorite, loadCachedFavorites, subscribeCachedFavorites } from './cache';
 import { refreshFavorites } from './service';
 
 export function useFavorites(userId: string | null | undefined): {
@@ -42,6 +42,13 @@ export function useFavorites(userId: string | null | undefined): {
     }
 
     setError(null);
+    const unsubscribe = subscribeCachedFavorites(userId, (payload) => {
+      if (cancelled || !payload) {
+        return;
+      }
+      setFavorites(payload.favorites);
+    });
+
     void loadCachedFavorites(userId)
       .then((payload) => {
         if (cancelled || !payload) {
@@ -75,6 +82,7 @@ export function useFavorites(userId: string | null | undefined): {
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [userId]);
 

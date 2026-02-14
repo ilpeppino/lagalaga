@@ -66,6 +66,7 @@ export default function SessionsLayout() {
       />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
       <Stack.Screen name="[id]" options={{ title: "Session Details" }} />
+      <Stack.Screen name="handoff" options={{ title: "Join Handoff" }} />
     </Stack>
   );
 }

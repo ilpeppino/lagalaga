@@ -11,8 +11,11 @@ import {
   Alert,
   Share,
   Image,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { useAuth } from '@/src/features/auth/useAuth';
@@ -39,6 +42,7 @@ export default function SessionDetailScreenV2() {
   const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
+  const [presenceLabel, setPresenceLabel] = useState<string>('Checking...');
   const hasShownCreatedPromptRef = useRef(false);
 
   const loadSession = useCallback(async () => {
@@ -46,6 +50,25 @@ export default function SessionDetailScreenV2() {
       setIsLoading(true);
       const data = await sessionsAPIStoreV2.getSessionById(id);
       setSession(data);
+      try {
+        const presence = await sessionsAPIStoreV2.getRobloxPresence([data.hostId]);
+        if (!presence.available) {
+          setPresenceLabel('Presence unavailable - connect Roblox');
+        } else {
+          const status = presence.statuses?.[0]?.status ?? 'unknown';
+          setPresenceLabel(
+            status === 'in_game'
+              ? 'In game'
+              : status === 'online'
+                ? 'Online'
+                : status === 'offline'
+                  ? 'Offline'
+                  : 'Unknown'
+          );
+        }
+      } catch {
+        setPresenceLabel('Presence unavailable - connect Roblox');
+      }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load session details' });
     } finally {
@@ -119,7 +142,10 @@ export default function SessionDetailScreenV2() {
       setIsJoining(true);
       const joinedSession = await sessionsAPIStoreV2.joinSession(session.id);
       setSession(joinedSession);
-      await launchRobloxGame(joinedSession.game.placeId, joinedSession.game.canonicalStartUrl);
+      router.push({
+        pathname: '/sessions/handoff',
+        params: { sessionId: joinedSession.id },
+      } as any);
     } catch (error) {
       const message = getErrorMessage(error, 'Failed to join session');
       Alert.alert('Error', message);
@@ -135,6 +161,24 @@ export default function SessionDetailScreenV2() {
       await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to launch Roblox. Please try again later.' });
+    }
+  };
+
+  const handleOpenHandoff = () => {
+    if (!session) return;
+    router.push({
+      pathname: '/sessions/handoff',
+      params: { sessionId: session.id },
+    } as any);
+  };
+
+  const handleConnectRoblox = async () => {
+    try {
+      const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
+      await AsyncStorage.setItem('roblox_connect_state', state);
+      await Linking.openURL(authorizationUrl);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to start Roblox connect flow');
     }
   };
 
@@ -190,6 +234,8 @@ export default function SessionDetailScreenV2() {
   }
 
   const isFull = session.currentParticipants >= session.maxParticipants;
+  const isHost = user?.id === session.hostId;
+  const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
 
   return (
     <ScrollView
@@ -217,6 +263,9 @@ export default function SessionDetailScreenV2() {
         </ThemedText>
         <ThemedText type="titleLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
           {session.game.gameName || 'Roblox Game'}
+        </ThemedText>
+        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
+          Host Presence: {presenceLabel}
         </ThemedText>
 
         {/* Status Badges */}
@@ -316,6 +365,13 @@ export default function SessionDetailScreenV2() {
                 {participant.role}
               </ThemedText>
             </View>
+            {participant.handoffState && (
+              <View style={styles.handoffBadge}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  {participant.handoffState.replaceAll('_', ' ').toUpperCase()}
+                </ThemedText>
+              </View>
+            )}
             {participant.role === 'host' && (
               <View style={styles.hostBadgeSmall}>
                 <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
@@ -326,6 +382,38 @@ export default function SessionDetailScreenV2() {
           </View>
         ))}
       </View>
+
+      {isHost && (
+        <View style={[
+          styles.section,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleLarge" style={styles.sectionTitle}>
+            Stuck Users ({stuckParticipants.length})
+          </ThemedText>
+          {stuckParticipants.length === 0 ? (
+            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
+              No users marked as stuck.
+            </ThemedText>
+          ) : (
+            stuckParticipants.map((participant) => (
+              <ThemedText key={`stuck-${participant.userId}`} type="bodyLarge" style={styles.stuckUserText}>
+                {participant.userId}
+              </ThemedText>
+            ))
+          )}
+          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.stuckTipText}>
+            Tip: Ask stuck users to open Roblox, then join you from Friends - Join or party invite.
+          </ThemedText>
+          <Button
+            title="Copy Host Tip"
+            variant="outlined"
+            textColor="#007AFF"
+            style={styles.copyTipButton}
+            onPress={() => Clipboard.setStringAsync("Open Roblox, join host from Friends -> Join (or party invite), then return and tap I'm in.")}
+          />
+        </View>
+      )}
 
       {/* Action Buttons */}
       <View style={styles.actions}>
@@ -359,14 +447,24 @@ export default function SessionDetailScreenV2() {
 
         {hasJoined && (
           <Button
-            title="Launch Roblox"
+            title={isHost ? 'Launch Roblox' : 'Open Join Handoff'}
             variant="filled"
             buttonColor="#007AFF"
             textColor="#fff"
             style={styles.launchButton}
             contentStyle={styles.actionButtonContent}
             labelStyle={styles.actionButtonLabel}
-            onPress={handleLaunchRoblox}
+            onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
+          />
+        )}
+
+        {presenceLabel.includes('unavailable') && (
+          <Button
+            title="Connect Roblox for Presence"
+            variant="outlined"
+            textColor="#007AFF"
+            style={styles.shareButton}
+            onPress={handleConnectRoblox}
           />
         )}
 
@@ -451,6 +549,9 @@ const styles = StyleSheet.create({
   gameName: {
     marginBottom: 12,
   },
+  hostPresence: {
+    marginBottom: 10,
+  },
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -515,6 +616,13 @@ const styles = StyleSheet.create({
   participantRole: {
     textTransform: 'capitalize',
   },
+  handoffBadge: {
+    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#6c757d',
+    borderRadius: 4,
+  },
   hostBadgeSmall: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -524,6 +632,16 @@ const styles = StyleSheet.create({
   actions: {
     padding: 16,
     gap: 12,
+  },
+  stuckUserText: {
+    marginBottom: 6,
+  },
+  stuckTipText: {
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  copyTipButton: {
+    borderRadius: 8,
   },
   shareButton: {
     borderRadius: 8,

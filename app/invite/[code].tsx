@@ -36,12 +36,18 @@ export default function InviteScreen() {
   const [session, setSession] = useState<Partial<Session> | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const goToHandoff = useCallback((id: string) => {
+    router.replace({
+      pathname: '/sessions/handoff',
+      params: { sessionId: id },
+    } as any);
+  }, [router]);
 
   const handleAutoJoin = useCallback(async (id: string) => {
     try {
       setState('joining');
       await sessionsAPIStoreV2.joinSession(id, code);
-      router.replace(`/sessions/${id}`);
+      goToHandoff(id);
     } catch (err) {
       logger.warn('Failed to auto-join session', {
         sessionId: id,
@@ -50,21 +56,21 @@ export default function InviteScreen() {
 
       // If already joined, just navigate to the session
       if (isApiError(err) && err.code === 'SESSION_003') {
-        router.replace(`/sessions/${id}`);
+        goToHandoff(id);
       } else if (err instanceof Error && err.message.includes('already joined')) {
-        router.replace(`/sessions/${id}`);
+        goToHandoff(id);
       } else {
         const message = getErrorMessage(err, 'Failed to join session');
         Alert.alert('Join Failed', message, [
           {
             text: 'View Session',
-            onPress: () => router.replace(`/sessions/${id}`),
+            onPress: () => goToHandoff(id),
           },
         ]);
         setState('preview');
       }
     }
-  }, [code, getErrorMessage, router]);
+  }, [code, getErrorMessage, goToHandoff]);
 
   const loadInvite = useCallback(async () => {
     try {
@@ -101,7 +107,7 @@ export default function InviteScreen() {
     try {
       setState('joining');
       await sessionsAPIStoreV2.joinSession(sessionId, code);
-      router.replace(`/sessions/${sessionId}`);
+      goToHandoff(sessionId);
     } catch (err) {
       const message = getErrorMessage(err, 'Failed to join session');
       Alert.alert('Error', message);

@@ -6,6 +6,7 @@ export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
 export type ParticipantRole = 'host' | 'member';
 export type ParticipantState = 'invited' | 'joined' | 'left' | 'kicked';
+export type ParticipantHandoffState = 'rsvp_joined' | 'opened_roblox' | 'confirmed_in_game' | 'stuck';
 
 export interface Game {
   placeId: number;
@@ -31,6 +32,12 @@ export interface Session {
 }
 
 export interface SessionDetail extends Session {
+  host?: {
+    userId: string;
+    robloxUsername: string | null;
+    robloxDisplayName: string | null;
+    avatarHeadshotUrl: string | null;
+  };
   participants: SessionParticipant[];
   inviteLink?: string;
 }
@@ -39,6 +46,7 @@ export interface SessionParticipant {
   userId: string;
   role: ParticipantRole;
   state: ParticipantState;
+  handoffState?: ParticipantHandoffState;
   joinedAt: string;
 }
 

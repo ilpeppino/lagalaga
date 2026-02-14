@@ -9,6 +9,7 @@ export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
 export type ParticipantRole = 'host' | 'member';
 export type ParticipantState = 'invited' | 'joined' | 'left' | 'kicked';
+export type ParticipantHandoffState = 'rsvp_joined' | 'opened_roblox' | 'confirmed_in_game' | 'stuck';
 
 export interface CreateSessionInput {
   hostUserId: string;
@@ -235,6 +236,7 @@ export class SessionServiceV2 {
       user_id: input.hostUserId,
       role: 'host',
       state: 'joined',
+      handoff_state: 'rsvp_joined',
     });
 
     if (participantError) {
@@ -548,6 +550,16 @@ export class SessionServiceV2 {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get session: ${sessionError.message}`);
     }
 
+    const { data: hostProfile, error: hostProfileError } = await supabase
+      .from('app_users')
+      .select('id, roblox_username, roblox_display_name, avatar_headshot_url')
+      .eq('id', sessionData.host_id)
+      .maybeSingle();
+
+    if (hostProfileError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get host profile: ${hostProfileError.message}`);
+    }
+
     return {
       id: sessionData.id,
       placeId: sessionData.place_id ?? 0,
@@ -569,8 +581,15 @@ export class SessionServiceV2 {
         userId: p.user_id,
         role: p.role,
         state: p.state,
+        handoffState: p.handoff_state || 'rsvp_joined',
         joinedAt: p.joined_at,
       })),
+      host: {
+        userId: sessionData.host_id,
+        robloxUsername: hostProfile?.roblox_username ?? null,
+        robloxDisplayName: hostProfile?.roblox_display_name ?? null,
+        avatarHeadshotUrl: hostProfile?.avatar_headshot_url ?? null,
+      },
       inviteLink: sessionData.session_invites?.[0]?.invite_code
         ? `lagalaga://invite/${sessionData.session_invites[0].invite_code}`
         : null,
@@ -666,6 +685,7 @@ export class SessionServiceV2 {
       user_id: userId,
       role: 'member',
       state: 'joined',
+      handoff_state: 'rsvp_joined',
       joined_at: existing?.joined_at || new Date().toISOString(), // Keep original join time if re-joining
     });
 
@@ -676,5 +696,47 @@ export class SessionServiceV2 {
     // Return updated session
     const updatedSession = await this.getSessionById(sessionId);
     return { session: updatedSession };
+  }
+
+  async updateHandoffState(
+    sessionId: string,
+    userId: string,
+    handoffState: ParticipantHandoffState
+  ): Promise<{ sessionId: string; userId: string; handoffState: ParticipantHandoffState }> {
+    const supabase = getSupabase();
+
+    const { data: participant, error: participantLookupError } = await supabase
+      .from('session_participants')
+      .select('session_id, user_id')
+      .eq('session_id', sessionId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (participantLookupError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to load participant for handoff update: ${participantLookupError.message}`
+      );
+    }
+
+    if (!participant) {
+      throw new SessionError(
+        ErrorCodes.SESSION_NOT_FOUND,
+        'You must join this session before updating handoff state',
+        404
+      );
+    }
+
+    const { error: updateError } = await supabase
+      .from('session_participants')
+      .update({ handoff_state: handoffState })
+      .eq('session_id', sessionId)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update handoff state: ${updateError.message}`);
+    }
+
+    return { sessionId, userId, handoffState };
   }
 }

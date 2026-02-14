@@ -1,11 +1,22 @@
 import { FastifyInstance } from 'fastify';
-import { SessionServiceV2, CreateSessionInput } from '../services/sessionService-v2.js';
+import {
+  SessionServiceV2,
+  CreateSessionInput,
+  ParticipantHandoffState,
+} from '../services/sessionService-v2.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
 import { getSupabase } from '../config/supabase.js';
 
-export async function sessionsRoutesV2(fastify: FastifyInstance) {
-  const sessionService = new SessionServiceV2();
+interface SessionsRoutesV2Deps {
+  sessionService?: SessionServiceV2;
+  authPreHandler?: typeof authenticate;
+}
+
+export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
+  return async function sessionsRoutesV2(fastify: FastifyInstance) {
+  const sessionService = deps.sessionService ?? new SessionServiceV2();
+  const authPreHandler = deps.authPreHandler ?? authenticate;
 
   /**
    * POST /api/sessions
@@ -15,8 +26,8 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
     Body: Omit<CreateSessionInput, 'hostUserId'>;
   }>(
     '/api/sessions',
-    {
-      preHandler: authenticate,
+      {
+      preHandler: authPreHandler,
       schema: {
         body: {
           type: 'object',
@@ -110,9 +121,9 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       offset?: number;
     };
   }>(
-    '/api/user/sessions',
-    {
-      preHandler: authenticate,
+      '/api/user/sessions',
+      {
+      preHandler: authPreHandler,
       schema: {
         querystring: {
           type: 'object',
@@ -192,8 +203,8 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
     Body: { inviteCode?: string };
   }>(
     '/api/sessions/:id/join',
-    {
-      preHandler: authenticate,
+      {
+      preHandler: authPreHandler,
       schema: {
         params: {
           type: 'object',
@@ -234,6 +245,46 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
       });
     }
   );
+
+  const handoffStateByPath: Record<string, ParticipantHandoffState> = {
+    opened: 'opened_roblox',
+    confirmed: 'confirmed_in_game',
+    stuck: 'stuck',
+  };
+
+  (['opened', 'confirmed', 'stuck'] as const).forEach((statePath) => {
+    fastify.post<{ Params: { id: string } }>(
+      `/api/sessions/:id/handoff/${statePath}`,
+      {
+        preHandler: authPreHandler,
+        schema: {
+          params: {
+            type: 'object',
+            required: ['id'],
+            properties: {
+              id: {
+                type: 'string',
+                pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        const result = await sessionService.updateHandoffState(
+          request.params.id,
+          request.user.userId,
+          handoffStateByPath[statePath]
+        );
+
+        return reply.send({
+          success: true,
+          data: result,
+          requestId: String(request.id),
+        });
+      }
+    );
+  });
 
   /**
    * GET /api/invites/:code
@@ -305,8 +356,8 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
     Params: { id: string };
   }>(
     '/api/sessions/:id',
-    {
-      preHandler: authenticate,
+      {
+      preHandler: authPreHandler,
       schema: {
         params: {
           type: 'object',
@@ -344,8 +395,8 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
     Body: { ids: string[] };
   }>(
     '/api/sessions/bulk-delete',
-    {
-      preHandler: authenticate,
+      {
+      preHandler: authPreHandler,
       schema: {
         body: {
           type: 'object',
@@ -387,3 +438,6 @@ export async function sessionsRoutesV2(fastify: FastifyInstance) {
     }
   );
 }
+}
+
+export const sessionsRoutesV2 = buildSessionsRoutesV2();

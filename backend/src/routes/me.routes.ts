@@ -17,6 +17,27 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     const favoriteExperiencesService = deps.favoriteExperiencesService;
     const authPreHandler = deps.authPreHandler ?? authenticate;
 
+    /**
+     * GET /api/me
+     * Get current user profile with Roblox connection status
+     */
+    fastify.get(
+      '/',
+      {
+        preHandler: authPreHandler,
+      },
+      async (request, reply) => {
+        const { getMeData } = await import('../services/me.service.js');
+        const data = await getMeData(request.user.userId, fastify);
+
+        return reply.send({
+          success: true,
+          data,
+          requestId: String(request.id),
+        });
+      }
+    );
+
     fastify.get<{
       Querystring: {
         limit?: number;

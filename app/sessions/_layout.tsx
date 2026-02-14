@@ -39,6 +39,10 @@ export default function SessionsLayout() {
     }
   }
 
+  function handleOpenMe() {
+    router.push("/me");
+  }
+
   return (
     <Stack>
       <Stack.Screen
@@ -47,14 +51,16 @@ export default function SessionsLayout() {
           title: "Sessions",
           headerRight: () => (
             <View style={styles.headerRight}>
-              <Image
-                source={
-                  avatarUrl
-                    ? { uri: avatarUrl }
-                    : require('@/assets/images/avatar-placeholder.png')
-                }
-                style={styles.avatar}
-              />
+              <TouchableOpacity onPress={handleOpenMe} activeOpacity={0.7}>
+                <Image
+                  source={
+                    avatarUrl
+                      ? { uri: avatarUrl }
+                      : require('@/assets/images/avatar-placeholder.png')
+                  }
+                  style={styles.avatar}
+                />
+              </TouchableOpacity>
               <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
                 <ThemedText type="bodyLarge" lightColor="#007AFF" darkColor="#007AFF">
                   Sign Out

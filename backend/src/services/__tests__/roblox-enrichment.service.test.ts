@@ -1,18 +1,24 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { RobloxEnrichmentService, type FetchFunction } from '../roblox-enrichment.service.js';
-import { AppError, ErrorCodes } from '../../utils/errors.js';
+import type { FetchFunction } from '../roblox-enrichment.service.js';
 
 // Mock Supabase
 const mockSupabase = {
   from: jest.fn(),
 };
 
-jest.unstable_mockModule('../../config/supabase.js', () => ({
-  getSupabase: () => mockSupabase,
-}));
+let RobloxEnrichmentService: typeof import('../roblox-enrichment.service.js').RobloxEnrichmentService;
+
+beforeAll(async () => {
+  jest.resetModules();
+  await jest.unstable_mockModule('../../config/supabase.js', () => ({
+    getSupabase: () => mockSupabase,
+  }));
+
+  ({ RobloxEnrichmentService } = await import('../roblox-enrichment.service.js'));
+});
 
 describe('RobloxEnrichmentService', () => {
-  let service: RobloxEnrichmentService;
+  let service: InstanceType<typeof RobloxEnrichmentService>;
   let mockFetch: jest.MockedFunction<FetchFunction>;
 
   beforeEach(() => {
@@ -20,6 +26,28 @@ describe('RobloxEnrichmentService', () => {
     mockFetch = jest.fn() as jest.MockedFunction<FetchFunction>;
     service = new RobloxEnrichmentService(mockFetch);
   });
+
+  const mockCacheMiss = () => {
+    mockSupabase.from.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: jest.fn(() => Promise.resolve({
+            data: null,
+            error: { code: 'PGRST116' },
+          })),
+        }),
+      }),
+    });
+  };
+
+  const mockUpsertSuccess = () => {
+    mockSupabase.from.mockReturnValueOnce({
+      upsert: jest.fn(() => Promise.resolve({
+        data: null,
+        error: null,
+      })),
+    });
+  };
 
   describe('enrichGame - success flow', () => {
     it('should successfully enrich a game with full data', async () => {
@@ -29,16 +57,7 @@ describe('RobloxEnrichmentService', () => {
       const thumbnailUrl = 'https://tr.rbxcdn.com/thumbnail.png';
 
       // Mock cache miss
-      mockSupabase.from.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: null,
-              error: { code: 'PGRST116' }, // Not found
-            }),
-          }),
-        }),
-      });
+      mockCacheMiss();
 
       // Mock universe API
       mockFetch.mockResolvedValueOnce({
@@ -80,12 +99,7 @@ describe('RobloxEnrichmentService', () => {
       } as Response);
 
       // Mock database upsert
-      mockSupabase.from.mockReturnValue({
-        upsert: jest.fn().mockResolvedValue({
-          data: null,
-          error: null,
-        }),
-      });
+      mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
 
@@ -108,14 +122,14 @@ describe('RobloxEnrichmentService', () => {
       mockSupabase.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
+            single: jest.fn(() => Promise.resolve({
               data: {
                 place_id: placeId,
                 game_name: cachedName,
                 thumbnail_url: cachedThumbnail,
               },
               error: null,
-            }),
+            })),
           }),
         }),
       });
@@ -141,14 +155,14 @@ describe('RobloxEnrichmentService', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
+            single: jest.fn(() => Promise.resolve({
               data: {
                 place_id: placeId,
                 game_name: 'Incomplete',
                 thumbnail_url: null,
               },
               error: null,
-            }),
+            })),
           }),
         }),
       });
@@ -174,9 +188,7 @@ describe('RobloxEnrichmentService', () => {
       } as Response);
 
       // Mock upsert
-      mockSupabase.from.mockReturnValueOnce({
-        upsert: jest.fn().mockResolvedValue({ data: null, error: null }),
-      });
+      mockUpsertSuccess();
 
       await service.enrichGame(placeId);
 
@@ -187,23 +199,12 @@ describe('RobloxEnrichmentService', () => {
 
   describe('enrichGame - error handling', () => {
     beforeEach(() => {
-      // Mock cache miss for error tests
-      mockSupabase.from.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: null,
-              error: { code: 'PGRST116' },
-            }),
-          }),
-        }),
-      });
+      mockCacheMiss();
     });
 
     it('should throw error for invalid placeId', async () => {
-      await expect(service.enrichGame(0)).rejects.toThrow(AppError);
-      await expect(service.enrichGame(-1)).rejects.toThrow(AppError);
       await expect(service.enrichGame(0)).rejects.toThrow('Invalid placeId');
+      await expect(service.enrichGame(-1)).rejects.toThrow('Invalid placeId');
     });
 
     it('should throw error when universe API returns 404', async () => {
@@ -216,7 +217,7 @@ describe('RobloxEnrichmentService', () => {
     });
 
     it('should throw error when universe API fails', async () => {
-      mockFetch.mockResolvedValueOnce({
+      mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
       } as Response);
@@ -250,9 +251,7 @@ describe('RobloxEnrichmentService', () => {
       } as Response);
 
       // Mock upsert
-      mockSupabase.from.mockReturnValue({
-        upsert: jest.fn().mockResolvedValue({ data: null, error: null }),
-      });
+      mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
 
@@ -290,9 +289,7 @@ describe('RobloxEnrichmentService', () => {
       } as Response);
 
       // Mock upsert
-      mockSupabase.from.mockReturnValue({
-        upsert: jest.fn().mockResolvedValue({ data: null, error: null }),
-      });
+      mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
 
@@ -329,9 +326,7 @@ describe('RobloxEnrichmentService', () => {
         }),
       } as Response);
 
-      mockSupabase.from.mockReturnValue({
-        upsert: jest.fn().mockResolvedValue({ data: null, error: null }),
-      });
+      mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
 
@@ -341,26 +336,25 @@ describe('RobloxEnrichmentService', () => {
 
   describe('enrichGame - timeout handling', () => {
     beforeEach(() => {
-      mockSupabase.from.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: null,
-              error: { code: 'PGRST116' },
-            }),
-          }),
-        }),
-      });
+      mockCacheMiss();
     });
 
     it('should timeout on slow universe API', async () => {
-      mockFetch.mockImplementation(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10000)); // 10s
-        return { ok: true } as Response;
-      });
+      (service as any).REQUEST_TIMEOUT = 25;
+      (service as any).RETRY_ATTEMPTS = 1;
+
+      mockFetch.mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
+        if (init?.signal) {
+          init.signal.addEventListener('abort', () => {
+            const abortError = new Error('Request timeout');
+            abortError.name = 'AbortError';
+            reject(abortError);
+          });
+        }
+      }));
 
       await expect(service.enrichGame(606849621)).rejects.toThrow('timeout');
-    }, 10000);
+    });
 
     it('should handle AbortError from timeout', async () => {
       mockFetch.mockImplementation(async (_url, init) => {
@@ -379,16 +373,7 @@ describe('RobloxEnrichmentService', () => {
 
   describe('enrichGame - retry logic', () => {
     beforeEach(() => {
-      mockSupabase.from.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: null,
-              error: { code: 'PGRST116' },
-            }),
-          }),
-        }),
-      });
+      mockCacheMiss();
     });
 
     it('should retry once on network failure and succeed', async () => {
@@ -413,9 +398,7 @@ describe('RobloxEnrichmentService', () => {
         json: async () => ({ data: [{ targetId: placeId, state: 'Completed', imageUrl: 'url' }] }),
       } as Response);
 
-      mockSupabase.from.mockReturnValue({
-        upsert: jest.fn().mockResolvedValue({ data: null, error: null }),
-      });
+      mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
 
@@ -453,10 +436,10 @@ describe('RobloxEnrichmentService', () => {
       mockSupabase.from.mockReturnValueOnce({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
+            single: jest.fn(() => Promise.resolve({
               data: null,
               error: { code: 'PGRST116' },
-            }),
+            })),
           }),
         }),
       });
@@ -485,7 +468,7 @@ describe('RobloxEnrichmentService', () => {
         }),
       } as Response);
 
-      const mockUpsert = jest.fn().mockResolvedValue({ data: null, error: null });
+      const mockUpsert = jest.fn((_payload: any, _options: any) => Promise.resolve({ data: null, error: null }));
       mockSupabase.from.mockReturnValueOnce({
         upsert: mockUpsert,
       });
@@ -521,10 +504,10 @@ describe('RobloxEnrichmentService', () => {
       } as Response);
 
       mockSupabase.from.mockReturnValueOnce({
-        upsert: jest.fn().mockResolvedValue({
+        upsert: jest.fn(() => Promise.resolve({
           data: null,
           error: { message: 'Database connection failed' },
-        }),
+        })),
       });
 
       await expect(service.enrichGame(placeId)).rejects.toThrow('Database error');

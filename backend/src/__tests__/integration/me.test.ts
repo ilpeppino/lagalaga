@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { buildMeRoutes } from '../../routes/me.routes.js';
 import { errorHandlerPlugin } from '../../plugins/errorHandler.js';
 import type { FastifyInstance } from 'fastify';
@@ -65,14 +65,31 @@ function createSupabaseMock(state: MockDbState) {
   };
 }
 
+let activeSupabaseMock: ReturnType<typeof createSupabaseMock> | null = null;
+let getMeData: typeof import('../../services/me.service.js').getMeData;
+
+beforeAll(async () => {
+  jest.resetModules();
+  await jest.unstable_mockModule('../../config/supabase.js', () => ({
+    getSupabase: () => activeSupabaseMock,
+  }));
+
+  ({ getMeData } = await import('../../services/me.service.js'));
+});
+
+afterAll(() => {
+  activeSupabaseMock = null;
+});
+
 describe('GET /api/me', () => {
   let app: FastifyInstance;
-  let mockFetch: jest.Mock;
+  let mockFetch: jest.MockedFunction<typeof fetch>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
     app = Fastify();
+    (app as any).config = { NODE_ENV: 'test' };
     await app.register(errorHandlerPlugin);
 
     // Mock auth prehandler
@@ -85,13 +102,19 @@ describe('GET /api/me', () => {
     };
 
     // Register routes with mock auth
-    await app.register(buildMeRoutes({ authPreHandler: mockAuthPreHandler }), {
+    await app.register(buildMeRoutes({
+      authPreHandler: mockAuthPreHandler,
+      favoritesService: { getFavoritesForUser: jest.fn() } as any,
+      friendsCacheService: { getFriendsForUser: jest.fn() } as any,
+    }), {
       prefix: '/api/me',
     });
 
+    await app.ready();
+
     // Mock fetch
-    mockFetch = jest.fn() as jest.Mock;
-    global.fetch = mockFetch as any;
+    mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+    global.fetch = mockFetch as typeof fetch;
   });
 
   afterEach(() => {
@@ -117,10 +140,7 @@ describe('GET /api/me', () => {
     };
 
     // Mock Supabase
-    const mockSupabase = createSupabaseMock(mockDbState);
-    jest.mock('../../config/supabase.js', () => ({
-      getSupabase: () => mockSupabase,
-    }));
+    activeSupabaseMock = createSupabaseMock(mockDbState);
 
     // Mock successful Roblox thumbnail fetch
     mockFetch.mockResolvedValueOnce({
@@ -135,10 +155,9 @@ describe('GET /api/me', () => {
           },
         ],
       }),
-    });
+    } as Response);
 
     // Import service after mocking
-    const { getMeData } = await import('../../services/me.service.js');
     const result = await getMeData('test-user-id', app);
 
     expect(result).toEqual({
@@ -169,12 +188,8 @@ describe('GET /api/me', () => {
     };
 
     // Mock Supabase
-    const mockSupabase = createSupabaseMock(mockDbState);
-    jest.mock('../../config/supabase.js', () => ({
-      getSupabase: () => mockSupabase,
-    }));
+    activeSupabaseMock = createSupabaseMock(mockDbState);
 
-    const { getMeData } = await import('../../services/me.service.js');
     const result = await getMeData('test-user-id', app);
 
     expect(result).toEqual({
@@ -216,15 +231,11 @@ describe('GET /api/me', () => {
     };
 
     // Mock Supabase
-    const mockSupabase = createSupabaseMock(mockDbState);
-    jest.mock('../../config/supabase.js', () => ({
-      getSupabase: () => mockSupabase,
-    }));
+    activeSupabaseMock = createSupabaseMock(mockDbState);
 
     // Mock failed Roblox thumbnail fetch (timeout)
-    mockFetch.mockRejectedValueOnce(new Error('fetch failed'));
+    mockFetch.mockRejectedValue(new Error('fetch failed'));
 
-    const { getMeData } = await import('../../services/me.service.js');
     const result = await getMeData('test-user-id', app);
 
     expect(result).toEqual({
@@ -263,10 +274,7 @@ describe('GET /api/me', () => {
     };
 
     // Mock Supabase
-    const mockSupabase = createSupabaseMock(mockDbState);
-    jest.mock('../../config/supabase.js', () => ({
-      getSupabase: () => mockSupabase,
-    }));
+    activeSupabaseMock = createSupabaseMock(mockDbState);
 
     // Mock successful Roblox thumbnail fetch
     mockFetch.mockResolvedValueOnce({
@@ -281,7 +289,7 @@ describe('GET /api/me', () => {
           },
         ],
       }),
-    });
+    } as Response);
 
     const response = await request(app.server)
       .get('/api/me')

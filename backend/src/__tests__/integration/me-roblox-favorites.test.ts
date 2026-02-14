@@ -106,6 +106,7 @@ describe('GET /api/me/roblox/favorites', () => {
     await app.register(
       buildMeRoutes({
         favoritesService: service,
+        friendsCacheService: { getFriendsForUser: jest.fn() } as any,
         authPreHandler: async (req) => {
           (req as any).user = { userId: 'user-1' };
         },

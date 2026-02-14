@@ -32,7 +32,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     bundleIdentifier: iosBundleIdentifier,
     infoPlist: {
-      LSApplicationQueriesSchemes: ["roblox", "roblox", "roblox", "roblox"],
+      LSApplicationQueriesSchemes: ["roblox"],
       ITSAppUsesNonExemptEncryption: false,
     },
   },

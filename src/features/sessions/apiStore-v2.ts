@@ -247,6 +247,41 @@ class SessionsAPIStoreV2 {
     return response.data.session;
   }
 
+  async getInviteDetails(sessionId: string): Promise<{
+    session: SessionDetail;
+    participantState: string;
+  }> {
+    const response = await fetchWithAuth<{
+      success: boolean;
+      data: { session: SessionDetail; participantState: string };
+    }>(`/api/sessions/${sessionId}/invite-details`);
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'NOT_FOUND_002',
+        message: 'Invite not found',
+        statusCode: 404,
+      });
+    }
+
+    return response.data;
+  }
+
+  async declineInvite(sessionId: string): Promise<void> {
+    const response = await fetchWithAuth<{ success: boolean }>(
+      `/api/sessions/${sessionId}/decline-invite`,
+      { method: 'POST' }
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_008',
+        message: 'Failed to decline invite',
+        statusCode: 400,
+      });
+    }
+  }
+
   async updateHandoffState(
     sessionId: string,
     state: Exclude<ParticipantHandoffState, 'rsvp_joined'>

@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
 import { warmFavorites } from '../favorites/service';
+import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       setUser(userData);
       void warmFavorites(me.id);
+      void registerPushToken();
     } catch (error) {
       logger.error('Failed to load user', {
         error: error instanceof Error ? error.message : String(error),
@@ -120,6 +122,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: error instanceof Error ? error.message : String(error),
       });
     } finally {
+      try {
+        await unregisterPushToken();
+      } catch {
+        // best effort
+      }
       await tokenStorage.clearTokens();
       setUser(null);
     }

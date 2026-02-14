@@ -2,6 +2,7 @@ import { getSupabase } from '../config/supabase.js';
 import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/errors.js';
 import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
+import { PushNotificationService } from './pushNotificationService.js';
 import { logger } from '../lib/logger.js';
 import { request } from 'undici';
 import { metrics } from '../plugins/metrics.js';
@@ -334,6 +335,58 @@ export class SessionServiceV2 {
         await supabase.from('session_participants').delete().eq('session_id', sessionData.id);
         await supabase.from('sessions').delete().eq('id', sessionData.id);
         throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to store invited Roblox users: ${invitedError.message}`);
+      }
+
+      const { data: resolvedUsers, error: resolveError } = await supabase
+        .from('app_users')
+        .select('id, roblox_user_id')
+        .in('roblox_user_id', invitedRobloxUserIds);
+
+      if (resolveError) {
+        logger.warn(
+          { error: resolveError.message, sessionId: sessionData.id },
+          'Failed to resolve invited Roblox users to app_users'
+        );
+      }
+
+      const appUsers = resolvedUsers ?? [];
+      const pushService = new PushNotificationService();
+      for (const appUser of appUsers) {
+        if (appUser.id === input.hostUserId) {
+          continue;
+        }
+
+        const invitedParticipantError = await this.insertParticipant(supabase, {
+          session_id: sessionData.id,
+          user_id: appUser.id,
+          role: 'member',
+          state: 'invited',
+          handoff_state: 'rsvp_joined',
+        });
+
+        if (invitedParticipantError) {
+          logger.warn(
+            { userId: appUser.id, sessionId: sessionData.id, error: invitedParticipantError.message },
+            'Failed to insert invited participant'
+          );
+        }
+
+        void pushService
+          .sendSessionInviteNotification(
+            appUser.id,
+            sessionData.id,
+            input.title
+          )
+          .catch((err) => {
+            logger.warn(
+              {
+                userId: appUser.id,
+                sessionId: sessionData.id,
+                error: err instanceof Error ? err.message : String(err),
+              },
+              'Push notification send failed'
+            );
+          });
       }
     }
 
@@ -784,7 +837,24 @@ export class SessionServiceV2 {
 
     // Check visibility
     if (session.visibility === 'invite_only' && !inviteCode) {
-      throw new SessionError(ErrorCodes.FORBIDDEN, 'This session requires an invite code', 403);
+      const { data: directInvite, error: directInviteError } = await supabase
+        .from('session_participants')
+        .select('state')
+        .eq('session_id', sessionId)
+        .eq('user_id', userId)
+        .eq('state', 'invited')
+        .maybeSingle();
+
+      if (directInviteError) {
+        throw new AppError(
+          ErrorCodes.INTERNAL_ERROR,
+          `Failed to verify direct invite for invite-only session: ${directInviteError.message}`
+        );
+      }
+
+      if (!directInvite) {
+        throw new SessionError(ErrorCodes.FORBIDDEN, 'This session requires an invite code', 403);
+      }
     }
 
     // Validate invite code if provided

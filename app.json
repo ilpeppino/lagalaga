@@ -81,6 +81,13 @@
             "./assets/fonts/BitcountSingle-Bold.ttf"
           ]
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/generated/icon.png",
+          "color": "#1A2A6C"
+        }
       ]
     ],
     "experiments": {

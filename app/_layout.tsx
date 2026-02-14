@@ -15,6 +15,10 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
 import { DarkPaperTheme, LightPaperTheme } from '@/constants/paperTheme';
 import { useFavoritesForegroundRefresh } from '@/src/features/favorites/useFavoritesForegroundRefresh';
+import {
+  configureNotificationHandler,
+  setupNotificationListeners,
+} from '@/src/features/notifications/notificationHandlers';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -23,6 +27,7 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore: can throw if called multiple times during Fast Refresh.
 });
+configureNotificationHandler();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -56,6 +61,11 @@ export default function RootLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const cleanup = setupNotificationListeners();
+    return cleanup;
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
@@ -74,6 +84,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                <Stack.Screen name="invites" options={{ headerShown: false }} />
               </Stack>
               <StatusBar style="auto" />
             </ThemeProvider>

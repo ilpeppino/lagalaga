@@ -326,6 +326,29 @@ class ApiClient {
   };
 
   // Sessions endpoints
+  me = {
+    registerPushToken: async (input: {
+      expoPushToken: string;
+      platform?: string;
+      deviceId?: string;
+    }): Promise<void> => {
+      await this.request('/api/me/push-tokens', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+
+    unregisterPushToken: async (input: {
+      expoPushToken: string;
+    }): Promise<void> => {
+      await this.request('/api/me/push-tokens', {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+      });
+    },
+  };
+
+  // Sessions endpoints
   sessions = {
     list: async (params?: { limit?: number; offset?: number }): Promise<{ sessions: Session[]; total: number }> => {
       const query = new URLSearchParams();

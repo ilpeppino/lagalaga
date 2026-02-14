@@ -5,7 +5,7 @@ import {
   ParticipantHandoffState,
 } from '../services/sessionService-v2.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { ValidationError, NotFoundError } from '../utils/errors.js';
+import { ValidationError, NotFoundError, AppError, ErrorCodes } from '../utils/errors.js';
 import { getSupabase } from '../config/supabase.js';
 
 interface SessionsRoutesV2Deps {
@@ -220,6 +220,61 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
   );
 
   /**
+   * GET /api/sessions/:id/invite-details
+   * Get session preview for an invited user
+   */
+  fastify.get<{
+    Params: { id: string };
+  }>(
+    '/api/sessions/:id/invite-details',
+    {
+      preHandler: authPreHandler,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const supabase = getSupabase();
+      const sessionId = request.params.id;
+      const userId = request.user.userId;
+
+      const { data: participant } = await supabase
+        .from('session_participants')
+        .select('state')
+        .eq('session_id', sessionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!participant) {
+        throw new NotFoundError('Session invite', sessionId);
+      }
+
+      const session = await sessionService.getSessionById(sessionId, userId);
+      if (!session) {
+        throw new NotFoundError('Session', sessionId);
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          session,
+          participantState: participant.state,
+        },
+        requestId: String(request.id),
+      });
+    }
+  );
+
+  /**
    * POST /api/sessions/:id/join
    * Join session
    */
@@ -266,6 +321,71 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: result,
+        requestId: String(request.id),
+      });
+    }
+  );
+
+  /**
+   * POST /api/sessions/:id/decline-invite
+   * Decline a session invite (sets participant state to left)
+   */
+  fastify.post<{
+    Params: { id: string };
+  }>(
+    '/api/sessions/:id/decline-invite',
+    {
+      preHandler: authPreHandler,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const supabase = getSupabase();
+      const sessionId = request.params.id;
+      const userId = request.user.userId;
+
+      const { data: participant, error: lookupError } = await supabase
+        .from('session_participants')
+        .select('state')
+        .eq('session_id', sessionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (lookupError || !participant) {
+        throw new NotFoundError('Session invite', sessionId);
+      }
+
+      if (participant.state !== 'invited') {
+        throw new ValidationError(
+          `Cannot decline invite: current state is '${participant.state}'`
+        );
+      }
+
+      const { error: updateError } = await supabase
+        .from('session_participants')
+        .update({ state: 'left' })
+        .eq('session_id', sessionId)
+        .eq('user_id', userId);
+
+      if (updateError) {
+        throw new AppError(
+          ErrorCodes.INTERNAL_ERROR,
+          `Failed to decline invite: ${updateError.message}`
+        );
+      }
+
+      return reply.send({
+        success: true,
         requestId: String(request.id),
       });
     }

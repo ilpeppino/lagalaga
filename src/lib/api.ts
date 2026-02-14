@@ -299,6 +299,50 @@ class ApiClient {
       });
     },
   };
+
+  friends = {
+    list: async (section?: 'all' | 'lagalaga' | 'requests' | 'roblox_suggestions'): Promise<any> => {
+      const query = new URLSearchParams();
+      if (section) query.set('section', section);
+      const queryString = query.toString();
+      return this.request(`/api/user/friends${queryString ? `?${queryString}` : ''}`, {
+        method: 'GET',
+      });
+    },
+
+    refresh: async (): Promise<any> => {
+      return this.request('/api/user/friends/refresh', {
+        method: 'POST',
+      });
+    },
+
+    sendRequest: async (targetUserId: string): Promise<any> => {
+      return this.request('/api/friends/request', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId }),
+      });
+    },
+
+    acceptRequest: async (friendshipId: string): Promise<any> => {
+      return this.request('/api/friends/accept', {
+        method: 'POST',
+        body: JSON.stringify({ friendshipId }),
+      });
+    },
+
+    rejectRequest: async (friendshipId: string): Promise<any> => {
+      return this.request('/api/friends/reject', {
+        method: 'POST',
+        body: JSON.stringify({ friendshipId }),
+      });
+    },
+
+    remove: async (friendshipId: string): Promise<any> => {
+      return this.request(`/api/friends/${friendshipId}`, {
+        method: 'DELETE',
+      });
+    },
+  };
 }
 
 export const apiClient = new ApiClient();

@@ -3,6 +3,7 @@ import { RobloxOAuthService } from '../services/robloxOAuth.js';
 import { UserService } from '../services/userService.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { TokenService } from '../services/tokenService.js';
+import { FriendshipService } from '../services/friendship.service.js';
 import {
   generateSignedOAuthState,
   isValidCodeVerifier,
@@ -16,6 +17,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   const robloxConnectionService = new RobloxConnectionService(fastify);
   const userService = new UserService();
   const tokenService = new TokenService(fastify);
+  const friendshipService = new FriendshipService();
 
   /**
    * POST /auth/roblox/start
@@ -109,6 +111,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         'Failed to persist Roblox OAuth connection during sign-in'
       );
     }
+
+    // Fire-and-forget Roblox friends cache sync; login should not fail if this fails.
+    void friendshipService.syncRobloxCacheBestEffort(user.id);
 
     // Generate our JWT tokens
     const tokens = tokenService.generateTokens({

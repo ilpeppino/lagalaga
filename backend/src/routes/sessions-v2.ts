@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   SessionServiceV2,
   CreateSessionInput,
@@ -11,6 +11,22 @@ import { getSupabase } from '../config/supabase.js';
 interface SessionsRoutesV2Deps {
   sessionService?: SessionServiceV2;
   authPreHandler?: typeof authenticate;
+}
+
+async function getOptionalRequesterId(request: FastifyRequest): Promise<string | null> {
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) return null;
+
+  try {
+    const payload = await request.server.jwt.verify<{ userId?: string }>(token);
+    return payload.userId ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
@@ -97,10 +113,12 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       },
     },
     async (request, reply) => {
+      const requesterId = await getOptionalRequesterId(request);
       const result = await sessionService.listSessions({
         ...request.query,
         status: request.query.status as any,
         visibility: request.query.visibility as any,
+        requesterId,
       });
 
       return reply.send({
@@ -180,7 +198,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         throw new ValidationError(`Invalid session ID format: ${request.params.id}`);
       }
 
-      const session = await sessionService.getSessionById(request.params.id);
+      const requesterId = await getOptionalRequesterId(request);
+      const session = await sessionService.getSessionById(request.params.id, requesterId);
 
       if (!session) {
         throw new NotFoundError('Session', request.params.id);

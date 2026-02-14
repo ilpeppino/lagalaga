@@ -58,6 +58,10 @@ export const envSchema = {
       type: 'string',
       default: '*',
     },
+    FEATURE_FRIENDS_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
   },
 };
 
@@ -77,6 +81,7 @@ declare module 'fastify' {
       REFRESH_TOKEN_SECRET: string;
       REFRESH_TOKEN_EXPIRY: string;
       CORS_ORIGIN: string;
+      FEATURE_FRIENDS_ENABLED: boolean;
     };
   }
 }

@@ -15,6 +15,7 @@ import { sessionsRoutesV2 } from './routes/sessions-v2.js';
 import { robloxRoutes } from './routes/roblox.js';
 import { meRoutes } from './routes/me.routes.js';
 import { presenceRoutes } from './routes/presence.routes.js';
+import { friendsRoutes } from './routes/friends.routes.js';
 import { monitoring } from './lib/monitoring.js';
 import { fileURLToPath } from 'node:url';
 
@@ -63,6 +64,7 @@ export async function buildServer() {
   await fastify.register(robloxRoutes);
   await fastify.register(meRoutes, { prefix: '/api/me' });
   await fastify.register(presenceRoutes);
+  await fastify.register(friendsRoutes);
 
   return fastify;
 }

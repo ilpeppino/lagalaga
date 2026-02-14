@@ -18,6 +18,7 @@ const DEFAULT_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
 class MetricsCollector {
   private counters = new Map<string, Map<string, number>>();
   private histograms = new Map<string, Map<string, Histogram>>();
+  private gauges = new Map<string, Map<string, number>>();
 
   incrementCounter(name: string, labels: Record<string, string> = {}): void {
     if (!this.counters.has(name)) {
@@ -52,6 +53,14 @@ class MetricsCollector {
     }
   }
 
+  setGauge(name: string, value: number, labels: Record<string, string> = {}): void {
+    if (!this.gauges.has(name)) {
+      this.gauges.set(name, new Map());
+    }
+    const key = this.labelsToKey(labels);
+    this.gauges.get(name)!.set(key, value);
+  }
+
   toPrometheus(): string {
     const lines: string[] = [];
 
@@ -77,6 +86,16 @@ class MetricsCollector {
         lines.push(`${name}_bucket{${baseLabels}le="+Inf"} ${hist.count}`);
         lines.push(`${name}_sum{${labelKey ? labelKey : ''}} ${hist.sum}`);
         lines.push(`${name}_count{${labelKey ? labelKey : ''}} ${hist.count}`);
+      }
+    }
+
+    // Gauges
+    for (const [name, gaugeMap] of this.gauges) {
+      lines.push(`# HELP ${name} Gauge metric`);
+      lines.push(`# TYPE ${name} gauge`);
+      for (const [labelKey, value] of gaugeMap) {
+        const labelStr = labelKey ? `{${labelKey}}` : '';
+        lines.push(`${name}${labelStr} ${value}`);
       }
     }
 
@@ -108,6 +127,15 @@ class MetricsCollector {
       const values: Record<string, { count: number; sum: number }> = {};
       for (const [labelKey, hist] of histMap) {
         values[labelKey || '_total'] = { count: hist.count, sum: hist.sum };
+      }
+      result[name] = values;
+    }
+
+    // Gauges
+    for (const [name, gaugeMap] of this.gauges) {
+      const values: Record<string, number> = {};
+      for (const [labelKey, value] of gaugeMap) {
+        values[labelKey || '_total'] = value;
       }
       result[name] = values;
     }

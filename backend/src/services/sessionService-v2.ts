@@ -4,6 +4,7 @@ import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
 import { logger } from '../lib/logger.js';
 import { request } from 'undici';
+import { metrics } from '../plugins/metrics.js';
 
 export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
@@ -319,6 +320,7 @@ export class SessionServiceV2 {
     visibility?: SessionVisibility;
     placeId?: number;
     hostId?: string;
+    requesterId?: string | null;
     limit?: number;
     offset?: number;
   } = {}): Promise<{
@@ -341,6 +343,7 @@ export class SessionServiceV2 {
       p_visibility: params.visibility || null,
       p_place_id: params.placeId || null,
       p_host_id: params.hostId || null,
+      p_requester_id: params.requesterId || null,
       p_limit: limit,
       p_offset: offset,
     });
@@ -527,7 +530,7 @@ export class SessionServiceV2 {
   /**
    * Get session details with participants
    */
-  async getSessionById(sessionId: string): Promise<any | null> {
+  async getSessionById(sessionId: string, requesterId?: string | null): Promise<any | null> {
     const supabase = getSupabase();
 
     const { data: sessionData, error: sessionError } = await supabase
@@ -548,6 +551,14 @@ export class SessionServiceV2 {
         return null;
       }
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get session: ${sessionError.message}`);
+    }
+
+    if (sessionData.visibility === 'friends') {
+      const allowed = await this.canAccessFriendsOnlySession(sessionData.id, sessionData.host_id, requesterId ?? null);
+      metrics.incrementCounter('friends_session_filter_total', { result: allowed ? 'allowed' : 'denied' });
+      if (!allowed) {
+        return null;
+      }
     }
 
     const { data: hostProfile, error: hostProfileError } = await supabase
@@ -623,6 +634,14 @@ export class SessionServiceV2 {
       throw new SessionError(ErrorCodes.SESSION_NOT_FOUND, 'Session not found', 404);
     }
 
+    if (session.visibility === 'friends') {
+      const allowed = await this.canAccessFriendsOnlySession(sessionId, session.host_id, userId);
+      metrics.incrementCounter('friends_session_filter_total', { result: allowed ? 'allowed' : 'denied' });
+      if (!allowed) {
+        throw new SessionError(ErrorCodes.FRIEND_NOT_AUTHORIZED, 'Friends-only session', 403);
+      }
+    }
+
     // Check capacity
     const currentCount = session.session_participants[0]?.count || 0;
     if (currentCount >= session.max_participants) {
@@ -675,7 +694,7 @@ export class SessionServiceV2 {
     if (existing && existing.state === 'joined') {
       // Already joined - return session without error (idempotent)
       logger.info({ sessionId, userId }, 'User already joined session - returning existing session');
-      const existingSession = await this.getSessionById(sessionId);
+      const existingSession = await this.getSessionById(sessionId, userId);
       return { session: existingSession };
     }
 
@@ -694,8 +713,45 @@ export class SessionServiceV2 {
     }
 
     // Return updated session
-    const updatedSession = await this.getSessionById(sessionId);
+    const updatedSession = await this.getSessionById(sessionId, userId);
     return { session: updatedSession };
+  }
+
+  private async canAccessFriendsOnlySession(
+    sessionId: string,
+    hostId: string,
+    requesterId: string | null
+  ): Promise<boolean> {
+    if (!requesterId) return false;
+    if (requesterId === hostId) return true;
+
+    const supabase = getSupabase();
+
+    const { data: participant } = await supabase
+      .from('session_participants')
+      .select('session_id')
+      .eq('session_id', sessionId)
+      .eq('user_id', requesterId)
+      .in('state', ['joined', 'invited'])
+      .maybeSingle();
+
+    if (participant) {
+      return true;
+    }
+
+    const ordered = requesterId < hostId
+      ? { userId: requesterId, friendId: hostId }
+      : { userId: hostId, friendId: requesterId };
+
+    const { data: friendship } = await supabase
+      .from('friendships')
+      .select('id')
+      .eq('user_id', ordered.userId)
+      .eq('friend_id', ordered.friendId)
+      .eq('status', 'accepted')
+      .maybeSingle();
+
+    return Boolean(friendship);
   }
 
   async updateHandoffState(

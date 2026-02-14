@@ -19,6 +19,7 @@ export interface CreateSessionInput {
   visibility?: SessionVisibility;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp
+  invitedRobloxUserIds?: number[];
 }
 
 export interface SessionWithInvite {
@@ -214,6 +215,11 @@ export class SessionServiceV2 {
    */
   async createSession(input: CreateSessionInput): Promise<SessionWithInvite> {
     const supabase = getSupabase();
+    const invitedRobloxUserIds = normalizeInvitedRobloxUserIds(input.invitedRobloxUserIds);
+    const computedMaxParticipants = Math.max(
+      input.maxParticipants ?? (1 + invitedRobloxUserIds.length),
+      1
+    );
 
     const share = this.parseShareLink(input.robloxUrl);
     const sharePlaceholderPlaceId = 0;
@@ -286,7 +292,7 @@ export class SessionServiceV2 {
         host_id: input.hostUserId,
         title: input.title,
         visibility: input.visibility || 'public',
-        max_participants: input.maxParticipants || 10,
+        max_participants: computedMaxParticipants,
         scheduled_start: input.scheduledStart,
         original_input_url: normalized?.originalInputUrl ?? share?.canonicalUrl ?? input.robloxUrl,
         normalized_from: normalized?.normalizedFrom ?? share?.normalizedFrom ?? 'unknown',
@@ -312,6 +318,23 @@ export class SessionServiceV2 {
       // Structural consistency: do not leave orphan session if host participant insert fails.
       await supabase.from('sessions').delete().eq('id', sessionData.id);
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to add host participant: ${participantError.message}`);
+    }
+
+    if (invitedRobloxUserIds.length > 0) {
+      const { error: invitedError } = await supabase
+        .from('session_invited_roblox')
+        .insert(
+          invitedRobloxUserIds.map((robloxUserId) => ({
+            session_id: sessionData.id,
+            roblox_user_id: robloxUserId,
+          }))
+        );
+
+      if (invitedError) {
+        await supabase.from('session_participants').delete().eq('session_id', sessionData.id);
+        await supabase.from('sessions').delete().eq('id', sessionData.id);
+        throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to store invited Roblox users: ${invitedError.message}`);
+      }
     }
 
     // Step 5: Generate invite code and create invite record
@@ -913,4 +936,16 @@ export class SessionServiceV2 {
 
     return { sessionId, userId, handoffState };
   }
+}
+
+function normalizeInvitedRobloxUserIds(input?: number[]): number[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return [...new Set(
+    input
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+  )];
 }

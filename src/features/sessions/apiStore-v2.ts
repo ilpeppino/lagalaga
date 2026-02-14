@@ -11,6 +11,7 @@ import {
   ListSessionsParams,
   ListSessionsResponse,
   RobloxFavoritesResponse,
+  RobloxFriendsResponse,
 } from './types-v2';
 import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
@@ -26,12 +27,12 @@ export interface RobloxExperienceResolution {
 export interface RobloxPresencePayload {
   available: boolean;
   reason?: string;
-  statuses?: Array<{
+  statuses?: {
     userId: string;
     status: 'offline' | 'online' | 'in_game' | 'in_studio' | 'unknown';
     lastOnline?: string | null;
     placeId?: number | null;
-  }>;
+  }[];
 }
 
 function generateCorrelationId(): string {
@@ -150,6 +151,25 @@ class SessionsAPIStoreV2 {
       throw new ApiError({
         code: 'INT_001',
         message: 'Failed to load Roblox favorites',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  /**
+   * List current user's Roblox friends (cached server-side).
+   */
+  async listMyRobloxFriends(): Promise<RobloxFriendsResponse> {
+    const response = await fetchWithAuth<{ success: boolean; data: RobloxFriendsResponse }>(
+      '/api/me/roblox/friends'
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to load Roblox friends',
         statusCode: 500,
       });
     }

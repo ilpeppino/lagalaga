@@ -17,21 +17,24 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import type { SessionVisibility } from '@/src/features/sessions/types-v2';
+import type { RobloxFriend, SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button, TextInput } from '@/components/ui/paper';
 import { Menu, SegmentedButtons } from 'react-native-paper';
 import { useAuth } from '@/src/features/auth/useAuth';
+import { ApiError } from '@/src/lib/errors';
 import type { Favorite } from '@/src/features/favorites/cache';
 import { warmFavorites } from '@/src/features/favorites/service';
 import { useFavorites } from '@/src/features/favorites/useFavorites';
+import { FriendPickerTwoRowHorizontal } from '@/components/FriendPickerTwoRowHorizontal';
+import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'public', label: 'Public' },
@@ -60,12 +63,16 @@ export default function CreateSessionScreenV2() {
   const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
-  const [maxParticipants, setMaxParticipants] = useState(10);
+  const [friends, setFriends] = useState<RobloxFriend[]>([]);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
   const [scheduledStart, setScheduledStart] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // UI state
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [friendsError, setFriendsError] = useState<string | null>(null);
+  const [robloxNotConnected, setRobloxNotConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
 
@@ -76,6 +83,33 @@ export default function CreateSessionScreenV2() {
 
     void warmFavorites(user.id);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const loadFriends = async () => {
+      try {
+        setIsLoadingFriends(true);
+        setFriendsError(null);
+        setRobloxNotConnected(false);
+        const response = await sessionsAPIStoreV2.listMyRobloxFriends();
+        setFriends(response.friends);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'ROBLOX_NOT_CONNECTED') {
+          setRobloxNotConnected(true);
+          setFriends([]);
+          return;
+        }
+        setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
+      } finally {
+        setIsLoadingFriends(false);
+      }
+    };
+
+    void loadFriends();
+  }, [user?.id, getErrorMessage]);
 
   const handleSelectFavorite = (favorite: Favorite) => {
     setFavoritesMenuVisible(false);
@@ -146,13 +180,15 @@ export default function CreateSessionScreenV2() {
     try {
       setIsCreating(true);
 
-      const result = await sessionsAPIStoreV2.createSession({
-        robloxUrl: robloxUrl.trim(),
-        title: title.trim(),
-        visibility,
-        maxParticipants,
-        scheduledStart: scheduledStart?.toISOString(),
-      });
+      const result = await sessionsAPIStoreV2.createSession(
+        buildCreateSessionPayload({
+          robloxUrl: robloxUrl.trim(),
+          title: title.trim(),
+          visibility,
+          scheduledStart: scheduledStart?.toISOString(),
+          selectedFriendIds,
+        })
+      );
 
       // Navigate to session detail with invite link
       router.replace({
@@ -284,25 +320,70 @@ export default function CreateSessionScreenV2() {
         />
       </View>
 
-      {/* Max Participants Slider */}
+      {/* Friend Picker */}
       <View style={styles.field}>
         <ThemedText type="titleMedium" style={styles.label}>
-          Max Participants: {maxParticipants}
+          Invite Friends
         </ThemedText>
-        <Slider
-          style={styles.slider}
-          minimumValue={2}
-          maximumValue={50}
-          step={1}
-          value={maxParticipants}
-          onValueChange={setMaxParticipants}
-          minimumTrackTintColor="#007AFF"
-          maximumTrackTintColor={colorScheme === 'dark' ? '#333' : '#ddd'}
-        />
-        <View style={styles.sliderLabels}>
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">2</ThemedText>
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">50</ThemedText>
-        </View>
+        {isLoadingFriends ? (
+          <View style={styles.loadingFriendsContainer}>
+            <View style={styles.skeletonRow}>
+              <View style={styles.skeletonCard} />
+              <View style={styles.skeletonCard} />
+              <View style={styles.skeletonCard} />
+            </View>
+            <ActivityIndicator size="small" color="#007AFF" />
+          </View>
+        ) : null}
+
+        {!isLoadingFriends && robloxNotConnected ? (
+          <View style={styles.inlineInfoBox}>
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+              Connect Roblox to invite friends directly.
+            </ThemedText>
+            <Button
+              title="Connect Roblox"
+              variant="text"
+              onPress={() => router.push('/roblox')}
+            />
+          </View>
+        ) : null}
+
+        {!isLoadingFriends && !robloxNotConnected && friendsError ? (
+          <View style={styles.inlineInfoBox}>
+            <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80">
+              {friendsError}
+            </ThemedText>
+            <Button
+              title="Retry"
+              variant="text"
+              onPress={() => {
+                setFriendsError(null);
+                setIsLoadingFriends(true);
+                sessionsAPIStoreV2
+                  .listMyRobloxFriends()
+                  .then((response) => {
+                    setFriends(response.friends);
+                  })
+                  .catch((err) => {
+                    setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
+                  })
+                  .finally(() => setIsLoadingFriends(false));
+              }}
+            />
+          </View>
+        ) : null}
+
+        {!isLoadingFriends && !robloxNotConnected && !friendsError && (
+          <FriendPickerTwoRowHorizontal
+            friends={friends}
+            selectedIds={selectedFriendIds}
+            onToggle={(friendId) => {
+              setSelectedFriendIds((current) => toggleFriendSelection(current, friendId));
+            }}
+            disabled={isCreating}
+          />
+        )}
       </View>
 
       {/* Scheduled Start (Optional) */}
@@ -406,14 +487,27 @@ const styles = StyleSheet.create({
   visibilityPicker: {
     marginTop: 4,
   },
-  slider: {
-    width: '100%',
-    height: 40,
+  loadingFriendsContainer: {
+    minHeight: 90,
+    justifyContent: 'center',
+    gap: 10,
   },
-  sliderLabels: {
+  skeletonRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: -8,
+    gap: 10,
+  },
+  skeletonCard: {
+    width: 100,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: '#ececec',
+  },
+  inlineInfoBox: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    gap: 4,
   },
   dateButton: {
     borderRadius: 8,

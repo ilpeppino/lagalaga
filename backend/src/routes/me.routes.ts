@@ -2,12 +2,14 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/authenticate.js';
 import { RobloxFavoritesService } from '../services/roblox-favorites.service.js';
 import { FavoriteExperiencesService } from '../services/favorite-experiences.service.js';
+import { RobloxFriendsCacheService } from '../services/roblox-friends-cache.service.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 interface MeRoutesDeps {
   favoritesService?: RobloxFavoritesService;
   favoriteExperiencesService?: FavoriteExperiencesService;
+  friendsCacheService?: RobloxFriendsCacheService;
   authPreHandler?: AuthPreHandler;
 }
 
@@ -15,6 +17,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
   return async function meRoutes(fastify: FastifyInstance) {
     const favoritesService = deps.favoritesService ?? new RobloxFavoritesService();
     const favoriteExperiencesService = deps.favoriteExperiencesService;
+    const friendsCacheService = deps.friendsCacheService ?? new RobloxFriendsCacheService();
     const authPreHandler = deps.authPreHandler ?? authenticate;
 
     /**
@@ -65,6 +68,40 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
             cursor: request.query.cursor,
           }
         );
+
+        return reply.send({
+          success: true,
+          data,
+          requestId: String(request.id),
+        });
+      }
+    );
+
+    fastify.get(
+      '/roblox/friends',
+      {
+        preHandler: authPreHandler,
+      },
+      async (request, reply) => {
+        const data = await friendsCacheService.getFriendsForUser(request.user.userId);
+
+        return reply.send({
+          success: true,
+          data,
+          requestId: String(request.id),
+        });
+      }
+    );
+
+    fastify.post(
+      '/roblox/friends/refresh',
+      {
+        preHandler: authPreHandler,
+      },
+      async (request, reply) => {
+        const data = await friendsCacheService.getFriendsForUser(request.user.userId, {
+          forceRefresh: true,
+        });
 
         return reply.send({
           success: true,

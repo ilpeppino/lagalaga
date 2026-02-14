@@ -54,12 +54,17 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
             visibility: { type: 'string', enum: ['public', 'friends', 'invite_only'] },
             maxParticipants: { type: 'number', minimum: 2, maximum: 50 },
             scheduledStart: { type: 'string' },
+            invitedRobloxUserIds: {
+              type: 'array',
+              items: { type: 'number' },
+              maxItems: 200,
+            },
           },
         },
       },
     },
     async (request, reply) => {
-      const { robloxUrl, title, visibility, maxParticipants, scheduledStart } = request.body;
+      const { robloxUrl, title, visibility, maxParticipants, scheduledStart, invitedRobloxUserIds } = request.body;
 
       if (!robloxUrl || !title) {
         throw new ValidationError('robloxUrl and title are required');
@@ -72,6 +77,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         visibility,
         maxParticipants,
         scheduledStart,
+        invitedRobloxUserIds,
       });
 
       return reply.status(201).send({

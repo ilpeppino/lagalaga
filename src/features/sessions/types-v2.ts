@@ -56,6 +56,22 @@ export interface CreateSessionInput {
   visibility?: SessionVisibility;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp
+  invitedRobloxUserIds?: number[];
+}
+
+export interface RobloxFriend {
+  id: number;
+  name: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export interface RobloxFriendsResponse {
+  robloxUserId: string;
+  source: 'cache' | 'refreshed';
+  fetchedAt: string;
+  expiresAt: string;
+  friends: RobloxFriend[];
 }
 
 export interface RobloxFavoriteGame {

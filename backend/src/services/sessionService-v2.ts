@@ -67,6 +67,11 @@ export class SessionServiceV2 {
     this.enrichmentService = new RobloxEnrichmentService();
   }
 
+  private isMissingColumnError(error: any, column: string): boolean {
+    const message = String(error?.message || '');
+    return message.includes('column') && message.includes(column) && message.includes('does not exist');
+  }
+
   private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
     let url: URL;
     try {
@@ -232,13 +237,25 @@ export class SessionServiceV2 {
     }
 
     // Step 4: Add host as participant
-    const { error: participantError } = await supabase.from('session_participants').insert({
+    let { error: participantError } = await supabase.from('session_participants').insert({
       session_id: sessionData.id,
       user_id: input.hostUserId,
       role: 'host',
       state: 'joined',
       handoff_state: 'rsvp_joined',
     });
+
+    // Backward compatibility: environments without handoff_state column.
+    if (participantError && this.isMissingColumnError(participantError, 'handoff_state')) {
+      logger.warn('session_participants.handoff_state missing; retrying host insert without it');
+      const fallback = await supabase.from('session_participants').insert({
+        session_id: sessionData.id,
+        user_id: input.hostUserId,
+        role: 'host',
+        state: 'joined',
+      });
+      participantError = fallback.error;
+    }
 
     if (participantError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to add host participant: ${participantError.message}`);
@@ -336,9 +353,7 @@ export class SessionServiceV2 {
     const limit = params.limit || 20;
     const offset = params.offset || 0;
 
-    // Use optimized RPC function instead of nested selects
-    // This eliminates N+1 query problem (1 query instead of 41)
-    const { data, error } = await supabase.rpc('list_sessions_optimized', {
+    const rpcParams = {
       p_status: params.status || null,
       p_visibility: params.visibility || null,
       p_place_id: params.placeId || null,
@@ -346,7 +361,26 @@ export class SessionServiceV2 {
       p_requester_id: params.requesterId || null,
       p_limit: limit,
       p_offset: offset,
-    });
+    };
+
+    // Prefer requester-aware RPC signature; fall back to legacy signature if DB is not migrated yet.
+    let { data, error } = await supabase.rpc('list_sessions_optimized', rpcParams);
+    if (error && /Could not find the function public\.list_sessions_optimized/i.test(error.message)) {
+      logger.warn(
+        { error: error.message },
+        'Falling back to legacy list_sessions_optimized signature without requester filtering'
+      );
+      const fallback = await supabase.rpc('list_sessions_optimized', {
+        p_status: params.status || null,
+        p_visibility: params.visibility || null,
+        p_place_id: params.placeId || null,
+        p_host_id: params.hostId || null,
+        p_limit: limit,
+        p_offset: offset,
+      });
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list sessions: ${error.message}`);
@@ -699,7 +733,7 @@ export class SessionServiceV2 {
     }
 
     // Insert participant (or update if they left previously)
-    const { error: participantError } = await supabase.from('session_participants').upsert({
+    let { error: participantError } = await supabase.from('session_participants').upsert({
       session_id: sessionId,
       user_id: userId,
       role: 'member',
@@ -707,6 +741,19 @@ export class SessionServiceV2 {
       handoff_state: 'rsvp_joined',
       joined_at: existing?.joined_at || new Date().toISOString(), // Keep original join time if re-joining
     });
+
+    // Backward compatibility: environments without handoff_state column.
+    if (participantError && this.isMissingColumnError(participantError, 'handoff_state')) {
+      logger.warn('session_participants.handoff_state missing; retrying join upsert without it');
+      const fallback = await supabase.from('session_participants').upsert({
+        session_id: sessionId,
+        user_id: userId,
+        role: 'member',
+        state: 'joined',
+        joined_at: existing?.joined_at || new Date().toISOString(),
+      });
+      participantError = fallback.error;
+    }
 
     if (participantError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to join session: ${participantError.message}`);
@@ -788,6 +835,11 @@ export class SessionServiceV2 {
       .update({ handoff_state: handoffState })
       .eq('session_id', sessionId)
       .eq('user_id', userId);
+
+    if (updateError && this.isMissingColumnError(updateError, 'handoff_state')) {
+      logger.warn('session_participants.handoff_state missing; skipping handoff update');
+      return { sessionId, userId, handoffState };
+    }
 
     if (updateError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update handoff state: ${updateError.message}`);

@@ -67,6 +67,74 @@ export class SessionServiceV2 {
     this.enrichmentService = new RobloxEnrichmentService();
   }
 
+  private isMissingHandoffStateColumn(error: { message?: string } | null | undefined): boolean {
+    const message = error?.message ?? '';
+    return (
+      /Could not find the 'handoff_state' column of 'session_participants' in the schema cache/i.test(message) ||
+      /column .*handoff_state.* does not exist/i.test(message)
+    );
+  }
+
+  private async insertParticipant(
+    supabase: ReturnType<typeof getSupabase>,
+    payload: {
+      session_id: string;
+      user_id: string;
+      role: ParticipantRole;
+      state: ParticipantState;
+      handoff_state: ParticipantHandoffState;
+      joined_at?: string;
+    }
+  ): Promise<{ message?: string } | null> {
+    const primary = await supabase.from('session_participants').insert(payload);
+    if (!primary.error) {
+      return null;
+    }
+
+    if (!this.isMissingHandoffStateColumn(primary.error)) {
+      return primary.error;
+    }
+
+    logger.warn(
+      { error: primary.error.message },
+      'session_participants.handoff_state missing; retrying participant insert without handoff_state'
+    );
+
+    const { handoff_state: _handoffState, ...fallbackPayload } = payload;
+    const fallback = await supabase.from('session_participants').insert(fallbackPayload);
+    return fallback.error;
+  }
+
+  private async upsertParticipant(
+    supabase: ReturnType<typeof getSupabase>,
+    payload: {
+      session_id: string;
+      user_id: string;
+      role: ParticipantRole;
+      state: ParticipantState;
+      handoff_state: ParticipantHandoffState;
+      joined_at?: string;
+    }
+  ): Promise<{ message?: string } | null> {
+    const primary = await supabase.from('session_participants').upsert(payload);
+    if (!primary.error) {
+      return null;
+    }
+
+    if (!this.isMissingHandoffStateColumn(primary.error)) {
+      return primary.error;
+    }
+
+    logger.warn(
+      { error: primary.error.message },
+      'session_participants.handoff_state missing; retrying participant upsert without handoff_state'
+    );
+
+    const { handoff_state: _handoffState, ...fallbackPayload } = payload;
+    const fallback = await supabase.from('session_participants').upsert(fallbackPayload);
+    return fallback.error;
+  }
+
   private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
     let url: URL;
     try {
@@ -232,7 +300,7 @@ export class SessionServiceV2 {
     }
 
     // Step 4: Add host as participant
-    const { error: participantError } = await supabase.from('session_participants').insert({
+    const participantError = await this.insertParticipant(supabase, {
       session_id: sessionData.id,
       user_id: input.hostUserId,
       role: 'host',
@@ -742,7 +810,7 @@ export class SessionServiceV2 {
     }
 
     // Insert participant (or update if they left previously)
-    const { error: participantError } = await supabase.from('session_participants').upsert({
+    const participantError = await this.upsertParticipant(supabase, {
       session_id: sessionId,
       user_id: userId,
       role: 'member',
@@ -833,6 +901,13 @@ export class SessionServiceV2 {
       .eq('user_id', userId);
 
     if (updateError) {
+      if (this.isMissingHandoffStateColumn(updateError)) {
+        logger.warn(
+          { sessionId, userId, handoffState, error: updateError.message },
+          'Skipping handoff_state update because session_participants.handoff_state is missing'
+        );
+        return { sessionId, userId, handoffState };
+      }
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update handoff state: ${updateError.message}`);
     }
 

@@ -24,6 +24,7 @@ describe('RobloxEnrichmentService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFetch = jest.fn() as jest.MockedFunction<FetchFunction>;
+    mockSupabase.from.mockClear();
     service = new RobloxEnrichmentService(mockFetch);
   });
 
@@ -119,7 +120,7 @@ describe('RobloxEnrichmentService', () => {
       const cachedThumbnail = 'https://cached.url/image.png';
 
       // Mock cache hit
-      mockSupabase.from.mockReturnValue({
+      mockSupabase.from.mockReturnValueOnce({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
             single: jest.fn(() => Promise.resolve({
@@ -198,16 +199,13 @@ describe('RobloxEnrichmentService', () => {
   });
 
   describe('enrichGame - error handling', () => {
-    beforeEach(() => {
-      mockCacheMiss();
-    });
-
     it('should throw error for invalid placeId', async () => {
       await expect(service.enrichGame(0)).rejects.toThrow('Invalid placeId');
       await expect(service.enrichGame(-1)).rejects.toThrow('Invalid placeId');
     });
 
     it('should throw error when universe API returns 404', async () => {
+      mockCacheMiss();
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -217,6 +215,7 @@ describe('RobloxEnrichmentService', () => {
     });
 
     it('should throw error when universe API fails', async () => {
+      mockCacheMiss();
       mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
@@ -229,6 +228,8 @@ describe('RobloxEnrichmentService', () => {
       const placeId = 606849621;
       const universeId = 245683;
       const thumbnailUrl = 'https://thumbnail.url';
+
+      mockCacheMiss();
 
       // Universe API succeeds
       mockFetch.mockResolvedValueOnce({
@@ -268,6 +269,8 @@ describe('RobloxEnrichmentService', () => {
       const universeId = 245683;
       const gameName = 'Test Game';
 
+      mockCacheMiss();
+
       // Universe API succeeds
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -306,6 +309,8 @@ describe('RobloxEnrichmentService', () => {
       const universeId = 245683;
       const gameName = 'Test Game';
 
+      mockCacheMiss();
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ universeId }),
@@ -335,11 +340,9 @@ describe('RobloxEnrichmentService', () => {
   });
 
   describe('enrichGame - timeout handling', () => {
-    beforeEach(() => {
-      mockCacheMiss();
-    });
-
     it('should timeout on slow universe API', async () => {
+      mockCacheMiss();
+
       (service as any).REQUEST_TIMEOUT = 25;
       (service as any).RETRY_ATTEMPTS = 1;
 
@@ -357,6 +360,8 @@ describe('RobloxEnrichmentService', () => {
     });
 
     it('should handle AbortError from timeout', async () => {
+      mockCacheMiss();
+
       mockFetch.mockImplementation(async (_url, init) => {
         // Simulate abort
         if (init?.signal) {
@@ -372,13 +377,11 @@ describe('RobloxEnrichmentService', () => {
   });
 
   describe('enrichGame - retry logic', () => {
-    beforeEach(() => {
-      mockCacheMiss();
-    });
-
     it('should retry once on network failure and succeed', async () => {
       const placeId = 606849621;
       const universeId = 245683;
+
+      mockCacheMiss();
 
       // First call fails, second succeeds
       mockFetch
@@ -398,6 +401,7 @@ describe('RobloxEnrichmentService', () => {
         json: async () => ({ data: [{ targetId: placeId, state: 'Completed', imageUrl: 'url' }] }),
       } as Response);
 
+      // Mock upsert
       mockUpsertSuccess();
 
       const result = await service.enrichGame(placeId);
@@ -420,13 +424,14 @@ describe('RobloxEnrichmentService', () => {
     });
 
     it('should retry on 5xx errors', async () => {
+      mockCacheMiss();
+
       mockFetch
         .mockResolvedValueOnce({ ok: false, status: 503 } as Response)
         .mockResolvedValueOnce({ ok: false, status: 503 } as Response);
 
       await expect(service.enrichGame(606849621)).rejects.toThrow('Roblox Universe API');
 
-      // Should retry once (2 total attempts)
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
@@ -450,6 +455,9 @@ describe('RobloxEnrichmentService', () => {
       const universeId = 245683;
       const gameName = 'Test Game';
       const thumbnailUrl = 'https://thumbnail.url';
+
+      // Setup cache miss
+      mockCacheMiss();
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -487,6 +495,9 @@ describe('RobloxEnrichmentService', () => {
 
     it('should throw error on database failure', async () => {
       const placeId = 606849621;
+
+      // Setup cache miss
+      mockCacheMiss();
 
       mockFetch.mockResolvedValueOnce({
         ok: true,

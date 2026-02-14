@@ -72,6 +72,19 @@ export class SessionServiceV2 {
     return message.includes('column') && message.includes(column) && message.includes('does not exist');
   }
 
+  private isSchemaCompatibilityError(error: any, token: string): boolean {
+    const message = String(error?.message || '');
+    return (
+      message.includes(token) &&
+      (
+        message.includes('does not exist')
+        || message.includes('Could not find the function')
+        || message.includes('Could not find a relationship')
+        || message.includes('schema cache')
+      )
+    );
+  }
+
   private parseShareLink(inputUrl: string): { canonicalUrl: string; normalizedFrom: string } | null {
     let url: URL;
     try {
@@ -262,7 +275,7 @@ export class SessionServiceV2 {
     }
 
     // Step 5: Generate invite code and create invite record
-    const inviteCode = generateInviteCode();
+    let inviteCode: string | null = generateInviteCode();
     const { error: inviteError } = await supabase
       .from('session_invites')
       .insert({
@@ -274,7 +287,19 @@ export class SessionServiceV2 {
       .single();
 
     if (inviteError) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
+      if (
+        this.isSchemaCompatibilityError(inviteError, 'session_invites')
+        || this.isMissingColumnError(inviteError, 'created_by')
+        || this.isMissingColumnError(inviteError, 'invite_code')
+      ) {
+        logger.warn(
+          { error: inviteError.message },
+          'session_invites schema mismatch; continuing without invite link'
+        );
+        inviteCode = null;
+      } else {
+        throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
+      }
     }
 
     // Step 6: Get game data for response (if we have placeId)
@@ -324,7 +349,7 @@ export class SessionServiceV2 {
         },
         createdAt: sessionData.created_at,
       },
-      inviteLink: `lagalaga://invite/${inviteCode}`,
+      inviteLink: inviteCode ? `lagalaga://invite/${inviteCode}` : '',
     };
   }
 
@@ -567,18 +592,49 @@ export class SessionServiceV2 {
   async getSessionById(sessionId: string, requesterId?: string | null): Promise<any | null> {
     const supabase = getSupabase();
 
-    const { data: sessionData, error: sessionError } = await supabase
+    const fullSelect = `
+      *,
+      games(*),
+      session_participants(*),
+      session_invites(invite_code)
+    `;
+    const noInvitesSelect = `
+      *,
+      games(*),
+      session_participants(*)
+    `;
+    const minimalSelect = `
+      *,
+      games(*)
+    `;
+
+    let { data: sessionData, error: sessionError } = await supabase
       .from('sessions')
-      .select(
-        `
-        *,
-        games(*),
-        session_participants(*),
-        session_invites(invite_code)
-      `
-      )
+      .select(fullSelect)
       .eq('id', sessionId)
       .single() as { data: any; error: any };
+
+    if (sessionError && this.isSchemaCompatibilityError(sessionError, 'session_invites')) {
+      logger.warn({ error: sessionError.message }, 'Falling back session detail query without session_invites');
+      const fallback = await supabase
+        .from('sessions')
+        .select(noInvitesSelect)
+        .eq('id', sessionId)
+        .single() as { data: any; error: any };
+      sessionData = fallback.data;
+      sessionError = fallback.error;
+    }
+
+    if (sessionError && this.isSchemaCompatibilityError(sessionError, 'session_participants')) {
+      logger.warn({ error: sessionError.message }, 'Falling back session detail query without session_participants');
+      const fallback = await supabase
+        .from('sessions')
+        .select(minimalSelect)
+        .eq('id', sessionId)
+        .single() as { data: any; error: any };
+      sessionData = fallback.data;
+      sessionError = fallback.error;
+    }
 
     if (sessionError) {
       if (sessionError.code === 'PGRST116') {
@@ -622,7 +678,7 @@ export class SessionServiceV2 {
         canonicalWebUrl: sessionData.games?.canonical_web_url ?? sessionData.original_input_url,
         canonicalStartUrl: sessionData.games?.canonical_start_url ?? sessionData.original_input_url,
       },
-      participants: sessionData.session_participants.map((p: any) => ({
+      participants: (sessionData.session_participants ?? []).map((p: any) => ({
         userId: p.user_id,
         role: p.role,
         state: p.state,

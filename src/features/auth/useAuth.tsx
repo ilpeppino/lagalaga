@@ -13,9 +13,11 @@ WebBrowser.maybeCompleteAuthSession();
 interface User {
   id: string;
   robloxUserId: string;
-  robloxUsername: string;
+  robloxUsername?: string;
   robloxDisplayName?: string;
   robloxProfileUrl?: string;
+  avatarHeadshotUrl?: string | null;
+  robloxConnected?: boolean;
 }
 
 interface AuthContextValue {
@@ -44,9 +46,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { user: userData } = await apiClient.auth.me();
+      const me = await apiClient.auth.me();
+      const userData: User = {
+        id: me.id,
+        robloxUserId: me.robloxUserId,
+        avatarHeadshotUrl: me.avatarHeadshotUrl,
+        robloxConnected: me.robloxConnected,
+      };
       setUser(userData);
-      void warmFavorites(userData.id);
+      void warmFavorites(me.id);
     } catch (error) {
       logger.error('Failed to load user', {
         error: error instanceof Error ? error.message : String(error),

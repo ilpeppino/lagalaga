@@ -318,7 +318,7 @@ class ApiClient {
       });
     },
 
-    me: async (): Promise<{ id: string; robloxUserId: string; avatarHeadshotUrl: string | null }> => {
+    me: async (): Promise<{ id: string; robloxUserId: string; avatarHeadshotUrl: string | null; robloxConnected: boolean }> => {
       return this.request('/auth/me', {
         method: 'GET',
       });

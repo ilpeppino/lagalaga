@@ -40,6 +40,7 @@ export class FavoriteExperiencesService {
   private readonly supabase: SupabaseClient;
   private readonly robloxFavoritesService: RobloxFavoritesService;
   private readonly inFlightRefreshes = new Map<string, Promise<void>>();
+  private warnedMissingCacheTable = false;
 
   constructor(deps: ServiceDeps = {}) {
     this.supabase = deps.supabase ?? getSupabase();
@@ -189,6 +190,10 @@ export class FavoriteExperiencesService {
       .maybeSingle<CachedFavoritesRow>();
 
     if (error) {
+      if (this.isMissingCacheTableError(error.message)) {
+        this.logMissingTableWarningOnce(error.message);
+        return null;
+      }
       logger.warn({ userId, error: error.message }, 'Failed to load user_favorites_cache row');
       return null;
     }
@@ -217,8 +222,11 @@ export class FavoriteExperiencesService {
         { onConflict: 'user_id' }
       );
 
-    if (error) {
+    if (error && !this.isMissingCacheTableError(error.message)) {
       throw new Error(`Failed to upsert user_favorites_cache: ${error.message}`);
+    }
+    if (error) {
+      this.logMissingTableWarningOnce(error.message);
     }
   }
 
@@ -231,9 +239,31 @@ export class FavoriteExperiencesService {
       })
       .eq('user_id', userId);
 
-    if (error) {
+    if (error && !this.isMissingCacheTableError(error.message)) {
       throw new Error(`Failed to update user_favorites_cache timestamps: ${error.message}`);
     }
+    if (error) {
+      this.logMissingTableWarningOnce(error.message);
+    }
+  }
+
+  private isMissingCacheTableError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('user_favorites_cache')
+      && (lower.includes('could not find the table') || lower.includes('relation') || lower.includes('does not exist'))
+    );
+  }
+
+  private logMissingTableWarningOnce(errorMessage: string): void {
+    if (this.warnedMissingCacheTable) {
+      return;
+    }
+    this.warnedMissingCacheTable = true;
+    logger.warn(
+      { error: errorMessage },
+      'user_favorites_cache table is missing; favorites cache will run in no-persist fallback mode'
+    );
   }
 }
 

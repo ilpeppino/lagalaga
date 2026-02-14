@@ -11,7 +11,7 @@
  * - Error handling via useErrorHandler
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -22,12 +22,16 @@ import { useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import type { RobloxFavoriteGame, SessionVisibility } from '@/src/features/sessions/types-v2';
+import type { SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button, TextInput } from '@/components/ui/paper';
-import { ActivityIndicator, Menu, SegmentedButtons } from 'react-native-paper';
+import { Menu, SegmentedButtons } from 'react-native-paper';
+import { useAuth } from '@/src/features/auth/useAuth';
+import type { Favorite } from '@/src/features/favorites/cache';
+import { warmFavorites } from '@/src/features/favorites/service';
+import { useFavorites } from '@/src/features/favorites/useFavorites';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'public', label: 'Public' },
@@ -35,7 +39,7 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'invite_only', label: 'Invite Only' },
 ];
 
-function getFavoriteDisplayName(favorite: RobloxFavoriteGame): string {
+function getFavoriteDisplayName(favorite: Favorite): string {
   const name = favorite.name?.trim();
   if (name) {
     return name;
@@ -46,13 +50,14 @@ function getFavoriteDisplayName(favorite: RobloxFavoriteGame): string {
 
 export default function CreateSessionScreenV2() {
   const router = useRouter();
-  const { handleError, getErrorMessage } = useErrorHandler();
+  const { getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const { user } = useAuth();
+  const { favorites, loading: isLoadingFavorites, error: favoritesError, refresh: refreshFavorites } = useFavorites(user?.id);
 
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
-  const [favorites, setFavorites] = useState<RobloxFavoriteGame[]>([]);
-  const [selectedFavorite, setSelectedFavorite] = useState<RobloxFavoriteGame | null>(null);
+  const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [maxParticipants, setMaxParticipants] = useState(10);
@@ -62,48 +67,24 @@ export default function CreateSessionScreenV2() {
   // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
-  const [favoritesError, setFavoritesError] = useState<string | null>(null);
 
-  const lastAutoFilledTitleRef = useRef<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    setIsLoadingFavorites(true);
-    setFavoritesError(null);
+    if (!user?.id) {
+      return;
+    }
 
-    sessionsAPIStoreV2.listMyRobloxFavorites({ limit: 100 })
-      .then((data) => {
-        if (cancelled) return;
-        const available = data.favorites.filter((game) => game.placeId && game.canonicalWebUrl);
-        setFavorites(available);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setFavorites([]);
-        setFavoritesError('Could not load your Roblox favorites');
-        handleError(err, { fallbackMessage: 'Could not load your Roblox favorites' });
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoadingFavorites(false);
-        }
-      });
+    void warmFavorites(user.id);
+  }, [user?.id]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [handleError]);
-
-  const handleSelectFavorite = (favorite: RobloxFavoriteGame) => {
+  const handleSelectFavorite = (favorite: Favorite) => {
     setFavoritesMenuVisible(false);
     setSelectedFavorite(favorite);
-    setRobloxUrl(favorite.canonicalWebUrl ?? '');
+    setRobloxUrl(favorite.url ?? '');
 
     const preferredTitle = getFavoriteDisplayName(favorite);
     if (preferredTitle) {
       setTitle(preferredTitle);
-      lastAutoFilledTitleRef.current = preferredTitle;
     }
   };
 
@@ -153,8 +134,8 @@ export default function CreateSessionScreenV2() {
     setError(null);
 
     // Validation
-    if (!selectedFavorite || !robloxUrl.trim()) {
-      setError('Please select a favorite Roblox game');
+    if (!robloxUrl.trim()) {
+      setError('Please enter or select a Roblox game link');
       return;
     }
     if (!title.trim()) {
@@ -206,15 +187,16 @@ export default function CreateSessionScreenV2() {
         <TextInput
           style={styles.input}
           value={robloxUrl}
-          placeholder="Auto-filled from your favorite game selection"
+          placeholder="Paste a Roblox game URL or select a favorite below"
           autoCapitalize="none"
           keyboardType="url"
           autoCorrect={false}
           variant="outlined"
-          editable={false}
+          editable
+          onChangeText={setRobloxUrl}
         />
         <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
-          Direct editing is disabled. Choose a game from Favorites below.
+          Favorites auto-fill this field. You can also paste a URL manually.
         </ThemedText>
       </View>
 
@@ -223,49 +205,47 @@ export default function CreateSessionScreenV2() {
         <ThemedText type="titleMedium" style={styles.label}>
           Favorite Game *
         </ThemedText>
-        {isLoadingFavorites ? (
-          <View style={styles.favoritesLoading}>
-            <ActivityIndicator size="small" color="#007AFF" />
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-              Loading Roblox favorites...
-            </ThemedText>
-          </View>
-        ) : (
-          <Menu
-            visible={favoritesMenuVisible}
-            onDismiss={() => setFavoritesMenuVisible(false)}
-            anchor={(
-              <Button
-                title={
-                  selectedFavorite
-                    ? getFavoriteDisplayName(selectedFavorite)
-                    : 'Select from your Roblox favorites'
-                }
-                variant="outlined"
-                style={styles.dropdownButton}
-                contentStyle={styles.dropdownButtonContent}
-                labelStyle={styles.dropdownButtonLabel}
-                onPress={() => setFavoritesMenuVisible(true)}
-                disabled={favorites.length === 0}
-              />
-            )}
-          >
-            {favorites.map((favorite) => {
-              const key = `${favorite.universeId}-${favorite.placeId ?? 'none'}`;
-              const label = getFavoriteDisplayName(favorite);
-              return (
-                <Menu.Item
-                  key={key}
-                  title={label}
-                  onPress={() => handleSelectFavorite(favorite)}
-                />
-              );
-            })}
-            {favorites.length === 0 && (
-              <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
-            )}
-          </Menu>
-        )}
+        <Menu
+          visible={favoritesMenuVisible}
+          onDismiss={() => setFavoritesMenuVisible(false)}
+          anchor={(
+            <Button
+              title={
+                selectedFavorite
+                  ? getFavoriteDisplayName(selectedFavorite)
+                  : 'Select from your Roblox favorites'
+              }
+              variant="outlined"
+              style={styles.dropdownButton}
+              contentStyle={styles.dropdownButtonContent}
+              labelStyle={styles.dropdownButtonLabel}
+              onPress={() => setFavoritesMenuVisible(true)}
+            />
+          )}
+        >
+          {favorites.map((favorite) => (
+            <Menu.Item
+              key={favorite.id}
+              title={getFavoriteDisplayName(favorite)}
+              onPress={() => handleSelectFavorite(favorite)}
+            />
+          ))}
+          {favorites.length === 0 && isLoadingFavorites && (
+            <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
+          )}
+          {favorites.length === 0 && !!favoritesError && (
+            <Menu.Item
+              title="Couldn't load favorites. Tap to retry"
+              onPress={() => {
+                void refreshFavorites();
+                setFavoritesMenuVisible(false);
+              }}
+            />
+          )}
+          {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
+            <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
+          )}
+        </Menu>
         {favoritesError && (
           <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
             {favoritesError}
@@ -383,7 +363,7 @@ export default function CreateSessionScreenV2() {
         labelStyle={styles.submitButtonLabel}
         onPress={handleCreate}
         loading={isCreating}
-        disabled={isCreating || !selectedFavorite || !robloxUrl || !title}
+        disabled={isCreating || !robloxUrl || !title}
       />
     </ScrollView>
   );
@@ -422,11 +402,6 @@ const styles = StyleSheet.create({
   dropdownButtonLabel: {
     textAlign: 'left',
     width: '100%',
-  },
-  favoritesLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
   },
   visibilityPicker: {
     marginTop: 4,

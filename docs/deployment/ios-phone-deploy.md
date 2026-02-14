@@ -106,7 +106,68 @@ Then either:
 - Upload and distribute through TestFlight, or
 - Use your existing release workflow for iOS distribution.
 
-## 6. Test On Wi-Fi And Mobile Data
+## 6. Build And Publish To App Store Connect With EAS
+
+Use this flow for production release to TestFlight/App Store.
+
+### 6.1 One-time setup (Apple + EAS)
+
+1. Ensure the iOS app exists in App Store Connect:
+   - Bundle ID: `com.ilpeppino.lagalaga`
+   - App name/SKU configured
+2. Ensure you are logged into EAS:
+
+```sh
+npx eas login
+```
+
+3. Configure signing credentials (recommended: let EAS manage):
+
+```sh
+npx eas credentials -p ios
+```
+
+4. Configure App Store Connect auth for submit:
+   - Preferred: App Store Connect API key (Issuer ID, Key ID, `.p8` key)
+   - Or Apple ID session (interactive)
+
+### 6.2 Build production iOS artifact
+
+From repo root:
+
+```sh
+npm install
+npx eas build --platform ios --profile production
+```
+
+Notes:
+- Your `eas.json` production profile already has `autoIncrement: true`, so build numbers increment automatically.
+- Wait for build status to become `finished` in EAS dashboard/CLI.
+
+### 6.3 Submit build to App Store Connect
+
+Option A (after build completes):
+
+```sh
+npx eas submit --platform ios --profile production
+```
+
+Option B (build + submit in one command):
+
+```sh
+npx eas build --platform ios --profile production --auto-submit
+```
+
+### 6.4 Complete release in App Store Connect
+
+1. Open App Store Connect -> your app -> TestFlight.
+2. Wait for Apple processing to complete for the uploaded build.
+3. Add compliance/export info and testing notes if prompted.
+4. Add internal/external testers and start TestFlight testing.
+5. When ready, create a new App Store version, attach the approved build, complete metadata, and submit for review.
+6. After approval, release manually or automatically per your release settings.
+
+## 7. Test On Wi-Fi And Mobile Data
 
 1. Connect iPhone to Wi-Fi.
 2. Open app and test:
@@ -118,7 +179,7 @@ Then either:
 Expected behavior:
 - App works on both networks because it calls Render public HTTPS API.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 - `Network request failed`
   - Confirm `EXPO_PUBLIC_API_URL` is valid HTTPS Render URL.

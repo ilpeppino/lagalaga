@@ -7,6 +7,17 @@ import { apiClient } from '@/src/lib/api';
 
 let cachedToken: string | null = null;
 
+function isExpectedPushSetupError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('default firebaseapp is not initialized') ||
+    normalized.includes('fcm') ||
+    normalized.includes('google play services') ||
+    normalized.includes('network') ||
+    normalized.includes('service_not_available')
+  );
+}
+
 export async function registerPushToken(): Promise<string | null> {
   if (Platform.OS === 'web') {
     logger.info('Push tokens not supported on web, skipping');
@@ -31,7 +42,9 @@ export async function registerPushToken(): Promise<string | null> {
       return null;
     }
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
     if (!projectId) {
       logger.error('Missing EAS project ID for push token registration');
       return null;
@@ -49,8 +62,18 @@ export async function registerPushToken(): Promise<string | null> {
     logger.info('Push token registered', { platform: Platform.OS });
     return token;
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
+    if (isExpectedPushSetupError(errorMessage)) {
+      logger.warn('Push token unavailable in this build/runtime', {
+        platform: Platform.OS,
+        error: errorMessage,
+      });
+      return null;
+    }
+
     logger.error('Failed to register push token', {
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage,
     });
     return null;
   }

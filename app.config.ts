@@ -81,6 +81,13 @@ const config: ExpoConfig = {
     ],
     "expo-sqlite",
     [
+      "expo-notifications",
+      {
+        icon: "./assets/generated/icon.png",
+        color: "#1A2A6C",
+      },
+    ],
+    [
       "expo-font",
       {
         fonts: [

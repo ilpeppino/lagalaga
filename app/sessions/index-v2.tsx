@@ -453,7 +453,7 @@ export default function SessionsListScreenV2() {
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
       <Stack.Screen
         options={{
-          title: selectionMode ? `${selectedIds.size} Selected` : 'Sessions',
+          title: selectionMode ? `${selectedIds.size} Selected` : '',
           ...(selectionMode
             ? {
                 headerLeft: () => (

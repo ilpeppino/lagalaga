@@ -12,6 +12,7 @@ export default function SessionsLayout() {
   const { signOut } = useAuth();
   const { handleError } = useErrorHandler();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string>('User');
 
   useEffect(() => {
     // Fetch user data in background
@@ -19,9 +20,10 @@ export default function SessionsLayout() {
       try {
         const userData = await apiClient.auth.me();
         setAvatarUrl(userData.avatarHeadshotUrl);
+        setDisplayName(userData.robloxDisplayName || userData.robloxUsername || 'User');
       } catch (error) {
-        // Silently fail - avatar is not critical
-        logger.warn('Failed to fetch user avatar', {
+        // Silently fail - header identity is not critical
+        logger.warn('Failed to fetch user header profile', {
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -48,10 +50,10 @@ export default function SessionsLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Sessions",
-          headerRight: () => (
-            <View style={styles.headerRight}>
-              <TouchableOpacity onPress={handleOpenMe} activeOpacity={0.7}>
+          headerTitle: '',
+          headerLeft: () => (
+            <View style={styles.headerLeft}>
+              <TouchableOpacity onPress={handleOpenMe} activeOpacity={0.7} style={styles.profileButton}>
                 <Image
                   source={
                     avatarUrl
@@ -61,13 +63,20 @@ export default function SessionsLayout() {
                   style={styles.avatar}
                 />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
-                <ThemedText type="bodyLarge" lightColor="#007AFF" darkColor="#007AFF">
-                  Sign Out
-                </ThemedText>
-              </TouchableOpacity>
+              <ThemedText type="bodyLarge" numberOfLines={1} style={styles.displayName}>
+                {displayName}
+              </ThemedText>
             </View>
           ),
+          headerRight: () => (
+            <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
+              <ThemedText type="bodyLarge" lightColor="#007AFF" darkColor="#007AFF">
+                Sign Out
+              </ThemedText>
+            </TouchableOpacity>
+          ),
+          headerLeftContainerStyle: styles.headerSideContainer,
+          headerRightContainerStyle: styles.headerSideContainer,
         }}
       />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
@@ -78,10 +87,16 @@ export default function SessionsLayout() {
 }
 
 const styles = StyleSheet.create({
-  headerRight: {
+  headerSideContainer: {
+    paddingHorizontal: 12,
+  },
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    maxWidth: 220,
+  },
+  profileButton: {
+    marginRight: 10,
   },
   avatar: {
     width: 36,
@@ -89,7 +104,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#e0e0e0',
   },
+  displayName: {
+    flexShrink: 1,
+  },
   signOutButton: {
-    marginRight: 4,
+    paddingVertical: 4,
   },
 });

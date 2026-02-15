@@ -22,49 +22,61 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 ## 2. High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Mobile/Web App (Expo)                   │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │   Auth      │  │   Sessions   │  │  Error Handling  │   │
-│  │  Context    │  │   Stores     │  │  & Monitoring    │   │
-│  └─────────────┘  └──────────────┘  └──────────────────┘   │
-│         │                 │                    │            │
-│         └─────────────────┴────────────────────┘            │
-│                          │                                  │
-│                    HTTP (Bearer JWT)                        │
-│                          │                                  │
-└──────────────────────────┼──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Mobile/Web App (Expo)                       │
+│  ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────────────────┐  │
+│  │  Auth   │  │ Sessions │  │ Friends │  │  Error Handling  │  │
+│  │ Context │  │  Stores  │  │  Lists  │  │  & Monitoring    │  │
+│  └─────────┘  └──────────┘  └─────────┘  └──────────────────┘  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │  Push Tokens    │  │   Presence      │  │   Favorites     │ │
+│  │  Registration   │  │   Tracking      │  │   Cache         │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+│         │                          │                            │
+│         └──────────────────────────┴────────────────────────────│
+│                          │                                      │
+│                    HTTP (Bearer JWT)                            │
+│                          │                                      │
+└──────────────────────────┼──────────────────────────────────────┘
                            │
                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Backend API (Fastify/Node.js)                  │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌───────────┐  │
-│  │   Auth   │  │ Sessions │  │  Roblox   │  │  Health/  │  │
-│  │  Routes  │  │  Routes  │  │  Service  │  │  Metrics  │  │
-│  └──────────┘  └──────────┘  └───────────┘  └───────────┘  │
-│         │            │              │                       │
-│         └────────────┴──────────────┘                       │
-│                      │                                      │
-│            Service-Role Client                              │
-│                      │                                      │
-└──────────────────────┼──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│              Backend API (Fastify/Node.js)                      │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐   │
+│  │   Auth   │  │ Sessions │  │  Friends  │  │   Presence   │   │
+│  │  Routes  │  │  Routes  │  │  Routes   │  │   Routes     │   │
+│  └──────────┘  └──────────┘  └───────────┘  └──────────────┘   │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐   │
+│  │ Roblox   │  │   Me     │  │  Health/  │  │   Roblox     │   │
+│  │ Service  │  │  Routes  │  │  Metrics  │  │   Connect    │   │
+│  └──────────┘  └──────────┘  └───────────┘  └──────────────┘   │
+│         │            │              │                           │
+│         └────────────┴──────────────┘                           │
+│                      │                                          │
+│            Service-Role Client                                  │
+│                      │                                          │
+└──────────────────────┼──────────────────────────────────────────┘
                        │
                        ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Supabase PostgreSQL                       │
-│  ┌──────────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│  │  app_users   │  │  games   │  │  sessions +          │  │
-│  │              │  │          │  │  session_participants│  │
-│  └──────────────┘  └──────────┘  └──────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                   Supabase PostgreSQL                           │
+│  ┌──────────────┐  ┌──────────┐  ┌──────────────────────────┐  │
+│  │  app_users   │  │  games   │  │  sessions +              │  │
+│  │              │  │          │  │  session_participants    │  │
+│  └──────────────┘  └──────────┘  └──────────────────────────┘  │
+│  ┌──────────────────────┐  ┌──────────────────────────────┐    │
+│  │  friendships +       │  │  roblox_friends_cache +      │    │
+│  │  user_favorites_cache│  │  roblox_experience_cache     │    │
+│  └──────────────────────┘  └──────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
                        ▲
                        │
                   OAuth Flow
                        │
-┌──────────────────────┴──────────────────────────────────────┐
-│                   Roblox OAuth 2.0                          │
-│            (Authorization & User Info Endpoints)            │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────┴──────────────────────────────────────────┐
+│                   Roblox OAuth 2.0 & APIs                       │
+│   (Authorization, User Info, Presence, Friends, Favorites)      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 3. Authentication Flow
@@ -214,7 +226,7 @@ last_login_at        TIMESTAMPTZ
 ```
 
 **Purpose**: User accounts linked to Roblox OAuth
-**Migration**: `backend/migrations/001_create_app_users.sql`, `add_avatar_cache_to_app_users.sql`
+**Migration**: `supabase/migrations/20260211000000_create_app_users.sql`, `20260214140159_add_avatar_cache.sql`
 
 #### games
 ```sql
@@ -275,14 +287,16 @@ updated_at           TIMESTAMPTZ
 ```sql
 session_id           UUID (FK -> sessions.id)
 user_id              UUID (FK -> app_users.id)
-role                 TEXT ('host', 'player')
-state                TEXT ('invited', 'joined', 'left')
+role                 TEXT ('host', 'member')
+state                TEXT ('invited', 'joined', 'left', 'kicked')
+handoff_state        TEXT ('rsvp_joined', 'opened_roblox', 'confirmed_in_game', 'stuck')
 joined_at            TIMESTAMPTZ
+left_at              TIMESTAMPTZ
 PRIMARY KEY (session_id, user_id)
 ```
 
-**Purpose**: Many-to-many relationship between sessions and users
-**Migration**: `backend/migrations/002_create_sessions_games_v1_v2.sql`
+**Purpose**: Many-to-many relationship between sessions and users with presence tracking
+**Migration**: `supabase/migrations/002_create_sessions_games_v1_v2.sql`, `20260214135005_handoff_presence.sql`
 
 #### session_invites
 ```sql
@@ -290,21 +304,80 @@ id                   UUID PRIMARY KEY
 session_id           UUID (FK -> sessions.id)
 created_by           UUID (FK -> app_users.id)
 invite_code          TEXT UNIQUE
+max_uses             INTEGER
+uses_count           INTEGER DEFAULT 0
+expires_at           TIMESTAMPTZ
 created_at           TIMESTAMPTZ
 ```
 
 **Purpose**: Shareable invite codes for private sessions
-**Migration**: `backend/migrations/002_create_sessions_games_v1_v2.sql`
+**Migration**: `supabase/migrations/002_create_sessions_games_v1_v2.sql`
+
+#### friendships
+```sql
+id                   UUID PRIMARY KEY
+user_id              UUID (FK -> app_users.id)
+friend_id            UUID (FK -> app_users.id)
+status               TEXT ('pending', 'accepted', 'blocked')
+initiated_by         UUID (FK -> app_users.id)
+created_at           TIMESTAMPTZ
+accepted_at          TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+CONSTRAINT chk_friendships_canonical_order CHECK (user_id < friend_id)
+UNIQUE (user_id, friend_id)
+```
+
+**Purpose**: Native LagaLaga friendships with canonical ordering
+**Migration**: `supabase/migrations/20260214110000_hybrid_friends_schema.sql`
+
+#### roblox_friends_cache
+```sql
+id                        BIGSERIAL PRIMARY KEY
+user_id                   UUID (FK -> app_users.id)
+roblox_friend_user_id     TEXT
+roblox_friend_username    TEXT
+roblox_friend_display_name TEXT
+synced_at                 TIMESTAMPTZ
+UNIQUE (user_id, roblox_friend_user_id)
+```
+
+**Purpose**: Cached Roblox friends for discovery and suggestions
+**Migration**: `supabase/migrations/20260214123000_add_roblox_friends_cache.sql`
+
+#### user_favorites_cache
+```sql
+(Schema details in database_schema.md)
+```
+
+**Purpose**: Cached user favorite Roblox experiences
+**Migration**: `supabase/migrations/20260214110000_create_user_favorites_cache.sql`
+
+#### roblox_experience_cache
+```sql
+id                   BIGSERIAL PRIMARY KEY
+platform_key         TEXT DEFAULT 'roblox'
+url                  TEXT UNIQUE
+place_id             TEXT
+universe_id          TEXT
+name                 TEXT
+updated_at           TIMESTAMPTZ
+created_at           TIMESTAMPTZ
+```
+
+**Purpose**: Cache for resolved Roblox game metadata from URLs
+**Migration**: `supabase/migrations/007_add_roblox_experience_cache.sql`
 
 ### Relationships
 
 - `app_users` 1 → N `sessions` (via `host_id`)
-- `games` 1 → N `sessions` (via `place_id` or `game_id`)
+- `games` 1 → N `sessions` (via `place_id`)
 - `sessions` N ↔ N `app_users` (via `session_participants`)
 - `sessions` 1 → N `session_invites`
+- `app_users` N ↔ N `app_users` (via `friendships` with canonical ordering)
+- `app_users` 1 → N `roblox_friends_cache` (cached Roblox friends)
 
 ### Schema Documentation
-Reference: `docs/runbook/db/supabase-schema.md`
+Reference: `docs/canonical/database_schema.md`
 
 ## 6. Sessions Domain
 
@@ -362,7 +435,86 @@ export const sessionsStore = USE_BACKEND
 - Backend filters to sessions where user is host or participant
 - Implementation: `backend/src/services/sessionService-v2.ts:listUserPlannedSessions()`
 
-## 7. API Layer
+## 7. Friends System
+
+### Hybrid Friends Architecture
+
+LagaLaga implements a **hybrid friends system** that combines native app friendships with Roblox social graph data.
+
+**Native LagaLaga Friendships**:
+- Stored in `friendships` table with canonical ordering (`user_id < friend_id`)
+- Statuses: `pending`, `accepted`, `blocked`
+- Enables friend-only session visibility
+- Used for friend filtering and notifications
+
+**Roblox Friends Cache**:
+- Stored in `roblox_friends_cache` table
+- Periodically synced from Roblox API
+- Used for friend suggestions and discovery
+- Enables "invite Roblox friends" feature
+
+**Friend Discovery Flow**:
+1. User syncs Roblox friends via `POST /api/me/roblox/sync-friends`
+2. Backend fetches friends list from Roblox API using stored OAuth tokens
+3. Cache is updated with Roblox friend data
+4. Frontend displays Roblox friends who aren't yet LagaLaga friends as suggestions
+5. User can send friend requests to suggestions
+
+**Friend-Only Sessions**:
+- Sessions with `visibility='friends'` are filtered by friendship status
+- Database function `list_sessions_optimized()` enforces friend filtering
+- Only accepted friendships grant access to friend-only sessions
+
+### Presence Tracking
+
+**Handoff State Tracking**:
+Session participants have a `handoff_state` field tracking their journey from RSVP to in-game:
+- `rsvp_joined` - User joined session in app
+- `opened_roblox` - User tapped "Join Game" deep link
+- `confirmed_in_game` - User presence confirmed in Roblox
+- `stuck` - User encountered issues joining
+
+**Roblox Presence API**:
+- `GET /api/presence/roblox/users` - Check if users are online/in-game
+- Uses stored Roblox OAuth tokens to query presence
+- Updates `handoff_state` when users are confirmed in game
+- Enables "who's playing now" indicators
+
+## 8. Push Notifications
+
+**Registration**:
+- Mobile clients register push tokens via `POST /api/me/register-push-token`
+- Tokens stored in database (implementation varies by push provider)
+- Associated with user for targeted notifications
+
+**Use Cases**:
+- Session start reminders
+- Friend request notifications
+- Session invitations
+- Friend joined session alerts
+
+## 9. Favorites & Caching
+
+### User Favorites Cache
+
+**Table**: `user_favorites_cache`
+- Caches user's favorite Roblox experiences
+- Reduces API calls to Roblox
+- Pre-populates game selection UI
+
+**Endpoint**: `GET /api/me/roblox/favorites`
+- Returns user's favorite games
+- Supports pagination with cursor
+- TTL: Refreshed on request if stale
+
+### Roblox Experience Cache
+
+**Table**: `roblox_experience_cache`
+- Caches game metadata resolved from URLs
+- Maps pasted URLs to place IDs and game info
+- TTL: 24 hours (enforced in backend)
+
+## 10. API Layer
 
 ### Frontend API Client
 
@@ -467,6 +619,35 @@ fastify.register(robloxRoutes)
 - `GET /sessions/:id` - Get session
 - `POST /sessions/:id/join` - Join session
 - `POST /sessions/:id/leave` - Leave session
+
+#### Friends Routes (`/api/user/friends`)
+**File**: `backend/src/routes/friends.routes.ts`
+
+- `GET /api/user/friends` - List friends (authenticated, sections: all/lagalaga/requests/roblox_suggestions)
+- `POST /api/user/friends` - Send friend request (authenticated)
+- `POST /api/user/friends/:friendshipId/accept` - Accept friend request (authenticated)
+- `POST /api/user/friends/:friendshipId/reject` - Reject friend request (authenticated)
+- `DELETE /api/user/friends/:friendshipId` - Remove friendship (authenticated)
+
+#### Presence Routes (`/api/presence`)
+**File**: `backend/src/routes/presence.routes.ts`
+
+- `GET /api/presence/roblox/users` - Get Roblox presence for users (authenticated)
+
+#### Me Routes (`/api/me`)
+**File**: `backend/src/routes/me.routes.ts`
+
+- `GET /api/me` - Get current user profile with Roblox connection status (authenticated)
+- `GET /api/me/roblox/favorites` - Get user's Roblox favorites (authenticated)
+- `POST /api/me/roblox/sync-friends` - Sync Roblox friends to cache (authenticated)
+- `POST /api/me/register-push-token` - Register push notification token (authenticated)
+
+#### Roblox Connect Routes (`/api/roblox`)
+**File**: `backend/src/routes/roblox-connect.routes.ts`
+
+- `GET /api/roblox/start` - Start Roblox OAuth flow for token refresh (authenticated)
+- `POST /api/roblox/callback` - Complete Roblox OAuth token exchange (authenticated)
+- `POST /api/roblox/disconnect` - Disconnect Roblox account (authenticated)
 
 #### Roblox Routes
 **File**: `backend/src/routes/roblox.ts`
@@ -748,7 +929,7 @@ try {
 
 **Documentation**: `docs/monitoring.md`, `docs/logging.md`
 
-## 14. Future Extension Points
+## 17. Future Extension Points
 
 Based on the current architecture, the following extensions are feasible:
 
@@ -756,39 +937,45 @@ Based on the current architecture, the following extensions are feasible:
 - Add Supabase Realtime subscriptions for live session updates
 - Frontend already has Supabase client initialized (`src/lib/supabase.ts`)
 - Subscribe to `sessions` and `session_participants` tables
-- Update UI when participants join/leave
+- Update UI when participants join/leave in real-time
 
 ### 2. User-Scoped Database Operations
 - Backend already supports `getUserScopedClient(accessToken)`
 - Could migrate certain read operations to enforce RLS
 - Would require passing user JWT to Supabase instead of service-role
 
-### 3. Push Notifications
-- Notify users when session is about to start
-- Notify when friends join a session
-- Expo provides push notification APIs
+### 3. ✅ Push Notifications (Implemented)
+- Push token registration via `POST /api/me/register-push-token`
+- Database support for storing tokens
+- Ready for session reminders and friend notifications
 
 ### 4. In-App Messaging
 - Add `session_messages` table
 - WebSocket or Supabase Realtime for live chat
 - Useful for session coordination
 
-### 5. Friend System
-- Add `friendships` table
-- Filter sessions by "friends only" visibility
-- Friend invites and requests
+### 5. ✅ Friend System (Implemented)
+- Hybrid friends: native LagaLaga + Roblox social graph
+- Friend-only session visibility enforced
+- Friend requests and suggestions
+- Roblox friends cache for discovery
 
-### 6. Session History & Statistics
+### 6. ✅ Presence Tracking (Implemented)
+- Handoff state tracking from RSVP to in-game
+- Roblox Presence API integration
+- "Who's playing now" indicators
+
+### 7. Session History & Statistics
 - Archive completed sessions
 - Track user stats (sessions hosted, attended, hours played)
 - Leaderboards
 
-### 7. Advanced Authorization
+### 8. Advanced Authorization
 - Role-based permissions (admin, moderator)
 - Host-only operations (kick user, cancel session)
-- Invite-only session management
+- More granular session permissions
 
-### 8. Multi-Platform Game Support
+### 9. Multi-Platform Game Support
 - Currently Roblox-only via `place_id`
 - Games table already has `platform_key` for other platforms
 - Add Steam, Epic Games, etc.

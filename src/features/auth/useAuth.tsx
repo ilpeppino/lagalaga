@@ -9,7 +9,9 @@ import { logger } from '../../lib/logger';
 import { warmFavorites } from '../favorites/service';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 
-WebBrowser.maybeCompleteAuthSession();
+if (Platform.OS === 'web') {
+  WebBrowser.maybeCompleteAuthSession();
+}
 
 interface User {
   id: string;

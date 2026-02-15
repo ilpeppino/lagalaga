@@ -1,17 +1,26 @@
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import { router } from 'expo-router';
 import { logger } from '@/src/lib/logger';
 
+let notificationHandlerConfigured = false;
+
 export function configureNotificationHandler(): void {
+  if (notificationHandlerConfigured) {
+    return;
+  }
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: Platform.OS === 'android',
       shouldPlaySound: true,
       shouldSetBadge: false,
       shouldShowBanner: true,
       shouldShowList: true,
     }),
   });
+
+  notificationHandlerConfigured = true;
 }
 
 function handleNotificationResponse(
@@ -36,11 +45,17 @@ export function setupNotificationListeners(): () => void {
     handleNotificationResponse
   );
 
-  void Notifications.getLastNotificationResponseAsync().then((response) => {
-    if (response) {
-      handleNotificationResponse(response);
-    }
-  });
+  void Notifications.getLastNotificationResponseAsync()
+    .then((response) => {
+      if (response) {
+        handleNotificationResponse(response);
+      }
+    })
+    .catch((error) => {
+      logger.warn('Failed to get last notification response', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
 
   return () => {
     subscription.remove();

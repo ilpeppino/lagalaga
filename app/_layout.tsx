@@ -27,7 +27,6 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore: can throw if called multiple times during Fast Refresh.
 });
-configureNotificationHandler();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -62,6 +61,7 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    configureNotificationHandler();
     const cleanup = setupNotificationListeners();
     return cleanup;
   }, []);

@@ -34,6 +34,7 @@
         "backgroundImage": "./assets/generated/adaptive-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "googleServicesFile": "lagalaga-sa-fb.json",
       "intentFilters": [
         {
           "action": "VIEW",

@@ -218,6 +218,8 @@ export async function authRoutes(fastify: FastifyInstance) {
     return {
       id: user.id,
       robloxUserId: user.robloxUserId,
+      robloxUsername: user.robloxUsername,
+      robloxDisplayName: user.robloxDisplayName,
       avatarHeadshotUrl,
       robloxConnected: true,
     };

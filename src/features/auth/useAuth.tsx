@@ -51,6 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData: User = {
         id: me.id,
         robloxUserId: me.robloxUserId,
+        robloxUsername: me.robloxUsername,
+        robloxDisplayName: me.robloxDisplayName,
         avatarHeadshotUrl: me.avatarHeadshotUrl,
         robloxConnected: me.robloxConnected,
       };

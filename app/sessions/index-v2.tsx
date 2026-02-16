@@ -65,6 +65,7 @@ export default function SessionsListScreenV2() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isQuickStarting, setIsQuickStarting] = useState(false);
   const [fallbackThumbnails, setFallbackThumbnails] = useState<Record<number, string>>({});
 
   const LIMIT = 20;
@@ -205,6 +206,25 @@ export default function SessionsListScreenV2() {
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, []);
+
+  const handleQuickPlay = useCallback(async () => {
+    try {
+      setIsQuickStarting(true);
+      const result = await sessionsAPIStoreV2.createQuickSession();
+      router.push({
+        pathname: '/sessions/[id]',
+        params: {
+          id: result.session.id,
+          inviteLink: result.inviteLink,
+          justCreated: 'true',
+        },
+      });
+    } catch (error) {
+      presentError(error);
+    } finally {
+      setIsQuickStarting(false);
+    }
+  }, [presentError, router]);
 
   const plannedSessionIds = useMemo(() => new Set(plannedSessions.map((session) => session.id)), [plannedSessions]);
 
@@ -519,12 +539,23 @@ export default function SessionsListScreenV2() {
       </ScrollView>
 
       {!selectionMode && (
-        <FAB
-          icon="plus"
-          style={styles.fab}
-          color="#fff"
-          onPress={() => router.push('/sessions/create')}
-        />
+        <View style={styles.fabStack}>
+          <FAB
+            icon="flash"
+            label={isQuickStarting ? 'Starting...' : 'Quick Play'}
+            style={styles.quickPlayFab}
+            color="#fff"
+            loading={isQuickStarting}
+            disabled={isQuickStarting}
+            onPress={handleQuickPlay}
+          />
+          <FAB
+            icon="plus"
+            style={styles.fab}
+            color="#fff"
+            onPress={() => router.push('/sessions/create')}
+          />
+        </View>
       )}
     </View>
   );
@@ -709,10 +740,17 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
   },
-  fab: {
+  fabStack: {
     position: 'absolute',
     right: 20,
     bottom: 20,
+    gap: 12,
+    alignItems: 'flex-end',
+  },
+  quickPlayFab: {
+    backgroundColor: '#10b981',
+  },
+  fab: {
     backgroundColor: '#007AFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },

@@ -23,6 +23,7 @@ export interface Session {
   title: string;
   description?: string;
   visibility: SessionVisibility;
+  isRanked: boolean;
   status: SessionStatus;
   maxParticipants: number;
   currentParticipants: number;
@@ -54,9 +55,60 @@ export interface CreateSessionInput {
   robloxUrl: string;
   title: string;
   visibility?: SessionVisibility;
+  is_ranked?: boolean;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp
   invitedRobloxUserIds?: number[];
+}
+
+export interface MatchResultResponse {
+  sessionId: string;
+  winnerId: string;
+  ratingDelta: number;
+  updates: {
+    userId: string;
+    rating: number;
+    wins: number;
+    losses: number;
+    delta: number;
+  }[];
+}
+
+export type SkillTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master';
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  displayName: string | null;
+  tier?: SkillTier;
+}
+
+export interface LeaderboardResponse {
+  type: 'weekly';
+  timezone: 'Europe/Amsterdam';
+  generatedAt: string;
+  entries: LeaderboardEntry[];
+}
+
+export interface MatchHistoryEntry {
+  sessionId: string;
+  sessionTitle: string;
+  playedAt: string;
+  result: 'win' | 'loss';
+  winnerId: string;
+  ratingDelta: number;
+  opponents: {
+    userId: string;
+    displayName: string | null;
+  }[];
+}
+
+export interface MatchHistoryResponse {
+  timezone: 'Europe/Amsterdam';
+  entries: MatchHistoryEntry[];
 }
 
 export interface RobloxFriend {

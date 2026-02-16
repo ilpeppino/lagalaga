@@ -12,6 +12,9 @@ import {
   ListSessionsResponse,
   RobloxFavoritesResponse,
   RobloxFriendsResponse,
+  MatchResultResponse,
+  LeaderboardResponse,
+  MatchHistoryResponse,
 } from './types-v2';
 import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, isApiError, parseApiError } from '@/src/lib/errors';
@@ -525,12 +528,12 @@ class SessionsAPIStoreV2 {
       createdAt: string;
       updatedAt: string;
     } | null;
-    achievements: Array<{
+    achievements: {
       id: string;
       userId: string;
       code: string;
       unlockedAt: string;
-    }>;
+    }[];
   }> {
     const response = await fetchWithAuth<{
       success: boolean;
@@ -544,12 +547,12 @@ class SessionsAPIStoreV2 {
           createdAt: string;
           updatedAt: string;
         } | null;
-        achievements: Array<{
+        achievements: {
           id: string;
           userId: string;
           code: string;
           unlockedAt: string;
-        }>;
+        }[];
       };
     }>('/api/me/stats');
 
@@ -557,6 +560,61 @@ class SessionsAPIStoreV2 {
       throw new ApiError({
         code: 'USER_STATS_001',
         message: 'Failed to fetch user stats',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  async submitMatchResult(sessionId: string, winnerId: string): Promise<MatchResultResponse> {
+    const response = await fetchWithAuth<{ success: boolean; data: MatchResultResponse }>(
+      `/api/sessions/${sessionId}/result`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ winnerId }),
+      }
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_010',
+        message: 'Failed to submit match result',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  async getLeaderboard(type: 'weekly' = 'weekly'): Promise<LeaderboardResponse> {
+    const response = await fetchWithAuth<{ success: boolean; data: LeaderboardResponse }>(
+      `/api/leaderboard?type=${encodeURIComponent(type)}`
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to fetch leaderboard',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  async getMyMatchHistory(limit = 20): Promise<MatchHistoryResponse> {
+    const query = new URLSearchParams();
+    query.set('limit', String(Math.min(Math.max(limit, 1), 50)));
+
+    const response = await fetchWithAuth<{ success: boolean; data: MatchHistoryResponse }>(
+      `/api/me/match-history?${query.toString()}`
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'INT_001',
+        message: 'Failed to fetch match history',
         statusCode: 500,
       });
     }

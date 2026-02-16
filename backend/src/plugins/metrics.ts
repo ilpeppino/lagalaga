@@ -21,6 +21,12 @@ class MetricsCollector {
   private gauges = new Map<string, Map<string, number>>();
   quickSessionsCreatedTotal!: { inc: () => void };
   achievementsUnlockedTotal!: { inc: (labels: { code: string }) => void };
+  rankedSessionsCreatedTotal!: { inc: () => void };
+  rankedMatchResultsTotal!: { inc: () => void };
+  ratingUpdatesTotal!: { inc: (labels?: { count?: string }) => void };
+  seasonResetTotal!: { inc: (labels?: { from?: string; to?: string }) => void };
+  tierPromotionsTotal!: { inc: (labels?: { from?: string; to?: string }) => void };
+  suspiciousRankedActivityTotal!: { inc: (labels?: { reason?: string }) => void };
 
   incrementCounter(name: string, labels: Record<string, string> = {}): void {
     if (!this.counters.has(name)) {
@@ -172,8 +178,41 @@ export const achievementsUnlockedTotal = {
   inc: (labels: { code: string }) => metrics.incrementCounter('achievements_unlocked_total', labels),
 };
 
+export const rankedSessionsCreatedTotal = {
+  inc: () => metrics.incrementCounter('ranked_sessions_created_total'),
+};
+
+export const rankedMatchResultsTotal = {
+  inc: () => metrics.incrementCounter('ranked_match_results_total'),
+};
+
+export const ratingUpdatesTotal = {
+  inc: (labels: { count?: string } = {}) => metrics.incrementCounter('rating_updates_total', labels),
+};
+
+export const seasonResetTotal = {
+  inc: (labels: { from?: string; to?: string } = {}) =>
+    metrics.incrementCounter('season_reset_total', labels),
+};
+
+export const tierPromotionsTotal = {
+  inc: (labels: { from?: string; to?: string } = {}) =>
+    metrics.incrementCounter('tier_promotions_total', labels),
+};
+
+export const suspiciousRankedActivityTotal = {
+  inc: (labels: { reason?: string } = {}) =>
+    metrics.incrementCounter('suspicious_ranked_activity_total', labels),
+};
+
 metrics.quickSessionsCreatedTotal = quickSessionsCreatedTotal;
 metrics.achievementsUnlockedTotal = achievementsUnlockedTotal;
+metrics.rankedSessionsCreatedTotal = rankedSessionsCreatedTotal;
+metrics.rankedMatchResultsTotal = rankedMatchResultsTotal;
+metrics.ratingUpdatesTotal = ratingUpdatesTotal;
+metrics.seasonResetTotal = seasonResetTotal;
+metrics.tierPromotionsTotal = tierPromotionsTotal;
+metrics.suspiciousRankedActivityTotal = suspiciousRankedActivityTotal;
 
 export async function metricsPlugin(fastify: FastifyInstance) {
   // Collect request metrics

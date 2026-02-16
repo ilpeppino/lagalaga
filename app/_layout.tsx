@@ -15,6 +15,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
 import { DarkPaperTheme, LightPaperTheme } from '@/constants/paperTheme';
 import { useFavoritesForegroundRefresh } from '@/src/features/favorites/useFavoritesForegroundRefresh';
+import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import {
   configureNotificationHandler,
   setupNotificationListeners,
@@ -85,6 +86,12 @@ export default function RootLayout() {
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                 <Stack.Screen name="invites" options={{ headerShown: false }} />
+                {ENABLE_COMPETITIVE_DEPTH ? (
+                  <Stack.Screen
+                    name="match-history"
+                    options={{ headerShown: true, title: 'Match History' }}
+                  />
+                ) : null}
               </Stack>
               <StatusBar style="auto" />
             </ThemeProvider>

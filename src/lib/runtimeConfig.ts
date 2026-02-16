@@ -19,6 +19,15 @@ function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
   return value;
 }
 
+function readOptionalPublicBoolean(name: 'EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH'): boolean {
+  const value = process.env.EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH;
+  if (!value) {
+    return false;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 function normalizeBaseUrl(value: string): string {
   // Keep this strict enough to catch misconfiguration in release builds.
   if (!/^https?:\/\//i.test(value)) {
@@ -31,4 +40,8 @@ function normalizeBaseUrl(value: string): string {
 
 export const API_URL = normalizeBaseUrl(
   requireEnv('EXPO_PUBLIC_API_URL', readPublicEnv('EXPO_PUBLIC_API_URL'))
+);
+
+export const ENABLE_COMPETITIVE_DEPTH = readOptionalPublicBoolean(
+  'EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH'
 );

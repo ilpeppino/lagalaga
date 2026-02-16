@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { RobloxFavoritesService } from '../services/roblox-favorites.service.js';
 import { FavoriteExperiencesService } from '../services/favorite-experiences.service.js';
 import { RobloxFriendsCacheService } from '../services/roblox-friends-cache.service.js';
+import { MatchHistoryService } from '../services/matchHistoryService.js';
 import { getSupabase } from '../config/supabase.js';
 import { AppError, ValidationError, ErrorCodes } from '../utils/errors.js';
 import { AchievementService } from '../services/achievementService.js';
@@ -13,6 +15,7 @@ interface MeRoutesDeps {
   favoritesService?: RobloxFavoritesService;
   favoriteExperiencesService?: FavoriteExperiencesService;
   friendsCacheService?: RobloxFriendsCacheService;
+  matchHistoryService?: MatchHistoryService;
   authPreHandler?: AuthPreHandler;
 }
 
@@ -21,6 +24,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     const favoritesService = deps.favoritesService ?? new RobloxFavoritesService();
     const favoriteExperiencesService = deps.favoriteExperiencesService;
     const friendsCacheService = deps.friendsCacheService ?? new RobloxFriendsCacheService();
+    const matchHistoryService = deps.matchHistoryService ?? new MatchHistoryService();
     const authPreHandler = deps.authPreHandler ?? authenticate;
 
     /**
@@ -56,6 +60,41 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
       async (request, reply) => {
         const achievementService = new AchievementService();
         const data = await achievementService.getUserStatsAndAchievements(request.user.userId);
+
+        return reply.send({
+          success: true,
+          data,
+          requestId: String(request.id),
+        });
+      }
+    );
+
+    fastify.get<{
+      Querystring: {
+        limit?: number;
+      };
+    }>(
+      '/match-history',
+      {
+        preHandler: authPreHandler,
+        schema: {
+          querystring: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', minimum: 1, maximum: 50 },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!isCompetitiveDepthEnabled(fastify)) {
+          throw new AppError(ErrorCodes.NOT_FOUND, 'Route not found', 404);
+        }
+
+        const data = await matchHistoryService.getMyMatchHistory(
+          request.user.userId,
+          request.query.limit
+        );
 
         return reply.send({
           success: true,

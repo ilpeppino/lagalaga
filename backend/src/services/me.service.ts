@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getSupabase } from '../config/supabase.js';
+import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
+import { RankingService, type SkillTier } from './rankingService.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { fetchJsonWithTimeoutRetry } from '../lib/http.js';
 
@@ -35,6 +37,35 @@ interface MeDataResponse {
     avatarHeadshotUrl: string | null;
     verifiedAt: string | null;
   };
+  competitive?: {
+    rating: number;
+    tier: SkillTier;
+    currentSeasonNumber: number | null;
+    seasonEndsAt: string | null;
+    badges: Array<{
+      seasonNumber: number;
+      finalRating: number;
+      tier: SkillTier;
+    }>;
+  };
+}
+
+interface UserRankingRow {
+  rating: number;
+}
+
+interface ActiveSeasonRow {
+  season_number: number;
+  end_date: string;
+}
+
+interface SeasonBadgeRow {
+  final_rating: number;
+  seasons: {
+    season_number: number;
+  } | Array<{
+    season_number: number;
+  }> | null;
 }
 
 /**
@@ -91,7 +122,7 @@ async function updatePlatformAvatarUrl(
  */
 export async function getMeData(
   userId: string,
-  _fastify: FastifyInstance
+  fastify: FastifyInstance
 ): Promise<MeDataResponse> {
   const supabase = getSupabase();
 
@@ -134,6 +165,81 @@ export async function getMeData(
     );
   }
 
+  const competitiveDepthEnabled = isCompetitiveDepthEnabled(fastify);
+
+  const buildCompetitiveData = async (): Promise<MeDataResponse['competitive']> => {
+    if (!competitiveDepthEnabled) {
+      return undefined;
+    }
+
+    const { data: rankingRow, error: rankingError } = await supabase
+      .from('user_rankings')
+      .select('rating')
+      .eq('user_id', userId)
+      .maybeSingle<UserRankingRow>();
+
+    if (rankingError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to fetch user ranking: ${rankingError.message}`,
+        500
+      );
+    }
+
+    const { data: activeSeason, error: seasonError } = await supabase
+      .from('seasons')
+      .select('season_number, end_date')
+      .eq('is_active', true)
+      .maybeSingle<ActiveSeasonRow>();
+
+    if (seasonError && seasonError.code !== 'PGRST116') {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to fetch active season: ${seasonError.message}`,
+        500
+      );
+    }
+
+    const { data: seasonBadges, error: badgeError } = await supabase
+      .from('season_rankings')
+      .select('final_rating, seasons(season_number)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+      .returns<SeasonBadgeRow[]>();
+
+    if (badgeError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to fetch season badges: ${badgeError.message}`,
+        500
+      );
+    }
+
+    const rating = rankingRow?.rating ?? 1000;
+    return {
+      rating,
+      tier: RankingService.getTierFromRating(rating),
+      currentSeasonNumber: activeSeason?.season_number ?? null,
+      seasonEndsAt: activeSeason?.end_date ?? null,
+      badges: (seasonBadges || [])
+        .map((row) => {
+          const season = Array.isArray(row.seasons) ? row.seasons[0] : row.seasons;
+          if (!season?.season_number) {
+            return null;
+          }
+          return {
+            seasonNumber: Number(season.season_number),
+            finalRating: Number(row.final_rating),
+            tier: RankingService.getTierFromRating(Number(row.final_rating)),
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row)),
+    };
+  };
+
+  const competitive = await buildCompetitiveData();
+
   // If not connected, return early
   if (!platformData) {
     return {
@@ -150,6 +256,7 @@ export async function getMeData(
         avatarHeadshotUrl: null,
         verifiedAt: null,
       },
+      ...(competitiveDepthEnabled ? { competitive } : {}),
     };
   }
 
@@ -178,5 +285,6 @@ export async function getMeData(
       avatarHeadshotUrl,
       verifiedAt: platformData.verified_at,
     },
+    ...(competitiveDepthEnabled ? { competitive } : {}),
   };
 }

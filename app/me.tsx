@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Switch,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
+import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 interface MeData {
@@ -28,6 +30,17 @@ interface MeData {
     displayName: string | null;
     avatarHeadshotUrl: string | null;
     verifiedAt: string | null;
+  };
+  competitive?: {
+    rating: number;
+    tier: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master';
+    currentSeasonNumber: number | null;
+    seasonEndsAt: string | null;
+    badges: {
+      seasonNumber: number;
+      finalRating: number;
+      tier: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master';
+    }[];
   };
 }
 
@@ -45,8 +58,9 @@ export default function MeScreen() {
   const [data, setData] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [proViewEnabled, setProViewEnabled] = useState(false);
 
-  const fetchMeData = async () => {
+  const fetchMeData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.getRaw('/api/me');
@@ -62,7 +76,7 @@ export default function MeScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleError]);
 
   const handleRefreshAvatar = async () => {
     try {
@@ -88,11 +102,30 @@ export default function MeScreen() {
     router.push('/roblox');
   };
 
+  const openMatchHistory = () => {
+    router.push('/match-history');
+  };
+
+  const formatCountdown = (endDate: string | null): string => {
+    if (!endDate) {
+      return 'N/A';
+    }
+
+    const diffMs = new Date(endDate).getTime() - Date.now();
+    if (diffMs <= 0) {
+      return 'Ending soon';
+    }
+
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+    return `${days}d ${hours}h`;
+  };
+
   // Fetch data on screen focus
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       void fetchMeData();
-    }, [])
+    }, [fetchMeData])
   );
 
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
@@ -261,6 +294,72 @@ export default function MeScreen() {
             </>
           )}
         </View>
+
+        {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (
+          <View style={[styles.card, { backgroundColor: cardColor }]}>
+            <View style={styles.cardHeader}>
+              <Text style={[styles.sectionTitle, { color: textColor }]}>
+                Competitive Profile
+              </Text>
+              <View style={styles.proViewToggleRow}>
+                <Text style={[styles.label, { color: textColor }]}>Pro View</Text>
+                <Switch
+                  value={proViewEnabled}
+                  onValueChange={setProViewEnabled}
+                  trackColor={{ false: '#767577', true: tintColor }}
+                />
+              </View>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={[styles.label, { color: textColor }]}>Tier:</Text>
+              <Text style={[styles.value, { color: textColor }]}>
+                {data.competitive.tier.toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={[styles.label, { color: textColor }]}>Rating:</Text>
+              <Text style={[styles.value, { color: textColor }]}>
+                {data.competitive.rating}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={[styles.label, { color: textColor }]}>Season:</Text>
+              <Text style={[styles.value, { color: textColor }]}>
+                {data.competitive.currentSeasonNumber ? `S${data.competitive.currentSeasonNumber}` : 'N/A'}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={[styles.label, { color: textColor }]}>Season Ends In:</Text>
+              <Text style={[styles.value, { color: textColor }]}>
+                {formatCountdown(data.competitive.seasonEndsAt)}
+              </Text>
+            </View>
+
+            {proViewEnabled ? (
+              <View style={styles.badgesBlock}>
+                <Text style={[styles.label, { color: textColor }]}>Season Badges</Text>
+                {data.competitive.badges.length === 0 ? (
+                  <Text style={[styles.value, { color: textColor }]}>No badges yet</Text>
+                ) : (
+                  data.competitive.badges.map((badge) => (
+                    <Text key={`${badge.seasonNumber}-${badge.finalRating}`} style={[styles.value, { color: textColor }]}>
+                      {`S${badge.seasonNumber}: ${badge.tier.toUpperCase()} (${badge.finalRating})`}
+                    </Text>
+                  ))
+                )}
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: tintColor }]}
+              onPress={openMatchHistory}
+            >
+              <IconSymbol name="list.bullet.rectangle" size={20} color="#fff" />
+              <Text style={styles.buttonText}>View Match History</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -269,6 +368,15 @@ export default function MeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  proViewToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badgesBlock: {
+    gap: 6,
+    marginBottom: 12,
   },
   scrollView: {
     flex: 1,

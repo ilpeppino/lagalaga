@@ -16,6 +16,9 @@ import { robloxRoutes } from './routes/roblox.js';
 import { meRoutes } from './routes/me.routes.js';
 import { presenceRoutes } from './routes/presence.routes.js';
 import { friendsRoutes } from './routes/friends.routes.js';
+import { leaderboardRoutes } from './routes/leaderboard.routes.js';
+import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
+import { SeasonService } from './services/seasonService.js';
 import { monitoring } from './lib/monitoring.js';
 import { fileURLToPath } from 'node:url';
 
@@ -65,6 +68,21 @@ export async function buildServer() {
   await fastify.register(meRoutes, { prefix: '/api/me' });
   await fastify.register(presenceRoutes);
   await fastify.register(friendsRoutes);
+  await fastify.register(leaderboardRoutes);
+
+  if (isCompetitiveDepthEnabled(fastify)) {
+    const seasonService = new SeasonService();
+    const intervalMs = 60 * 60 * 1000;
+    const timer = setInterval(() => {
+      void seasonService.processRolloverIfNeeded();
+    }, intervalMs);
+
+    void seasonService.processRolloverIfNeeded();
+
+    fastify.addHook('onClose', async () => {
+      clearInterval(timer);
+    });
+  }
 
   return fastify;
 }

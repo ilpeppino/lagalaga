@@ -74,7 +74,6 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         // Quick play flow
         result = await sessionService.createQuickSession({
           userId: request.user.userId,
-          defaultPlaceId: fastify.config.DEFAULT_PLACE_ID,
         });
       } else {
         // Regular session creation

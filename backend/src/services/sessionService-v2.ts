@@ -1008,9 +1008,9 @@ export class SessionServiceV2 {
   }
 
   /**
-   * Get preferred place_id for quick play (from user favorites cache)
+   * Resolve a Roblox user id from linked platform data.
    */
-  private async getPreferredQuickPlayPlaceId(userId: string): Promise<number | undefined> {
+  private async getRobloxUserIdForQuickPlay(userId: string): Promise<string | undefined> {
     const supabase = getSupabase();
 
     // Query user_platforms to get roblox_user_id
@@ -1022,37 +1022,120 @@ export class SessionServiceV2 {
       .maybeSingle<{ platform_user_id: string | null }>();
 
     const robloxUserId = userPlatform?.platform_user_id?.trim();
-    if (!robloxUserId) {
-      // Fallback: check app_users table
-      const { data: appUser } = await supabase
-        .from('app_users')
-        .select('roblox_user_id')
-        .eq('id', userId)
-        .maybeSingle<{ roblox_user_id: string | null }>();
+    if (robloxUserId) {
+      return robloxUserId;
+    }
 
-      const fallbackRobloxUserId = appUser?.roblox_user_id?.trim();
-      if (!fallbackRobloxUserId) {
-        logger.debug({ userId }, 'No Roblox connection found for quick play place_id resolution');
-        return undefined;
+    // Fallback: check app_users table
+    const { data: appUser } = await supabase
+      .from('app_users')
+      .select('roblox_user_id')
+      .eq('id', userId)
+      .maybeSingle<{ roblox_user_id: string | null }>();
+
+    const fallbackRobloxUserId = appUser?.roblox_user_id?.trim();
+    if (!fallbackRobloxUserId) {
+      logger.debug({ userId }, 'No Roblox connection found for quick play place_id resolution');
+      return undefined;
+    }
+
+    return fallbackRobloxUserId;
+  }
+
+  private extractPlaceIdFromFavoriteEntry(entry: Record<string, unknown>): number | undefined {
+    const idValue = entry.id;
+    if (typeof idValue === 'number' && Number.isInteger(idValue) && idValue > 0) {
+      return idValue;
+    }
+    if (typeof idValue === 'string') {
+      const trimmed = idValue.trim();
+      if (/^\d+$/.test(trimmed)) {
+        const parsed = Number.parseInt(trimmed, 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          return parsed;
+        }
       }
     }
 
-    // Query roblox_favorites_cache for first favorite
-    // Note: This table may not exist in all environments. If it doesn't, return undefined.
-    const { data: favorite, error } = await supabase
+    const urlValue = entry.url;
+    if (typeof urlValue === 'string' && urlValue.trim()) {
+      const gamesMatch = urlValue.match(/\/games\/(\d+)/);
+      if (gamesMatch?.[1]) {
+        const parsed = Number.parseInt(gamesMatch[1], 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+
+      const placeIdMatch = urlValue.match(/[?&]placeId=(\d+)/);
+      if (placeIdMatch?.[1]) {
+        const parsed = Number.parseInt(placeIdMatch[1], 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get a random place_id for quick play from cached favorites.
+   */
+  private async getRandomQuickPlayPlaceId(userId: string): Promise<number | undefined> {
+    const supabase = getSupabase();
+
+    // Preferred source: user_favorites_cache (stores favorites_json for app user)
+    const { data: userFavoritesRow, error: userFavoritesError } = await supabase
+      .from('user_favorites_cache')
+      .select('favorites_json')
+      .eq('user_id', userId)
+      .maybeSingle<{ favorites_json: Array<Record<string, unknown>> | null }>();
+
+    if (!userFavoritesError && Array.isArray(userFavoritesRow?.favorites_json)) {
+      const placeIds = [...new Set(
+        userFavoritesRow.favorites_json
+          .map((favorite) => this.extractPlaceIdFromFavoriteEntry(favorite))
+          .filter((placeId): placeId is number => typeof placeId === 'number' && Number.isInteger(placeId) && placeId > 0)
+      )];
+
+      if (placeIds.length > 0) {
+        const index = Math.floor(Math.random() * placeIds.length);
+        return placeIds[index];
+      }
+    } else if (userFavoritesError) {
+      logger.debug({ userId, error: userFavoritesError.message }, 'Failed to query user_favorites_cache for quick play');
+    }
+
+    // Backward compatibility: fallback to legacy roblox_favorites_cache if present.
+    const robloxUserId = await this.getRobloxUserIdForQuickPlay(userId);
+    if (!robloxUserId) {
+      return undefined;
+    }
+
+    const { data: favorites, error } = await supabase
       .from('roblox_favorites_cache')
       .select('place_id')
-      .eq('roblox_user_id', robloxUserId || '')
+      .eq('roblox_user_id', robloxUserId)
       .order('cached_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<{ place_id: number }>();
+      .limit(200);
 
     if (error) {
       logger.debug({ userId, error: error.message }, 'Failed to query favorites cache for quick play');
       return undefined;
     }
 
-    return favorite?.place_id ?? undefined;
+    const placeIds = [...new Set(
+      (favorites ?? [])
+        .map((favorite: { place_id?: number }) => favorite.place_id)
+        .filter((placeId): placeId is number => typeof placeId === 'number' && Number.isInteger(placeId) && placeId > 0)
+    )];
+    if (placeIds.length === 0) {
+      return undefined;
+    }
+
+    const index = Math.floor(Math.random() * placeIds.length);
+    return placeIds[index];
   }
 
   /**
@@ -1060,23 +1143,20 @@ export class SessionServiceV2 {
    */
   async createQuickSession(params: {
     userId: string;
-    defaultPlaceId?: number;
   }): Promise<SessionWithInvite> {
-    const { userId, defaultPlaceId } = params;
+    const { userId } = params;
 
-    // Resolve place_id: prefer user favorites, fallback to default
-    const preferredPlaceId = await this.getPreferredQuickPlayPlaceId(userId);
-    const placeId = preferredPlaceId ?? defaultPlaceId;
+    // Resolve place_id from favorites cache (random pick).
+    const placeId = await this.getRandomQuickPlayPlaceId(userId);
 
     if (!placeId) {
-      throw new ValidationError('No place_id available for quick play. Please configure DEFAULT_PLACE_ID or connect favorites.');
+      throw new ValidationError('No favorite game available for quick play. Connect Roblox and add favorite games first.');
     }
 
     const robloxUrl = `https://www.roblox.com/games/${placeId}`;
-    const usedFallback = !preferredPlaceId;
 
     logger.info(
-      { userId, placeId, usedFallback },
+      { userId, placeId },
       'Creating quick play session'
     );
 

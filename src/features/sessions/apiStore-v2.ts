@@ -14,7 +14,7 @@ import {
   RobloxFriendsResponse,
 } from './types-v2';
 import { tokenStorage } from '@/src/lib/tokenStorage';
-import { ApiError, NetworkError, parseApiError } from '@/src/lib/errors';
+import { ApiError, NetworkError, isApiError, parseApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
 import { API_URL } from '@/src/lib/runtimeConfig';
 
@@ -42,10 +42,15 @@ function generateCorrelationId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+type FetchWithAuthOptions = RequestInit & {
+  suppressErrorStatusCodes?: number[];
+};
+
 /**
  * HTTP client for v2 API endpoints with typed errors
  */
-async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function fetchWithAuth<T>(endpoint: string, options: FetchWithAuthOptions = {}): Promise<T> {
+  const { suppressErrorStatusCodes, ...requestOptions } = options;
   const token = await tokenStorage.getToken();
   const correlationId = generateCorrelationId();
 
@@ -68,7 +73,7 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
   let response: Response;
   try {
     response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
+      ...requestOptions,
       headers: {
         ...headers,
         ...incomingHeaders,
@@ -83,11 +88,16 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
 
   if (!response.ok) {
     const apiError = await parseApiError(response);
-    logger.error(`API error: ${apiError.code}`, {
-      endpoint,
-      statusCode: response.status,
-      requestId: apiError.requestId,
-    });
+    const shouldSuppressLog = Array.isArray(suppressErrorStatusCodes) &&
+      suppressErrorStatusCodes.includes(response.status);
+
+    if (!shouldSuppressLog) {
+      logger.error(`API error: ${apiError.code}`, {
+        endpoint,
+        statusCode: response.status,
+        requestId: apiError.requestId,
+      });
+    }
     throw apiError;
   }
 
@@ -95,6 +105,36 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
 }
 
 class SessionsAPIStoreV2 {
+  private async getSessionSummaryFallback(sessionId: string): Promise<{
+    participantCount: number;
+    maxParticipants: number;
+    countsByHandoffState: Record<string, number>;
+  }> {
+    const session = await this.getSessionById(sessionId);
+    const countsByHandoffState: Record<string, number> = {
+      rsvp_joined: 0,
+      opened_roblox: 0,
+      confirmed_in_game: 0,
+      stuck: 0,
+      null: 0,
+    };
+
+    const activeParticipants = session.participants.filter(
+      (participant) => participant.state !== 'left' && participant.state !== 'kicked'
+    );
+
+    for (const participant of activeParticipants) {
+      const state = participant.handoffState ?? 'null';
+      countsByHandoffState[state] = (countsByHandoffState[state] || 0) + 1;
+    }
+
+    return {
+      participantCount: activeParticipants.length,
+      maxParticipants: session.maxParticipants,
+      countsByHandoffState,
+    };
+  }
+
   /**
    * Create a new session
    */
@@ -443,24 +483,33 @@ class SessionsAPIStoreV2 {
     maxParticipants: number;
     countsByHandoffState: Record<string, number>;
   }> {
-    const response = await fetchWithAuth<{
-      success: boolean;
-      data: {
-        participantCount: number;
-        maxParticipants: number;
-        countsByHandoffState: Record<string, number>;
-      };
-    }>(`/api/sessions/${sessionId}/summary`);
-
-    if (!response.success) {
-      throw new ApiError({
-        code: 'SESSION_009',
-        message: 'Failed to fetch session summary',
-        statusCode: 500,
+    try {
+      const response = await fetchWithAuth<{
+        success: boolean;
+        data: {
+          participantCount: number;
+          maxParticipants: number;
+          countsByHandoffState: Record<string, number>;
+        };
+      }>(`/api/sessions/${sessionId}/summary`, {
+        suppressErrorStatusCodes: [404],
       });
-    }
 
-    return response.data;
+      if (!response.success) {
+        throw new ApiError({
+          code: 'SESSION_009',
+          message: 'Failed to fetch session summary',
+          statusCode: 500,
+        });
+      }
+
+      return response.data;
+    } catch (error) {
+      if (isApiError(error) && error.statusCode === 404) {
+        return this.getSessionSummaryFallback(sessionId);
+      }
+      throw error;
+    }
   }
 
   /**

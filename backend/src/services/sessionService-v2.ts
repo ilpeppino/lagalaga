@@ -1006,6 +1006,225 @@ export class SessionServiceV2 {
 
     return { sessionId, userId, handoffState };
   }
+
+  /**
+   * Get preferred place_id for quick play (from user favorites cache)
+   */
+  private async getPreferredQuickPlayPlaceId(userId: string): Promise<number | undefined> {
+    const supabase = getSupabase();
+
+    // Query user_platforms to get roblox_user_id
+    const { data: userPlatform } = await supabase
+      .from('user_platforms')
+      .select('platform_user_id')
+      .eq('user_id', userId)
+      .eq('platform_id', 'roblox')
+      .maybeSingle<{ platform_user_id: string | null }>();
+
+    const robloxUserId = userPlatform?.platform_user_id?.trim();
+    if (!robloxUserId) {
+      // Fallback: check app_users table
+      const { data: appUser } = await supabase
+        .from('app_users')
+        .select('roblox_user_id')
+        .eq('id', userId)
+        .maybeSingle<{ roblox_user_id: string | null }>();
+
+      const fallbackRobloxUserId = appUser?.roblox_user_id?.trim();
+      if (!fallbackRobloxUserId) {
+        logger.debug({ userId }, 'No Roblox connection found for quick play place_id resolution');
+        return undefined;
+      }
+    }
+
+    // Query roblox_favorites_cache for first favorite
+    // Note: This table may not exist in all environments. If it doesn't, return undefined.
+    const { data: favorite, error } = await supabase
+      .from('roblox_favorites_cache')
+      .select('place_id')
+      .eq('roblox_user_id', robloxUserId || '')
+      .order('cached_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ place_id: number }>();
+
+    if (error) {
+      logger.debug({ userId, error: error.message }, 'Failed to query favorites cache for quick play');
+      return undefined;
+    }
+
+    return favorite?.place_id ?? undefined;
+  }
+
+  /**
+   * Create a quick play session with sensible defaults
+   */
+  async createQuickSession(params: {
+    userId: string;
+    defaultPlaceId?: number;
+  }): Promise<SessionWithInvite> {
+    const { userId, defaultPlaceId } = params;
+
+    // Resolve place_id: prefer user favorites, fallback to default
+    const preferredPlaceId = await this.getPreferredQuickPlayPlaceId(userId);
+    const placeId = preferredPlaceId ?? defaultPlaceId;
+
+    if (!placeId) {
+      throw new ValidationError('No place_id available for quick play. Please configure DEFAULT_PLACE_ID or connect favorites.');
+    }
+
+    const robloxUrl = `https://www.roblox.com/games/${placeId}`;
+    const usedFallback = !preferredPlaceId;
+
+    logger.info(
+      { userId, placeId, usedFallback },
+      'Creating quick play session'
+    );
+
+    metrics.quickSessionsCreatedTotal.inc();
+
+    // Use the standard createSession flow
+    return this.createSession({
+      hostUserId: userId,
+      robloxUrl,
+      title: 'Quick Play',
+      visibility: 'friends',
+      maxParticipants: 6,
+      scheduledStart: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Get session summary for lobby UI
+   */
+  async getSessionSummary(
+    sessionId: string,
+    requesterId: string | null
+  ): Promise<{
+    participantCount: number;
+    maxParticipants: number;
+    countsByHandoffState: Record<string, number>;
+  }> {
+    const supabase = getSupabase();
+
+    // Get session basic info
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('max_participants, visibility, host_id, status')
+      .eq('id', sessionId)
+      .maybeSingle<{
+        max_participants: number;
+        visibility: SessionVisibility;
+        host_id: string;
+        status: SessionStatus;
+      }>();
+
+    if (sessionError || !session) {
+      throw new SessionError(ErrorCodes.SESSION_NOT_FOUND, 'Session not found', 404);
+    }
+
+    // Check access based on visibility
+    if (session.visibility === 'invite_only' && requesterId !== session.host_id) {
+      // Check if requester is a participant
+      const { data: participant } = await supabase
+        .from('session_participants')
+        .select('user_id')
+        .eq('session_id', sessionId)
+        .eq('user_id', requesterId || '')
+        .maybeSingle();
+
+      if (!participant) {
+        throw new SessionError(
+          ErrorCodes.SESSION_ACCESS_DENIED,
+          'You do not have access to this session',
+          403
+        );
+      }
+    } else if (session.visibility === 'friends' && requesterId && requesterId !== session.host_id) {
+      const areFriends = await this.areFriends(requesterId, session.host_id);
+      if (!areFriends) {
+        const { data: participant } = await supabase
+          .from('session_participants')
+          .select('user_id')
+          .eq('session_id', sessionId)
+          .eq('user_id', requesterId)
+          .maybeSingle();
+
+        if (!participant) {
+          throw new SessionError(
+            ErrorCodes.SESSION_ACCESS_DENIED,
+            'You do not have access to this session',
+            403
+          );
+        }
+      }
+    }
+
+    // Get participant counts
+    const { data: participants, error: participantsError } = await supabase
+      .from('session_participants')
+      .select('handoff_state, state')
+      .eq('session_id', sessionId)
+      .neq('state', 'left')
+      .neq('state', 'kicked');
+
+    if (participantsError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to fetch participants: ${participantsError.message}`
+      );
+    }
+
+    const participantCount = participants?.length ?? 0;
+
+    // Group by handoff_state
+    const countsByHandoffState: Record<string, number> = {
+      rsvp_joined: 0,
+      opened_roblox: 0,
+      confirmed_in_game: 0,
+      stuck: 0,
+      null: 0,
+    };
+
+    for (const p of participants || []) {
+      const state = p.handoff_state ?? 'null';
+      countsByHandoffState[state] = (countsByHandoffState[state] || 0) + 1;
+    }
+
+    return {
+      participantCount,
+      maxParticipants: session.max_participants,
+      countsByHandoffState,
+    };
+  }
+
+  private async areFriends(userIdA: string, userIdB: string): Promise<boolean> {
+    const supabase = getSupabase();
+
+    const { data: userA } = await supabase
+      .from('app_users')
+      .select('roblox_user_id')
+      .eq('id', userIdA)
+      .single();
+
+    const { data: userB } = await supabase
+      .from('app_users')
+      .select('roblox_user_id')
+      .eq('id', userIdB)
+      .single();
+
+    if (!userA?.roblox_user_id || !userB?.roblox_user_id) {
+      return false;
+    }
+
+    const { data } = await supabase
+      .from('roblox_friends_cache')
+      .select('roblox_friend_user_id')
+      .eq('user_id', userIdA)
+      .eq('roblox_friend_user_id', String(userB.roblox_user_id))
+      .single();
+
+    return !!data;
+  }
 }
 
 function normalizeInvitedRobloxUserIds(input?: number[]): number[] {

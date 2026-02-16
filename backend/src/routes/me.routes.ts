@@ -5,6 +5,7 @@ import { FavoriteExperiencesService } from '../services/favorite-experiences.ser
 import { RobloxFriendsCacheService } from '../services/roblox-friends-cache.service.js';
 import { getSupabase } from '../config/supabase.js';
 import { AppError, ValidationError, ErrorCodes } from '../utils/errors.js';
+import { AchievementService } from '../services/achievementService.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
@@ -34,6 +35,27 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
       async (request, reply) => {
         const { getMeData } = await import('../services/me.service.js');
         const data = await getMeData(request.user.userId, fastify);
+
+        return reply.send({
+          success: true,
+          data,
+          requestId: String(request.id),
+        });
+      }
+    );
+
+    /**
+     * GET /api/me/stats
+     * Get current user stats and achievements
+     */
+    fastify.get(
+      '/stats',
+      {
+        preHandler: authPreHandler,
+      },
+      async (request, reply) => {
+        const achievementService = new AchievementService();
+        const data = await achievementService.getUserStatsAndAchievements(request.user.userId);
 
         return reply.send({
           success: true,

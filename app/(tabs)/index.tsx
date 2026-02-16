@@ -1,13 +1,32 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 
 import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
+import { useState } from 'react';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const [isCreating, setIsCreating] = useState(false);
+  const handleError = useErrorHandler();
+
+  const handleQuickPlay = async () => {
+    setIsCreating(true);
+    try {
+      const session = await sessionsAPIStoreV2.createQuickSession();
+      router.push(`/sessions/${session.session.id}-v2`);
+    } catch (error) {
+      handleError(error, 'Failed to start quick play');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -20,6 +39,19 @@ export default function HomeScreen() {
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Welcome!</ThemedText>
         <HelloWave />
+      </ThemedView>
+      <ThemedView style={styles.stepContainer}>
+        <Pressable
+          style={styles.quickPlayButton}
+          onPress={handleQuickPlay}
+          disabled={isCreating}
+        >
+          {isCreating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <ThemedText style={styles.quickPlayText}>Play Now</ThemedText>
+          )}
+        </Pressable>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
@@ -94,5 +126,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
+  },
+  quickPlayButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+  },
+  quickPlayText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });

@@ -7,6 +7,7 @@ import {
 import { authenticate } from '../middleware/authenticate.js';
 import { ValidationError, NotFoundError, AppError, ErrorCodes } from '../utils/errors.js';
 import { getSupabase } from '../config/supabase.js';
+import { AchievementService } from '../services/achievementService.js';
 
 interface SessionsRoutesV2Deps {
   sessionService?: SessionServiceV2;
@@ -36,10 +37,10 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
 
   /**
    * POST /api/sessions
-   * Create new session
+   * Create new session (supports template=quick for quick play)
    */
   fastify.post<{
-    Body: Omit<CreateSessionInput, 'hostUserId'>;
+    Body: Omit<CreateSessionInput, 'hostUserId'> & { template?: string };
   }>(
     '/api/sessions',
       {
@@ -47,8 +48,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       schema: {
         body: {
           type: 'object',
-          required: ['robloxUrl', 'title'],
           properties: {
+            template: { type: 'string', enum: ['quick'] },
             robloxUrl: { type: 'string' },
             title: { type: 'string' },
             visibility: { type: 'string', enum: ['public', 'friends', 'invite_only'] },
@@ -64,21 +65,37 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       },
     },
     async (request, reply) => {
-      const { robloxUrl, title, visibility, maxParticipants, scheduledStart, invitedRobloxUserIds } = request.body;
+      const achievementService = new AchievementService();
+      const { template, robloxUrl, title, visibility, maxParticipants, scheduledStart, invitedRobloxUserIds } = request.body;
 
-      if (!robloxUrl || !title) {
-        throw new ValidationError('robloxUrl and title are required');
+      let result;
+
+      if (template === 'quick') {
+        // Quick play flow
+        result = await sessionService.createQuickSession({
+          userId: request.user.userId,
+          defaultPlaceId: fastify.config.DEFAULT_PLACE_ID,
+        });
+      } else {
+        // Regular session creation
+        if (!robloxUrl || !title) {
+          throw new ValidationError('robloxUrl and title are required');
+        }
+
+        result = await sessionService.createSession({
+          hostUserId: request.user.userId,
+          robloxUrl,
+          title,
+          visibility,
+          maxParticipants,
+          scheduledStart,
+          invitedRobloxUserIds,
+        });
       }
 
-      const result = await sessionService.createSession({
-        hostUserId: request.user.userId,
-        robloxUrl,
-        title,
-        visibility,
-        maxParticipants,
-        scheduledStart,
-        invitedRobloxUserIds,
-      });
+      // Track stats and achievements for host
+      await achievementService.incrementUserStat(request.user.userId, 'sessions_hosted');
+      await achievementService.evaluateAndUnlock(request.user.userId);
 
       return reply.status(201).send({
         success: true,
@@ -275,6 +292,40 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
   );
 
   /**
+   * GET /api/sessions/:id/summary
+   * Get session summary for lobby UI (participant counts by handoff state)
+   */
+  fastify.get<{
+    Params: { id: string };
+  }>(
+    '/api/sessions/:id/summary',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const requesterId = await getOptionalRequesterId(request);
+      const summary = await sessionService.getSessionSummary(request.params.id, requesterId);
+
+      return reply.send({
+        success: true,
+        data: summary,
+        requestId: String(request.id),
+      });
+    }
+  );
+
+  /**
    * POST /api/sessions/:id/join
    * Join session
    */
@@ -305,6 +356,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       },
     },
     async (request, reply) => {
+      const achievementService = new AchievementService();
+
       // Explicit guard against non-UUID values (shouldn't happen with schema validation)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(request.params.id)) {
@@ -317,6 +370,10 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         request.user.userId,
         request.body.inviteCode
       );
+
+      // Track stats and achievements for joining user
+      await achievementService.incrementUserStat(request.user.userId, 'sessions_joined');
+      await achievementService.evaluateAndUnlock(request.user.userId);
 
       return reply.send({
         success: true,

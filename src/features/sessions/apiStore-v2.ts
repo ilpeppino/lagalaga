@@ -411,6 +411,109 @@ class SessionsAPIStoreV2 {
 
     return response.data.deletedCount;
   }
+
+  /**
+   * Create a quick play session with sensible defaults
+   */
+  async createQuickSession(): Promise<SessionWithInvite> {
+    const response = await fetchWithAuth<{ success: boolean; data: SessionWithInvite }>(
+      '/api/sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify({ template: 'quick' }),
+      }
+    );
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_008',
+        message: 'Failed to create quick play session',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  /**
+   * Get session summary for lobby UI
+   */
+  async getSessionSummary(sessionId: string): Promise<{
+    participantCount: number;
+    maxParticipants: number;
+    countsByHandoffState: Record<string, number>;
+  }> {
+    const response = await fetchWithAuth<{
+      success: boolean;
+      data: {
+        participantCount: number;
+        maxParticipants: number;
+        countsByHandoffState: Record<string, number>;
+      };
+    }>(`/api/sessions/${sessionId}/summary`);
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'SESSION_009',
+        message: 'Failed to fetch session summary',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
+
+  /**
+   * Get user stats and achievements
+   */
+  async getUserStats(): Promise<{
+    stats: {
+      userId: string;
+      sessionsHosted: number;
+      sessionsJoined: number;
+      streakDays: number;
+      lastActiveDate: string | null;
+      createdAt: string;
+      updatedAt: string;
+    } | null;
+    achievements: Array<{
+      id: string;
+      userId: string;
+      code: string;
+      unlockedAt: string;
+    }>;
+  }> {
+    const response = await fetchWithAuth<{
+      success: boolean;
+      data: {
+        stats: {
+          userId: string;
+          sessionsHosted: number;
+          sessionsJoined: number;
+          streakDays: number;
+          lastActiveDate: string | null;
+          createdAt: string;
+          updatedAt: string;
+        } | null;
+        achievements: Array<{
+          id: string;
+          userId: string;
+          code: string;
+          unlockedAt: string;
+        }>;
+      };
+    }>('/api/me/stats');
+
+    if (!response.success) {
+      throw new ApiError({
+        code: 'USER_STATS_001',
+        message: 'Failed to fetch user stats',
+        statusCode: 500,
+      });
+    }
+
+    return response.data;
+  }
 }
 
 export const sessionsAPIStoreV2 = new SessionsAPIStoreV2();

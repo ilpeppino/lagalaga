@@ -44,6 +44,11 @@ export default function SessionDetailScreenV2() {
   const [isJoining, setIsJoining] = useState(false);
   const [presenceLabel, setPresenceLabel] = useState<string>('Checking...');
   const hasShownCreatedPromptRef = useRef(false);
+  const [summary, setSummary] = useState<{
+    participantCount: number;
+    maxParticipants: number;
+    countsByHandoffState: Record<string, number>;
+  } | null>(null);
 
   const loadSession = useCallback(async () => {
     try {
@@ -76,6 +81,15 @@ export default function SessionDetailScreenV2() {
     }
   }, [handleError, id]);
 
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await sessionsAPIStoreV2.getSessionSummary(id);
+      setSummary(data);
+    } catch (error) {
+      logger.warn('Failed to load session summary', { error: (error as Error).message });
+    }
+  }, [id]);
+
   const handleShare = useCallback(async (inviteLink?: string) => {
     const link = inviteLink || session?.inviteLink;
     if (!link || !session) return;
@@ -93,6 +107,12 @@ export default function SessionDetailScreenV2() {
   useEffect(() => {
     loadSession();
   }, [loadSession]);
+
+  useEffect(() => {
+    loadSummary();
+    const interval = setInterval(loadSummary, 5000);
+    return () => clearInterval(interval);
+  }, [loadSummary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -320,6 +340,51 @@ export default function SessionDetailScreenV2() {
           </View>
         )}
       </View>
+
+      {/* Lobby Status Summary */}
+      {summary && (
+        <View style={[
+          styles.section,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleMedium" style={styles.sectionTitle}>
+            Lobby Status
+          </ThemedText>
+          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={{ marginBottom: 12 }}>
+            {summary.participantCount} / {summary.maxParticipants} players
+          </ThemedText>
+          <View style={styles.handoffStates}>
+            {summary.countsByHandoffState.rsvp_joined > 0 && (
+              <View style={[styles.handoffChip, { backgroundColor: '#4CAF50' }]}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  Joined: {summary.countsByHandoffState.rsvp_joined}
+                </ThemedText>
+              </View>
+            )}
+            {summary.countsByHandoffState.opened_roblox > 0 && (
+              <View style={[styles.handoffChip, { backgroundColor: '#2196F3' }]}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  Opened: {summary.countsByHandoffState.opened_roblox}
+                </ThemedText>
+              </View>
+            )}
+            {summary.countsByHandoffState.confirmed_in_game > 0 && (
+              <View style={[styles.handoffChip, { backgroundColor: '#8BC34A' }]}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  In Game: {summary.countsByHandoffState.confirmed_in_game}
+                </ThemedText>
+              </View>
+            )}
+            {summary.countsByHandoffState.stuck > 0 && (
+              <View style={[styles.handoffChip, { backgroundColor: '#FF9800' }]}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  Stuck: {summary.countsByHandoffState.stuck}
+                </ThemedText>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Description */}
       {session.description && (
@@ -672,5 +737,15 @@ const styles = StyleSheet.create({
   },
   link: {
     marginTop: 4,
+  },
+  handoffStates: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  handoffChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
 });

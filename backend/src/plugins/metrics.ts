@@ -19,6 +19,8 @@ class MetricsCollector {
   private counters = new Map<string, Map<string, number>>();
   private histograms = new Map<string, Map<string, Histogram>>();
   private gauges = new Map<string, Map<string, number>>();
+  quickSessionsCreatedTotal!: { inc: () => void };
+  achievementsUnlockedTotal!: { inc: (labels: { code: string }) => void };
 
   incrementCounter(name: string, labels: Record<string, string> = {}): void {
     if (!this.counters.has(name)) {
@@ -160,6 +162,18 @@ class MetricsCollector {
 }
 
 export const metrics = new MetricsCollector();
+
+// Helper counter objects for type safety
+export const quickSessionsCreatedTotal = {
+  inc: () => metrics.incrementCounter('quick_sessions_created_total'),
+};
+
+export const achievementsUnlockedTotal = {
+  inc: (labels: { code: string }) => metrics.incrementCounter('achievements_unlocked_total', labels),
+};
+
+metrics.quickSessionsCreatedTotal = quickSessionsCreatedTotal;
+metrics.achievementsUnlockedTotal = achievementsUnlockedTotal;
 
 export async function metricsPlugin(fastify: FastifyInstance) {
   // Collect request metrics

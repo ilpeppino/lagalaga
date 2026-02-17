@@ -137,6 +137,7 @@ export default function MeScreen() {
   const textColor = Colors[colorScheme ?? 'light'].text;
   const cardColor = colorScheme === 'dark' ? '#1c1c1e' : '#f2f2f7';
   const tintColor = Colors[colorScheme ?? 'light'].tint;
+  const primaryButtonColor = colorScheme === 'dark' ? '#0a84ff' : tintColor;
   const rowBorderColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)';
   const secondaryTextColor = colorScheme === 'dark' ? '#b3b3b8' : '#5f6368';
 
@@ -288,7 +289,7 @@ export default function MeScreen() {
 
               {/* Refresh Avatar Button */}
               <TouchableOpacity
-                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
+                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
                 onPress={handleRefreshAvatar}
                 disabled={refreshing}
               >
@@ -310,7 +311,7 @@ export default function MeScreen() {
 
               {/* Connect Roblox Button */}
               <TouchableOpacity
-                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
+                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
                 onPress={handleConnectRoblox}
               >
                 <IconSymbol name="link" size={20} color="#fff" />
@@ -394,7 +395,7 @@ export default function MeScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
+              style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
               onPress={openMatchHistory}
             >
               <IconSymbol name="list.bullet.rectangle" size={20} color="#fff" />

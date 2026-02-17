@@ -4,6 +4,7 @@ import {
   CreateSessionInput,
   ParticipantHandoffState,
 } from '../services/sessionService-v2.js';
+import { RankingService } from '../services/rankingService.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { ValidationError, NotFoundError, AppError, ErrorCodes } from '../utils/errors.js';
 import { getSupabase } from '../config/supabase.js';
@@ -11,6 +12,7 @@ import { AchievementService } from '../services/achievementService.js';
 
 interface SessionsRoutesV2Deps {
   sessionService?: SessionServiceV2;
+  rankingService?: RankingService;
   authPreHandler?: typeof authenticate;
 }
 
@@ -33,6 +35,7 @@ async function getOptionalRequesterId(request: FastifyRequest): Promise<string |
 export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
   return async function sessionsRoutesV2(fastify: FastifyInstance) {
   const sessionService = deps.sessionService ?? new SessionServiceV2();
+  const rankingService = deps.rankingService ?? new RankingService();
   const authPreHandler = deps.authPreHandler ?? authenticate;
 
   /**
@@ -40,7 +43,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
    * Create new session (supports template=quick for quick play)
    */
   fastify.post<{
-    Body: Omit<CreateSessionInput, 'hostUserId'> & { template?: string };
+    Body: Omit<CreateSessionInput, 'hostUserId'> & { template?: string; is_ranked?: boolean };
   }>(
     '/api/sessions',
       {
@@ -53,6 +56,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
             robloxUrl: { type: 'string' },
             title: { type: 'string' },
             visibility: { type: 'string', enum: ['public', 'friends', 'invite_only'] },
+            is_ranked: { type: 'boolean' },
             maxParticipants: { type: 'number', minimum: 2, maximum: 50 },
             scheduledStart: { type: 'string' },
             invitedRobloxUserIds: {
@@ -66,7 +70,28 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
     },
     async (request, reply) => {
       const achievementService = new AchievementService();
-      const { template, robloxUrl, title, visibility, maxParticipants, scheduledStart, invitedRobloxUserIds } = request.body;
+      const {
+        template,
+        robloxUrl,
+        title,
+        visibility,
+        is_ranked,
+        maxParticipants,
+        scheduledStart,
+        invitedRobloxUserIds,
+      } = request.body;
+
+      if (is_ranked && template === 'quick') {
+        throw new ValidationError('Quick Play template cannot be used with ranked sessions');
+      }
+
+      if (is_ranked && visibility && visibility !== 'public') {
+        throw new ValidationError('Ranked sessions must use public visibility');
+      }
+
+      if (is_ranked && maxParticipants !== undefined && maxParticipants < 2) {
+        throw new ValidationError('Ranked sessions must allow at least 2 participants');
+      }
 
       let result;
 
@@ -85,7 +110,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
           hostUserId: request.user.userId,
           robloxUrl,
           title,
-          visibility,
+          visibility: is_ranked ? 'public' : visibility,
+          isRanked: Boolean(is_ranked),
           maxParticipants,
           scheduledStart,
           invitedRobloxUserIds,
@@ -328,6 +354,53 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
    * POST /api/sessions/:id/join
    * Join session
    */
+  fastify.post<{
+    Params: { id: string };
+    Body: { winnerId: string };
+  }>(
+    '/api/sessions/:id/result',
+    {
+      preHandler: authPreHandler,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['winnerId'],
+          properties: {
+            winnerId: {
+              type: 'string',
+              pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      rankingService.enforceSubmissionRateLimit(request.user.userId, request.params.id);
+
+      const result = await rankingService.submitMatchResult(
+        request.params.id,
+        request.body.winnerId,
+        request.user.userId
+      );
+
+      return reply.send({
+        success: true,
+        data: result,
+        requestId: String(request.id),
+      });
+    }
+  );
+
   fastify.post<{
     Params: { id: string };
     Body: { inviteCode?: string };

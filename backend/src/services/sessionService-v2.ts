@@ -4,6 +4,7 @@ import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
 import { PushNotificationService } from './pushNotificationService.js';
 import { logger } from '../lib/logger.js';
+import { sanitize } from '../lib/sanitizer.js';
 import { request } from 'undici';
 import { metrics } from '../plugins/metrics.js';
 
@@ -18,6 +19,7 @@ export interface CreateSessionInput {
   robloxUrl: string;
   title: string;
   visibility?: SessionVisibility;
+  isRanked?: boolean;
   maxParticipants?: number;
   scheduledStart?: string; // ISO 8601 timestamp
   invitedRobloxUserIds?: number[];
@@ -31,6 +33,7 @@ export interface SessionWithInvite {
     title: string;
     description?: string;
     visibility: SessionVisibility;
+    isRanked: boolean;
     status: SessionStatus;
     maxParticipants: number;
     currentParticipants: number;
@@ -293,6 +296,7 @@ export class SessionServiceV2 {
         host_id: input.hostUserId,
         title: input.title,
         visibility: input.visibility || 'public',
+        is_ranked: input.isRanked ?? false,
         max_participants: computedMaxParticipants,
         scheduled_start: input.scheduledStart,
         original_input_url: normalized?.originalInputUrl ?? share?.canonicalUrl ?? input.robloxUrl,
@@ -304,6 +308,18 @@ export class SessionServiceV2 {
 
     if (sessionError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create session: ${sessionError.message}`);
+    }
+
+    if (input.isRanked) {
+      metrics.rankedSessionsCreatedTotal.inc();
+      logger.info(
+        sanitize({
+          sessionId: sessionData.id,
+          hostUserId: input.hostUserId,
+          visibility: input.visibility || 'public',
+        }),
+        'Ranked session created'
+      );
     }
 
     // Step 4: Add host as participant
@@ -443,6 +459,7 @@ export class SessionServiceV2 {
         title: sessionData.title,
         description: sessionData.description,
         visibility: sessionData.visibility,
+        isRanked: Boolean(sessionData.is_ranked),
         status: sessionData.status,
         maxParticipants: sessionData.max_participants,
         currentParticipants: 1, // Host is the first participant
@@ -525,6 +542,7 @@ export class SessionServiceV2 {
       title: row.title,
       description: row.description,
       visibility: row.visibility,
+      isRanked: Boolean(row.is_ranked),
       status: row.status,
       maxParticipants: row.max_participants,
       currentParticipants: Number(row.participant_count) || 0,
@@ -590,6 +608,7 @@ export class SessionServiceV2 {
       title: row.title,
       description: row.description,
       visibility: row.visibility,
+      isRanked: Boolean(row.is_ranked),
       status: row.status,
       maxParticipants: row.max_participants,
       currentParticipants: Number(row.participant_count) || 0,
@@ -761,6 +780,7 @@ export class SessionServiceV2 {
       title: sessionData.title,
       description: sessionData.description,
       visibility: sessionData.visibility,
+      isRanked: Boolean(sessionData.is_ranked),
       status: sessionData.status,
       maxParticipants: sessionData.max_participants,
       scheduledStart: sessionData.scheduled_start,

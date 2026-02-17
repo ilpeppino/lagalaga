@@ -27,7 +27,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button, TextInput } from '@/components/ui/paper';
-import { Menu, SegmentedButtons } from 'react-native-paper';
+import { Menu, SegmentedButtons, Switch } from 'react-native-paper';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { ApiError } from '@/src/lib/errors';
 import type { Favorite } from '@/src/features/favorites/cache';
@@ -63,6 +63,7 @@ export default function CreateSessionScreenV2() {
   const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
+  const [isRanked, setIsRanked] = useState(false);
   const [friends, setFriends] = useState<RobloxFriend[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
   const [scheduledStart, setScheduledStart] = useState<Date | null>(null);
@@ -185,6 +186,7 @@ export default function CreateSessionScreenV2() {
           robloxUrl: robloxUrl.trim(),
           title: title.trim(),
           visibility,
+          isRanked,
           scheduledStart: scheduledStart?.toISOString(),
           selectedFriendIds,
         })
@@ -311,13 +313,49 @@ export default function CreateSessionScreenV2() {
         </ThemedText>
         <SegmentedButtons
           value={visibility}
-          onValueChange={(value) => setVisibility(value as SessionVisibility)}
+          onValueChange={(value) => {
+            if (isRanked) {
+              setVisibility('public');
+              return;
+            }
+            setVisibility(value as SessionVisibility);
+          }}
           buttons={visibilityOptions.map((option) => ({
             value: option.value,
             label: option.label,
+            disabled: isRanked && option.value !== 'public',
           }))}
           style={styles.visibilityPicker}
         />
+        {isRanked && (
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
+            Ranked sessions are always public.
+          </ThemedText>
+        )}
+      </View>
+
+      {/* Ranked Mode */}
+      <View style={styles.field}>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleTextWrap}>
+            <ThemedText type="titleMedium" style={styles.label}>
+              Ranked Mode
+            </ThemedText>
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+              Winner +25, other joined players -25. Quick Play is casual-only.
+            </ThemedText>
+          </View>
+          <Switch
+            value={isRanked}
+            onValueChange={(value) => {
+              setIsRanked(value);
+              if (value) {
+                setVisibility('public');
+              }
+            }}
+            disabled={isCreating}
+          />
+        </View>
       </View>
 
       {/* Friend Picker */}
@@ -486,6 +524,15 @@ const styles = StyleSheet.create({
   },
   visibilityPicker: {
     marginTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  toggleTextWrap: {
+    flex: 1,
   },
   loadingFriendsContainer: {
     minHeight: 90,

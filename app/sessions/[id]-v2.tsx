@@ -26,6 +26,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
+import { Dialog, Portal, RadioButton } from 'react-native-paper';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -44,6 +45,9 @@ export default function SessionDetailScreenV2() {
   const [isJoining, setIsJoining] = useState(false);
   const [presenceLabel, setPresenceLabel] = useState<string>('Checking...');
   const hasShownCreatedPromptRef = useRef(false);
+  const [isResultDialogVisible, setIsResultDialogVisible] = useState(false);
+  const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
+  const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [summary, setSummary] = useState<{
     participantCount: number;
     maxParticipants: number;
@@ -197,8 +201,38 @@ export default function SessionDetailScreenV2() {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await AsyncStorage.setItem('roblox_connect_state', state);
       await Linking.openURL(authorizationUrl);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to start Roblox connect flow');
+    }
+  };
+
+  const handleOpenResultDialog = () => {
+    if (!session) return;
+    const joined = session.participants.filter((participant) => participant.state === 'joined');
+    setSelectedWinnerId(joined[0]?.userId ?? null);
+    setIsResultDialogVisible(true);
+  };
+
+  const handleSubmitResult = async () => {
+    if (!session || !selectedWinnerId) return;
+
+    try {
+      setIsSubmittingResult(true);
+      const result = await sessionsAPIStoreV2.submitMatchResult(session.id, selectedWinnerId);
+      setIsResultDialogVisible(false);
+
+      const summaryLines = result.updates
+        .map((update) => {
+          const signedDelta = update.delta > 0 ? `+${update.delta}` : `${update.delta}`;
+          return `${update.userId.slice(0, 8)}... ${signedDelta} => ${update.rating}`;
+        })
+        .join('\n');
+
+      Alert.alert('Ranked result submitted', summaryLines || 'Ratings updated');
+    } catch (error) {
+      Alert.alert('Error', getErrorMessage(error, 'Failed to submit ranked result'));
+    } finally {
+      setIsSubmittingResult(false);
     }
   };
 
@@ -256,6 +290,7 @@ export default function SessionDetailScreenV2() {
   const isFull = session.currentParticipants >= session.maxParticipants;
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
+  const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
 
   return (
     <ScrollView
@@ -299,6 +334,13 @@ export default function SessionDetailScreenV2() {
             <View style={[styles.badge, styles.visibilityBadge]}>
               <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
                 {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
+              </ThemedText>
+            </View>
+          )}
+          {session.isRanked && (
+            <View style={[styles.badge, styles.rankedBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+                RANKED
               </ThemedText>
             </View>
           )}
@@ -523,6 +565,21 @@ export default function SessionDetailScreenV2() {
           />
         )}
 
+        {isHost && session.isRanked && (
+          <Button
+            title="Submit Result"
+            variant="filled"
+            buttonColor="#FF6B00"
+            textColor="#fff"
+            style={styles.launchButton}
+            contentStyle={styles.actionButtonContent}
+            labelStyle={styles.actionButtonLabel}
+            onPress={handleOpenResultDialog}
+            disabled={joinedParticipants.length < 2 || isSubmittingResult}
+            loading={isSubmittingResult}
+          />
+        )}
+
         {presenceLabel.includes('unavailable') && (
           <Button
             title="Connect Roblox for Presence"
@@ -557,6 +614,40 @@ export default function SessionDetailScreenV2() {
           {session.game.canonicalWebUrl}
         </ThemedText>
       </View>
+
+      <Portal>
+        <Dialog visible={isResultDialogVisible} onDismiss={() => setIsResultDialogVisible(false)}>
+          <Dialog.Title>Select Winner</Dialog.Title>
+          <Dialog.Content>
+            {joinedParticipants.map((participant) => (
+              <RadioButton.Item
+                key={`winner-${participant.userId}`}
+                label={`${participant.userId.slice(0, 8)}...${participant.userId === session.hostId ? ' (Host)' : ''}`}
+                value={participant.userId}
+                status={selectedWinnerId === participant.userId ? 'checked' : 'unchecked'}
+                onPress={() => setSelectedWinnerId(participant.userId)}
+              />
+            ))}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              title="Cancel"
+              variant="text"
+              onPress={() => setIsResultDialogVisible(false)}
+              disabled={isSubmittingResult}
+            />
+            <Button
+              title="Confirm Result"
+              variant="filled"
+              buttonColor="#FF6B00"
+              textColor="#fff"
+              onPress={handleSubmitResult}
+              disabled={!selectedWinnerId || isSubmittingResult}
+              loading={isSubmittingResult}
+            />
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 }
@@ -635,6 +726,9 @@ const styles = StyleSheet.create({
   },
   fullBadge: {
     backgroundColor: '#ff3b30',
+  },
+  rankedBadge: {
+    backgroundColor: '#FF6B00',
   },
   infoGrid: {
     flexDirection: 'row',

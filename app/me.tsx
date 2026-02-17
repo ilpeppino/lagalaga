@@ -59,6 +59,7 @@ export default function MeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [proViewEnabled, setProViewEnabled] = useState(false);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
   const fetchMeData = useCallback(async () => {
     try {
@@ -136,6 +137,8 @@ export default function MeScreen() {
   const textColor = Colors[colorScheme ?? 'light'].text;
   const cardColor = colorScheme === 'dark' ? '#1c1c1e' : '#f2f2f7';
   const tintColor = Colors[colorScheme ?? 'light'].tint;
+  const rowBorderColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)';
+  const secondaryTextColor = colorScheme === 'dark' ? '#b3b3b8' : '#5f6368';
 
   if (loading) {
     return (
@@ -161,6 +164,15 @@ export default function MeScreen() {
     );
   }
 
+  const primaryName =
+    data.roblox.displayName?.trim() ||
+    data.roblox.username?.trim() ||
+    data.appUser.displayName;
+  const robloxAccountName =
+    data.roblox.username?.trim() ||
+    data.roblox.displayName?.trim() ||
+    null;
+
   return (
     <View style={[styles.container, { backgroundColor }]}>
       <Stack.Screen options={{ title: 'Me', headerShown: true }} />
@@ -179,46 +191,45 @@ export default function MeScreen() {
               <IconSymbol name="person.fill" size={64} color={tintColor} />
             )}
           </View>
+          <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
+          <Text style={[styles.profileStatus, { color: secondaryTextColor }]}>
+            {data.roblox.connected ? 'Roblox connected' : 'Roblox not connected'}
+          </Text>
         </View>
 
-        {/* App User Info */}
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.sectionTitle, { color: textColor }]}>
-            LagaLaga Identity
-          </Text>
-          <View style={styles.infoRow}>
-            <Text style={[styles.label, { color: textColor }]}>Display Name:</Text>
-            <Text style={[styles.value, { color: textColor }]}>
-              {data.appUser.displayName}
+        {data.appUser.email ? (
+          <View style={[styles.card, { backgroundColor: cardColor }]}>
+            <Text style={[styles.sectionTitle, { color: textColor }]}>
+              Account email
             </Text>
-          </View>
-          {data.appUser.email && (
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
               <Text style={[styles.label, { color: textColor }]}>Email:</Text>
               <Text style={[styles.value, { color: textColor }]}>
                 {data.appUser.email}
               </Text>
             </View>
-          )}
-        </View>
+          </View>
+        ) : null}
 
         {/* Roblox Connection Status */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
           <View style={styles.cardHeader}>
             <Text style={[styles.sectionTitle, { color: textColor }]}>
-              Roblox Connection
+              Roblox
             </Text>
             <View
               style={[
                 styles.badge,
                 {
                   backgroundColor: data.roblox.connected
-                    ? '#34c759'
-                    : Colors[colorScheme ?? 'light'].icon,
+                    ? '#34c75933'
+                    : colorScheme === 'dark'
+                      ? '#8e8e9333'
+                      : '#8e8e931f',
                 },
               ]}
             >
-              <Text style={styles.badgeText}>
+              <Text style={[styles.badgeText, { color: data.roblox.connected ? '#2e7d32' : secondaryTextColor }]}>
                 {data.roblox.connected ? 'Connected' : 'Not Connected'}
               </Text>
             </View>
@@ -226,48 +237,58 @@ export default function MeScreen() {
 
           {data.roblox.connected ? (
             <>
-              {data.roblox.username && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, { color: textColor }]}>Username:</Text>
+              {robloxAccountName ? (
+                <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
+                  <Text style={[styles.label, { color: textColor }]}>Roblox account:</Text>
                   <Text style={[styles.value, { color: textColor }]}>
-                    {data.roblox.username}
+                    {robloxAccountName}
                   </Text>
                 </View>
-              )}
-              {data.roblox.displayName && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, { color: textColor }]}>
-                    Display Name:
-                  </Text>
-                  <Text style={[styles.value, { color: textColor }]}>
-                    {data.roblox.displayName}
-                  </Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.advancedToggle, { borderColor: rowBorderColor }]}
+                onPress={() => setAdvancedExpanded((v) => !v)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.advancedLabel, { color: textColor }]}>Advanced</Text>
+                <View style={{ transform: [{ rotate: advancedExpanded ? '180deg' : '0deg' }] }}>
+                  <IconSymbol name="chevron.down" size={14} color={secondaryTextColor} />
                 </View>
-              )}
-              {data.roblox.robloxUserId && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, { color: textColor }]}>
-                    Roblox ID:
-                  </Text>
-                  <Text style={[styles.value, { color: textColor }]}>
-                    {data.roblox.robloxUserId}
-                  </Text>
+              </TouchableOpacity>
+
+              {advancedExpanded ? (
+                <View style={styles.advancedSection}>
+                  {data.roblox.robloxUserId ? (
+                    <View style={[
+                      styles.infoRow,
+                      !data.roblox.verifiedAt ? styles.infoRowLast : null,
+                      { borderBottomColor: rowBorderColor }
+                    ]}>
+                      <Text style={[styles.label, { color: textColor }]}>
+                        Roblox ID:
+                      </Text>
+                      <Text style={[styles.value, { color: textColor }]}>
+                        {data.roblox.robloxUserId}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {data.roblox.verifiedAt ? (
+                    <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
+                      <Text style={[styles.label, { color: textColor }]}>
+                        Connected on:
+                      </Text>
+                      <Text style={[styles.value, { color: textColor }]}>
+                        {new Date(data.roblox.verifiedAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              {data.roblox.verifiedAt && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, { color: textColor }]}>
-                    Verified:
-                  </Text>
-                  <Text style={[styles.value, { color: textColor }]}>
-                    {new Date(data.roblox.verifiedAt).toLocaleDateString()}
-                  </Text>
-                </View>
-              )}
+              ) : null}
 
               {/* Refresh Avatar Button */}
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: tintColor }]}
+                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
                 onPress={handleRefreshAvatar}
                 disabled={refreshing}
               >
@@ -276,7 +297,7 @@ export default function MeScreen() {
                 ) : (
                   <>
                     <IconSymbol name="arrow.clockwise" size={20} color="#fff" />
-                    <Text style={styles.buttonText}>Refresh Roblox Avatar</Text>
+                    <Text style={styles.buttonText}>Refresh Roblox data</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -289,7 +310,7 @@ export default function MeScreen() {
 
               {/* Connect Roblox Button */}
               <TouchableOpacity
-                style={[styles.button, styles.primaryButton, { backgroundColor: tintColor }]}
+                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
                 onPress={handleConnectRoblox}
               >
                 <IconSymbol name="link" size={20} color="#fff" />
@@ -308,7 +329,7 @@ export default function MeScreen() {
           </Text>
 
           <TouchableOpacity
-            style={[styles.button, styles.dangerButton]}
+            style={[styles.button, styles.dangerButton, styles.primaryButtonSolid]}
             onPress={openDeleteAccount}
           >
             <IconSymbol name="trash.fill" size={20} color="#fff" />
@@ -332,25 +353,25 @@ export default function MeScreen() {
               </View>
             </View>
 
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
               <Text style={[styles.label, { color: textColor }]}>Tier:</Text>
               <Text style={[styles.value, { color: textColor }]}>
                 {data.competitive.tier.toUpperCase()}
               </Text>
             </View>
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
               <Text style={[styles.label, { color: textColor }]}>Rating:</Text>
               <Text style={[styles.value, { color: textColor }]}>
                 {data.competitive.rating}
               </Text>
             </View>
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
               <Text style={[styles.label, { color: textColor }]}>Season:</Text>
               <Text style={[styles.value, { color: textColor }]}>
                 {data.competitive.currentSeasonNumber ? `S${data.competitive.currentSeasonNumber}` : 'N/A'}
               </Text>
             </View>
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
               <Text style={[styles.label, { color: textColor }]}>Season Ends In:</Text>
               <Text style={[styles.value, { color: textColor }]}>
                 {formatCountdown(data.competitive.seasonEndsAt)}
@@ -373,7 +394,7 @@ export default function MeScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: tintColor }]}
+              style={[styles.button, styles.primaryButtonSolid, { backgroundColor: tintColor }]}
               onPress={openMatchHistory}
             >
               <IconSymbol name="list.bullet.rectangle" size={20} color="#fff" />
@@ -417,8 +438,8 @@ const styles = StyleSheet.create({
   },
   avatarSection: {
     alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 16,
+    marginBottom: 14,
+    marginTop: 8,
   },
   avatarCircle: {
     width: 120,
@@ -448,12 +469,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
   },
+  profileName: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 12,
+  },
+  profileStatus: {
+    fontSize: 14,
+    marginTop: 4,
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  infoRowLast: {
+    borderBottomWidth: 0,
   },
   label: {
     fontSize: 14,
@@ -466,14 +498,13 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   badge: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 999,
   },
   badgeText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '500',
   },
   notConnectedText: {
     fontSize: 14,
@@ -484,17 +515,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     marginTop: 12,
     gap: 8,
   },
-  primaryButton: {
-    marginTop: 16,
+  primaryButtonSolid: {
+    marginTop: 14,
   },
   dangerButton: {
     marginTop: 12,
     backgroundColor: '#c62828',
+  },
+  advancedToggle: {
+    marginTop: 12,
+    marginBottom: 4,
+    minHeight: 40,
+    paddingHorizontal: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  advancedLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  advancedSection: {
+    marginBottom: 4,
   },
   buttonText: {
     color: '#fff',

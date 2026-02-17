@@ -664,15 +664,15 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    minHeight: 28,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: '#6c757d',
-    borderRadius: 14,
+    borderRadius: 17,
     justifyContent: 'center',
   },
   handoffBadgeText: {
-    lineHeight: 16,
+    lineHeight: 18,
   },
   stuckUserText: {
     marginBottom: 4,

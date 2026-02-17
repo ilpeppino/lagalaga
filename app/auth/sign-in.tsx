@@ -35,11 +35,11 @@ export default function SignInScreen() {
 
         <ThemedText
           type="bodyLarge"
-          lightColor="#666"
-          darkColor="#999"
+          lightColor="#4a4a4a"
+          darkColor="#c7c7cc"
           style={styles.subtitle}
         >
-          Sign in with Roblox
+          Plan Roblox sessions with friends.
         </ThemedText>
 
         <View style={styles.form}>
@@ -57,11 +57,11 @@ export default function SignInScreen() {
 
           <ThemedText
             type="bodyMedium"
-            lightColor="#888"
-            darkColor="#aaa"
+            lightColor="#6b6b72"
+            darkColor="#9a9aa1"
             style={styles.hint}
           >
-            You will be redirected to Roblox to authorize the app
+            Requires a 13+ Roblox account.
           </ThemedText>
         </View>
       </View>
@@ -86,11 +86,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   subtitle: {
-    marginBottom: 32,
+    marginBottom: 36,
     textAlign: "center",
   },
   form: {
-    gap: 16,
+    gap: 10,
   },
   button: {
     borderRadius: 8,
@@ -105,5 +105,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     textAlign: "center",
+    fontSize: 13,
+    marginTop: 2,
   },
 });

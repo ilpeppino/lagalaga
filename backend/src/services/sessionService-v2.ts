@@ -753,6 +753,31 @@ export class SessionServiceV2 {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get participants: ${participantsError.message}`);
     }
 
+    const participantUserIds = Array.from(
+      new Set((participantsData ?? []).map((participant: any) => participant.user_id).filter(Boolean))
+    ) as string[];
+    const { data: participantProfiles, error: participantProfilesError } = participantUserIds.length > 0
+      ? await supabase
+        .from('app_users')
+        .select('id, roblox_display_name, roblox_username')
+        .in('id', participantUserIds)
+      : { data: [], error: null };
+
+    if (participantProfilesError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to get participant profiles: ${participantProfilesError.message}`
+      );
+    }
+
+    const displayNameByUserId = new Map<string, string>();
+    for (const profile of participantProfiles ?? []) {
+      const displayName = profile.roblox_display_name?.trim() || profile.roblox_username?.trim() || '';
+      if (displayName) {
+        displayNameByUserId.set(profile.id, displayName);
+      }
+    }
+
     const { data: inviteData, error: inviteError } = await supabase
       .from('session_invites')
       .select('invite_code')
@@ -793,6 +818,7 @@ export class SessionServiceV2 {
       },
       participants: (participantsData ?? []).map((p: any) => ({
         userId: p.user_id,
+        displayName: displayNameByUserId.get(p.user_id) ?? null,
         role: p.role,
         state: p.state,
         handoffState: p.handoff_state || 'rsvp_joined',

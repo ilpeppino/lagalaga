@@ -45,6 +45,7 @@ export interface SessionDetail extends Session {
 
 export interface SessionParticipant {
   userId: string;
+  displayName?: string | null;
   role: ParticipantRole;
   state: ParticipantState;
   handoffState?: ParticipantHandoffState;

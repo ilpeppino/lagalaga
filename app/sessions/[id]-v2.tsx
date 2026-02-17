@@ -235,6 +235,22 @@ export default function SessionDetailScreenV2() {
     return null;
   };
 
+  const getParticipantName = (participant: SessionDetail['participants'][number]): string => {
+    const preferred = participant.displayName?.trim();
+    return preferred && preferred.length > 0 ? preferred : participant.userId;
+  };
+
+  const getParticipantInitials = (participant: SessionDetail['participants'][number]): string => {
+    const name = getParticipantName(participant);
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('');
+    return initials || name.substring(0, 2).toUpperCase();
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
@@ -391,12 +407,12 @@ export default function SessionDetailScreenV2() {
           >
             <View style={styles.participantAvatar}>
               <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-                {participant.userId.substring(0, 2).toUpperCase()}
+                {getParticipantInitials(participant)}
               </ThemedText>
             </View>
             <View style={styles.participantInfo}>
               <ThemedText type="bodyLarge">
-                {participant.userId}
+                {getParticipantName(participant)}
               </ThemedText>
               <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
                 {participant.userId === session.hostId ? 'Host' : 'Member'}
@@ -473,7 +489,7 @@ export default function SessionDetailScreenV2() {
           </ThemedText>
           {stuckParticipants.map((participant) => (
             <ThemedText key={`stuck-${participant.userId}`} type="bodyMedium" style={styles.stuckUserText}>
-              {participant.userId}
+              {getParticipantName(participant)}
             </ThemedText>
           ))}
           <Button
@@ -493,7 +509,7 @@ export default function SessionDetailScreenV2() {
             {joinedParticipants.map((participant) => (
               <RadioButton.Item
                 key={`winner-${participant.userId}`}
-                label={`${participant.userId.slice(0, 8)}...${participant.userId === session.hostId ? ' (Host)' : ''}`}
+                label={`${getParticipantName(participant)}${participant.userId === session.hostId ? ' (Host)' : ''}`}
                 value={participant.userId}
                 status={selectedWinnerId === participant.userId ? 'checked' : 'unchecked'}
                 onPress={() => setSelectedWinnerId(participant.userId)}

@@ -27,11 +27,13 @@ declare module '@fastify/jwt' {
       userId: string;
       robloxUserId: string;
       robloxUsername: string;
+      tokenVersion: number;
     };
     user: {
       userId: string;
       robloxUserId: string;
       robloxUsername: string;
+      tokenVersion: number;
     };
   }
 }

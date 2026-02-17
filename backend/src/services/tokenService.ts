@@ -4,6 +4,7 @@ export interface TokenPayload {
   userId: string;
   robloxUserId: string;
   robloxUsername: string;
+  tokenVersion: number;
 }
 
 export interface TokenPair {
@@ -20,6 +21,7 @@ export class TokenService {
         userId: payload.userId,
         robloxUserId: payload.robloxUserId,
         robloxUsername: payload.robloxUsername,
+        tokenVersion: payload.tokenVersion,
       },
       {
         iss: 'lagalaga-api',
@@ -32,6 +34,7 @@ export class TokenService {
       {
         userId: payload.userId,
         robloxUserId: payload.robloxUserId,
+        tokenVersion: payload.tokenVersion,
       },
       {
         iss: 'lagalaga-api',
@@ -48,14 +51,16 @@ export class TokenService {
       userId: payload.userId as string,
       robloxUserId: payload.robloxUserId as string,
       robloxUsername: payload.robloxUsername as string,
+      tokenVersion: Number(payload.tokenVersion ?? 0),
     };
   }
 
-  verifyRefreshToken(token: string): { userId: string; robloxUserId: string } {
+  verifyRefreshToken(token: string): { userId: string; robloxUserId: string; tokenVersion: number } {
     const payload = (this.fastify.jwt as any).refresh.verify(token);
     return {
       userId: payload.userId,
       robloxUserId: payload.robloxUserId,
+      tokenVersion: Number(payload.tokenVersion ?? 0),
     };
   }
 }

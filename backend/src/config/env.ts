@@ -70,6 +70,18 @@ export const envSchema = {
       type: 'number',
       default: undefined,
     },
+    ACCOUNT_DELETION_GRACE_DAYS: {
+      type: 'number',
+      default: 7,
+    },
+    ACCOUNT_PURGE_INTERVAL_MINUTES: {
+      type: 'number',
+      default: 60,
+    },
+    ACCOUNT_PURGE_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
   },
 };
 
@@ -92,6 +104,9 @@ declare module 'fastify' {
       FEATURE_FRIENDS_ENABLED: boolean;
       ENABLE_COMPETITIVE_DEPTH: boolean;
       DEFAULT_PLACE_ID?: number;
+      ACCOUNT_DELETION_GRACE_DAYS: number;
+      ACCOUNT_PURGE_INTERVAL_MINUTES: number;
+      ACCOUNT_PURGE_ENABLED: boolean;
     };
   }
 }

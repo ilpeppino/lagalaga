@@ -115,11 +115,20 @@ export async function authRoutes(fastify: FastifyInstance) {
     // Fire-and-forget Roblox friends cache sync; login should not fail if this fails.
     void friendshipService.syncRobloxCacheBestEffort(user.id);
 
+    if (user.status === 'PENDING_DELETION') {
+      throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is pending deletion');
+    }
+
+    if (user.status === 'DELETED') {
+      throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is unavailable');
+    }
+
     // Generate our JWT tokens
     const tokens = tokenService.generateTokens({
       userId: user.id,
       robloxUserId: user.robloxUserId,
       robloxUsername: user.robloxUsername,
+      tokenVersion: user.tokenVersion,
     });
 
     return {
@@ -163,11 +172,20 @@ export async function authRoutes(fastify: FastifyInstance) {
         throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
       }
 
+      if (user.status !== 'ACTIVE') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is not active');
+      }
+
+      if (payload.tokenVersion !== user.tokenVersion) {
+        throw new AuthError(ErrorCodes.AUTH_TOKEN_REVOKED, 'Refresh token has been revoked');
+      }
+
       // Generate new tokens
       const tokens = tokenService.generateTokens({
         userId: user.id,
         robloxUserId: user.robloxUserId,
         robloxUsername: user.robloxUsername,
+        tokenVersion: user.tokenVersion,
       });
 
       return {

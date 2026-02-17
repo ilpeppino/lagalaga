@@ -22,6 +22,15 @@ interface RefreshResponse {
   refreshToken: string;
 }
 
+export interface AccountDeletionStatusResponse {
+  requestId: string | null;
+  status: 'ACTIVE' | 'PENDING' | 'COMPLETED' | 'CANCELED' | 'FAILED';
+  requestedAt: string | null;
+  scheduledPurgeAt: string | null;
+  completedAt: string | null;
+  retentionSummary: string;
+}
+
 export interface ApiGetOptions {
   headers?: Record<string, string>;
 }
@@ -351,6 +360,30 @@ class ApiClient {
       await this.request('/api/me/push-tokens', {
         method: 'DELETE',
         body: JSON.stringify(input),
+      });
+    },
+  };
+
+  account = {
+    createDeletionRequest: async (input?: {
+      initiator?: 'IN_APP' | 'WEB';
+      reason?: string;
+    }): Promise<AccountDeletionStatusResponse> => {
+      return this.request('/v1/account/deletion-request', {
+        method: 'POST',
+        body: JSON.stringify(input ?? { initiator: 'IN_APP' }),
+      });
+    },
+
+    getDeletionStatus: async (): Promise<AccountDeletionStatusResponse> => {
+      return this.request('/v1/account/deletion-status', {
+        method: 'GET',
+      });
+    },
+
+    cancelDeletionRequest: async (): Promise<AccountDeletionStatusResponse> => {
+      return this.request('/v1/account/deletion-cancel', {
+        method: 'POST',
       });
     },
   };

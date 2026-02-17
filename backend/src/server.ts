@@ -17,8 +17,10 @@ import { meRoutes } from './routes/me.routes.js';
 import { presenceRoutes } from './routes/presence.routes.js';
 import { friendsRoutes } from './routes/friends.routes.js';
 import { leaderboardRoutes } from './routes/leaderboard.routes.js';
+import { accountRoutes } from './routes/account.routes.js';
 import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
 import { SeasonService } from './services/seasonService.js';
+import { AccountDeletionService } from './services/account-deletion.service.js';
 import { monitoring } from './lib/monitoring.js';
 import { fileURLToPath } from 'node:url';
 
@@ -69,6 +71,7 @@ export async function buildServer() {
   await fastify.register(presenceRoutes);
   await fastify.register(friendsRoutes);
   await fastify.register(leaderboardRoutes);
+  await fastify.register(accountRoutes, { prefix: '/v1/account' });
 
   if (isCompetitiveDepthEnabled(fastify)) {
     const seasonService = new SeasonService();
@@ -81,6 +84,39 @@ export async function buildServer() {
 
     fastify.addHook('onClose', async () => {
       clearInterval(timer);
+    });
+  }
+
+  if (fastify.config.ACCOUNT_PURGE_ENABLED && fastify.config.NODE_ENV !== 'test') {
+    const accountDeletionService = new AccountDeletionService({
+      gracePeriodDays: fastify.config.ACCOUNT_DELETION_GRACE_DAYS,
+    });
+    const intervalMs = Math.max(1, fastify.config.ACCOUNT_PURGE_INTERVAL_MINUTES) * 60 * 1000;
+
+    const runPurge = async () => {
+      try {
+        const result = await accountDeletionService.processDueDeletionRequests();
+        if (result.processed > 0 || result.failed > 0) {
+          fastify.log.info(
+            { processed: result.processed, failed: result.failed },
+            'Account deletion purge cycle finished'
+          );
+        }
+      } catch (error) {
+        fastify.log.error(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Account deletion purge cycle failed'
+        );
+      }
+    };
+
+    const purgeTimer = setInterval(() => {
+      void runPurge();
+    }, intervalMs);
+    void runPurge();
+
+    fastify.addHook('onClose', async () => {
+      clearInterval(purgeTimer);
     });
   }
 

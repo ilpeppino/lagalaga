@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "purge:accounts": "tsx src/jobs/accountDeletionPurge.ts",
     "build": "tsc",
     "start": "node dist/backend/src/server.js",
     "typecheck": "tsc --noEmit",

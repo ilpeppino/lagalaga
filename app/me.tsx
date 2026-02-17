@@ -106,6 +106,10 @@ export default function MeScreen() {
     router.push('/match-history');
   };
 
+  const openDeleteAccount = () => {
+    router.push('/account/delete');
+  };
+
   const formatCountdown = (endDate: string | null): string => {
     if (!endDate) {
       return 'N/A';
@@ -295,6 +299,23 @@ export default function MeScreen() {
           )}
         </View>
 
+        <View style={[styles.card, { backgroundColor: cardColor }]}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>
+            Account
+          </Text>
+          <Text style={[styles.notConnectedText, { color: textColor }]}>
+            Manage sign-in and account deletion settings.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton]}
+            onPress={openDeleteAccount}
+          >
+            <IconSymbol name="trash.fill" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Delete Account</Text>
+          </TouchableOpacity>
+        </View>
+
         {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (
           <View style={[styles.card, { backgroundColor: cardColor }]}>
             <View style={styles.cardHeader}>
@@ -470,6 +491,10 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: 16,
+  },
+  dangerButton: {
+    marginTop: 12,
+    backgroundColor: '#c62828',
   },
   buttonText: {
     color: '#fff',

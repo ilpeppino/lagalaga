@@ -19,6 +19,14 @@ function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
   return value;
 }
 
+function readOptionalPublicEnv(name: 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'): string | null {
+  const value = process.env.EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL;
+  if (!value || !value.trim()) {
+    return null;
+  }
+  return value.trim();
+}
+
 function readOptionalPublicBoolean(name: 'EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH'): boolean {
   const value = process.env.EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH;
   if (!value) {
@@ -45,3 +53,7 @@ export const API_URL = normalizeBaseUrl(
 export const ENABLE_COMPETITIVE_DEPTH = readOptionalPublicBoolean(
   'EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH'
 );
+
+export const DELETE_ACCOUNT_WEB_URL = readOptionalPublicEnv(
+  'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
+) ?? 'https://ilpeppino.github.io/lagalaga/delete-account.html';

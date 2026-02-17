@@ -8,6 +8,8 @@ export interface AppUser {
   robloxUsername: string;
   robloxDisplayName: string | null;
   robloxProfileUrl: string | null;
+  status: 'ACTIVE' | 'PENDING_DELETION' | 'DELETED';
+  tokenVersion: number;
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
@@ -61,6 +63,8 @@ export class UserService {
       robloxUsername: data.roblox_username,
       robloxDisplayName: data.roblox_display_name,
       robloxProfileUrl: data.roblox_profile_url,
+      status: data.status,
+      tokenVersion: data.token_version ?? 0,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       lastLoginAt: data.last_login_at,
@@ -91,6 +95,8 @@ export class UserService {
       robloxUsername: data.roblox_username,
       robloxDisplayName: data.roblox_display_name,
       robloxProfileUrl: data.roblox_profile_url,
+      status: data.status,
+      tokenVersion: data.token_version ?? 0,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       lastLoginAt: data.last_login_at,

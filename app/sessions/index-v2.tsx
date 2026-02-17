@@ -2,15 +2,16 @@
  * Epic 4 Story 4.3: Browse Sessions UI
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
-  RefreshControl,
   Image,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   Platform,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -66,8 +67,12 @@ export default function SessionsListScreenV2() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [isQuickStarting, setIsQuickStarting] = useState(false);
   const [fallbackThumbnails, setFallbackThumbnails] = useState<Record<number, string>>({});
+  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+  const sessionsRef = useRef<Session[]>([]);
+  const plannedSessionsRef = useRef<Session[]>([]);
 
   const LIMIT = 20;
 
@@ -128,27 +133,60 @@ export default function SessionsListScreenV2() {
     }, [loadAllSessions])
   );
 
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    plannedSessionsRef.current = plannedSessions;
+  }, [plannedSessions]);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
   const handleRefresh = useCallback(() => {
     loadAllSessions(true);
   }, [loadAllSessions]);
 
   const handleDeleteSession = useCallback(async (sessionId: string) => {
+    if (deletingSessionIds.has(sessionId)) return;
+
+    const activeBackup = sessionsRef.current.find((session) => session.id === sessionId) ?? null;
+    const plannedBackup = plannedSessionsRef.current.find((session) => session.id === sessionId) ?? null;
+    if (!activeBackup && !plannedBackup) return;
+
     try {
-      setIsDeleting(true);
+      setDeletingSessionIds((current) => {
+        const next = new Set(current);
+        next.add(sessionId);
+        return next;
+      });
+      swipeableRefs.current[sessionId]?.close();
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+      setPlannedSessions((prev) => prev.filter((session) => session.id !== sessionId));
       await sessionsAPIStoreV2.deleteSession(sessionId);
-
-      // Optimistically remove from UI
-      setPlannedSessions(prev => prev.filter(s => s.id !== sessionId));
-
       logger.info('Session deleted successfully', { sessionId });
     } catch (error) {
-      presentError(error);
-      // Reload to ensure consistency
-      await loadAllSessions();
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      if (activeBackup) {
+        setSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, activeBackup]));
+      }
+      if (plannedBackup) {
+        setPlannedSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, plannedBackup]));
+      }
+      presentError(error, { fallbackMessage: 'Failed to delete session. Please try again.' });
     } finally {
-      setIsDeleting(false);
+      setDeletingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
     }
-  }, [loadAllSessions, presentError]);
+  }, [deletingSessionIds, presentError]);
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -159,6 +197,7 @@ export default function SessionsListScreenV2() {
       const deletedCount = await sessionsAPIStoreV2.bulkDeleteSessions(idsToDelete);
 
       // Optimistically remove from UI
+      setSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
       setPlannedSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
 
       // Exit selection mode
@@ -280,20 +319,13 @@ export default function SessionsListScreenV2() {
     };
   }, [mergedSessions, fallbackThumbnails]);
 
-  const renderDeleteAction = () => (
-    <View style={styles.deleteAction}>
-      <ThemedText type="labelLarge" lightColor="#fff" darkColor="#fff">
-        Delete
-      </ThemedText>
-    </View>
-  );
-
   const renderSession = ({ item }: { item: Session }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
     const isPlanned = plannedSessionIds.has(item.id);
     const sessionStatusUi = getSessionLiveBadge(item);
     const isLive = sessionStatusUi.isLive;
     const isSelected = selectedIds.has(item.id);
+    const isDeletingSession = deletingSessionIds.has(item.id);
     const thumbnailUrl = item.game.thumbnailUrl || fallbackThumbnails[item.game.placeId];
     const visibilityLabel =
       item.visibility === 'public' ? 'Public' : item.visibility === 'friends' ? 'Friends Only' : 'Invite Only';
@@ -423,13 +455,36 @@ export default function SessionsListScreenV2() {
     // Wrap in Swipeable only for planned sessions when not in selection mode
     if (isPlanned && !selectionMode && Platform.OS !== 'web') {
       return (
-        <Swipeable
-          renderRightActions={renderDeleteAction}
-          onSwipeableOpen={() => handleDeleteSession(item.id)}
-          overshootRight={false}
-        >
-          {sessionCard}
-        </Swipeable>
+        <View style={styles.swipeableWrapper}>
+          <Swipeable
+            ref={(instance) => {
+              swipeableRefs.current[item.id] = instance;
+            }}
+            renderRightActions={() => (
+              <View style={styles.deleteAction}>
+                {isDeletingSession ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <ThemedText type="labelLarge" lightColor="#fff" darkColor="#fff">
+                    Delete
+                  </ThemedText>
+                )}
+              </View>
+            )}
+            onSwipeableOpen={(direction) => {
+              if (direction === 'right') {
+                handleDeleteSession(item.id);
+              }
+            }}
+            friction={1.8}
+            rightThreshold={36}
+            overshootRight={false}
+            overshootFriction={8}
+            enableTrackpadTwoFingerGesture
+          >
+            {sessionCard}
+          </Swipeable>
+        </View>
       );
     }
 
@@ -439,12 +494,17 @@ export default function SessionsListScreenV2() {
         <View style={styles.webDeleteContainer}>
           {sessionCard}
           <TouchableOpacity
-            style={styles.webDeleteButton}
+            style={[styles.webDeleteButton, isDeletingSession && styles.webDeleteButtonDisabled]}
             onPress={() => handleDeleteSession(item.id)}
+            disabled={isDeletingSession}
           >
-            <ThemedText type="labelSmall" lightColor="#ff3b30" darkColor="#ff453a">
-              Delete
-            </ThemedText>
+            {isDeletingSession ? (
+              <ActivityIndicator size="small" color="#ff3b30" />
+            ) : (
+              <ThemedText type="labelSmall" lightColor="#ff3b30" darkColor="#ff453a">
+                Delete
+              </ThemedText>
+            )}
           </TouchableOpacity>
         </View>
       );
@@ -503,42 +563,41 @@ export default function SessionsListScreenV2() {
             : {}),
         }}
       />
-      <ScrollView
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
-        }
-      >
-        <View style={[styles.sectionHeader, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
-          <ThemedText type="headlineSmall">Sessions</ThemedText>
-        </View>
-
-        {loadError && (
-          <View style={styles.errorContainer}>
-            <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
-              {loadError}
-            </ThemedText>
+      <FlatList
+        data={mergedSessions}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.sessionWrapper}>
+            {renderSession({ item })}
           </View>
         )}
+        contentContainerStyle={styles.list}
+        refreshing={isRefreshing}
+        onRefresh={handleRefresh}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={(
+          <>
+            <View style={[styles.sectionHeader, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
+              <ThemedText type="headlineSmall">Sessions</ThemedText>
+            </View>
 
-        {!isLoading && mergedSessions.length === 0 && (
+            {loadError && (
+              <View style={styles.errorContainer}>
+                <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
+                  {loadError}
+                </ThemedText>
+              </View>
+            )}
+          </>
+        )}
+        ListEmptyComponent={!isLoading ? (
           <View style={styles.sectionEmpty}>
-            <ThemedText
-              type="bodyMedium"
-              lightColor="#666"
-              darkColor="#aaa"
-            >
+            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#aaa">
               No sessions yet
             </ThemedText>
           </View>
-        )}
-
-        {mergedSessions.map((session) => (
-          <View key={session.id} style={styles.sessionWrapper}>
-            {renderSession({ item: session })}
-          </View>
-        ))}
-      </ScrollView>
+        ) : null}
+      />
 
       {!selectionMode && (
         <View style={styles.fabStack}>
@@ -601,6 +660,10 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingBottom: 80,
+  },
+  swipeableWrapper: {
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   sessionCard: {
     borderRadius: 12,
@@ -721,7 +784,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff3b30',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 80,
+    width: 104,
     height: '100%',
   },
   webDeleteContainer: {
@@ -736,6 +799,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#ff3b30',
+  },
+  webDeleteButtonDisabled: {
+    opacity: 0.6,
   },
   footer: {
     paddingVertical: 20,

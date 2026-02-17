@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 import { Button, type ButtonProps } from './Button';
 
@@ -12,12 +13,14 @@ export interface AnimatedButtonProps extends ButtonProps {
   containerStyle?: StyleProp<ViewStyle>;
   enableScaleAnimation?: boolean;
   pressScale?: number;
+  enableHaptics?: boolean;
 }
 
 export function AnimatedButton({
   containerStyle,
   enableScaleAnimation = true,
   pressScale = 0.97,
+  enableHaptics = false,
   onPressIn,
   onPressOut,
   ...rest
@@ -60,7 +63,11 @@ export function AnimatedButton({
   });
 
   function handlePressIn(event: Parameters<NonNullable<ButtonProps['onPressIn']>>[0]) {
-    if (enableScaleAnimation && !reduceMotionEnabled) {
+    if (!rest.disabled && enableHaptics) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+
+    if (!rest.disabled && enableScaleAnimation && !reduceMotionEnabled) {
       scale.value = withSpring(pressScale, {
         damping: 16,
         stiffness: 220,
@@ -72,7 +79,7 @@ export function AnimatedButton({
   }
 
   function handlePressOut(event: Parameters<NonNullable<ButtonProps['onPressOut']>>[0]) {
-    if (enableScaleAnimation && !reduceMotionEnabled) {
+    if (!rest.disabled && enableScaleAnimation && !reduceMotionEnabled) {
       scale.value = withSpring(1, {
         damping: 16,
         stiffness: 220,

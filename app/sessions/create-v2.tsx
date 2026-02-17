@@ -29,7 +29,7 @@ import type { RobloxFriend, SessionVisibility } from '@/src/features/sessions/ty
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Button, TextInput } from '@/components/ui/paper';
+import { AnimatedButton as Button, TextInput } from '@/components/ui/paper';
 import { Menu, SegmentedButtons, Switch } from 'react-native-paper';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { ApiError } from '@/src/lib/errors';
@@ -558,6 +558,7 @@ export default function CreateSessionScreenV2() {
         title={isCreating ? 'Creating Session...' : 'CREATE SESSION'}
         variant="filled"
         buttonColor="#007AFF"
+        enableHaptics
         style={[styles.submitButton, (isCreating || !robloxUrl || !title) && styles.submitButtonDisabled]}
         contentStyle={styles.submitButtonContent}
         labelStyle={styles.submitButtonLabel}

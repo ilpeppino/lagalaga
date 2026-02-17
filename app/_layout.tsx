@@ -80,8 +80,14 @@ export default function RootLayout() {
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
               <Stack>
                 <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="auth" options={{ headerShown: false }} />
-                <Stack.Screen name="sessions" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="auth"
+                  options={{ headerShown: false, animation: 'fade', animationDuration: 180 }}
+                />
+                <Stack.Screen
+                  name="sessions"
+                  options={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220 }}
+                />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
                 <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />

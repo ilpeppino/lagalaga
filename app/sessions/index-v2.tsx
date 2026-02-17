@@ -2,7 +2,7 @@
  * Epic 4 Story 4.3: Browse Sessions UI
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,11 +10,17 @@ import {
   FlatList,
   TouchableOpacity,
   Platform,
-  LayoutAnimation,
-  UIManager,
 } from 'react-native';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { Swipeable } from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  FadeInDown,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
@@ -25,6 +31,7 @@ import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { getSessionLiveBadge, sessionUiColors } from '@/src/ui/sessionStatusUi';
+import { LivePulseDot } from '@/components/LivePulseDot';
 
 /**
  * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
@@ -52,6 +59,66 @@ function formatRelativeTime(isoString: string): string {
   }
 }
 
+function CollapsibleSessionRow({
+  sessionId,
+  isCollapsing,
+  onCollapsed,
+  children,
+}: {
+  sessionId: string;
+  isCollapsing: boolean;
+  onCollapsed: (sessionId: string) => void;
+  children: ReactNode;
+}) {
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const collapseProgress = useSharedValue(1);
+  const collapsedOnceRef = useRef(false);
+
+  const notifyCollapsed = useCallback(() => {
+    if (collapsedOnceRef.current) return;
+    collapsedOnceRef.current = true;
+    onCollapsed(sessionId);
+  }, [onCollapsed, sessionId]);
+
+  useEffect(() => {
+    if (isCollapsing) {
+      collapseProgress.value = withTiming(
+        0,
+        { duration: 200, easing: Easing.out(Easing.quad) },
+        (finished) => {
+          if (finished) {
+            runOnJS(notifyCollapsed)();
+          }
+        }
+      );
+      return;
+    }
+
+    collapsedOnceRef.current = false;
+    collapseProgress.value = withTiming(1, { duration: 140, easing: Easing.out(Easing.quad) });
+  }, [collapseProgress, isCollapsing, notifyCollapsed]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: 0.1 + collapseProgress.value * 0.9,
+    transform: [{ scaleY: 0.96 + collapseProgress.value * 0.04 }],
+    height: measuredHeight == null ? undefined : measuredHeight * collapseProgress.value,
+    marginTop: 12 * collapseProgress.value,
+  }));
+
+  return (
+    <Animated.View
+      style={[styles.sessionRowContainer, animatedStyle]}
+      onLayout={(event) => {
+        if (measuredHeight == null) {
+          setMeasuredHeight(event.nativeEvent.layout.height);
+        }
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 export default function SessionsListScreenV2() {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -68,11 +135,13 @@ export default function SessionsListScreenV2() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
+  const [collapsingSessionIds, setCollapsingSessionIds] = useState<Set<string>>(new Set());
   const [isQuickStarting, setIsQuickStarting] = useState(false);
   const [fallbackThumbnails, setFallbackThumbnails] = useState<Record<number, string>>({});
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const sessionsRef = useRef<Session[]>([]);
   const plannedSessionsRef = useRef<Session[]>([]);
+  const deleteBackupsRef = useRef<Record<string, { active: Session | null; planned: Session | null }>>({});
 
   const LIMIT = 20;
 
@@ -141,52 +210,62 @@ export default function SessionsListScreenV2() {
     plannedSessionsRef.current = plannedSessions;
   }, [plannedSessions]);
 
-  useEffect(() => {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-  }, []);
-
   const handleRefresh = useCallback(() => {
     loadAllSessions(true);
   }, [loadAllSessions]);
 
   const handleDeleteSession = useCallback(async (sessionId: string) => {
-    if (deletingSessionIds.has(sessionId)) return;
+    if (deletingSessionIds.has(sessionId) || collapsingSessionIds.has(sessionId)) return;
 
     const activeBackup = sessionsRef.current.find((session) => session.id === sessionId) ?? null;
     const plannedBackup = plannedSessionsRef.current.find((session) => session.id === sessionId) ?? null;
     if (!activeBackup && !plannedBackup) return;
 
+    deleteBackupsRef.current[sessionId] = { active: activeBackup, planned: plannedBackup };
+
+    setDeletingSessionIds((current) => {
+      const next = new Set(current);
+      next.add(sessionId);
+      return next;
+    });
+    setCollapsingSessionIds((current) => {
+      const next = new Set(current);
+      next.add(sessionId);
+      return next;
+    });
+    swipeableRefs.current[sessionId]?.close();
+  }, [collapsingSessionIds, deletingSessionIds]);
+
+  const handleCollapsedDelete = useCallback(async (sessionId: string) => {
+    setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+    setPlannedSessions((prev) => prev.filter((session) => session.id !== sessionId));
+
     try {
-      setDeletingSessionIds((current) => {
-        const next = new Set(current);
-        next.add(sessionId);
-        return next;
-      });
-      swipeableRefs.current[sessionId]?.close();
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setSessions((prev) => prev.filter((session) => session.id !== sessionId));
-      setPlannedSessions((prev) => prev.filter((session) => session.id !== sessionId));
       await sessionsAPIStoreV2.deleteSession(sessionId);
       logger.info('Session deleted successfully', { sessionId });
     } catch (error) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      if (activeBackup) {
-        setSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, activeBackup]));
+      const backup = deleteBackupsRef.current[sessionId];
+      if (backup?.active) {
+        setSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, backup.active!]));
       }
-      if (plannedBackup) {
-        setPlannedSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, plannedBackup]));
+      if (backup?.planned) {
+        setPlannedSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, backup.planned!]));
       }
       presentError(error, { fallbackMessage: 'Failed to delete session. Please try again.' });
     } finally {
+      delete deleteBackupsRef.current[sessionId];
       setDeletingSessionIds((current) => {
         const next = new Set(current);
         next.delete(sessionId);
         return next;
       });
+      setCollapsingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
     }
-  }, [deletingSessionIds, presentError]);
+  }, [presentError]);
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -393,6 +472,11 @@ export default function SessionsListScreenV2() {
                   {item.title || item.game.gameName || 'Roblox Session'}
                 </ThemedText>
                 {isLive && (
+                  <View style={styles.liveIndicatorWrap}>
+                    <LivePulseDot color={sessionUiColors.live} />
+                  </View>
+                )}
+                {isLive && (
                   <View style={[styles.liveBadge, { backgroundColor: sessionStatusUi.color }]}>
                     <ThemedText type="labelSmall" lightColor={sessionStatusUi.textColor} darkColor={sessionStatusUi.textColor}>
                       {sessionStatusUi.label}
@@ -567,9 +651,13 @@ export default function SessionsListScreenV2() {
         data={mergedSessions}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.sessionWrapper}>
+          <CollapsibleSessionRow
+            sessionId={item.id}
+            isCollapsing={collapsingSessionIds.has(item.id)}
+            onCollapsed={handleCollapsedDelete}
+          >
             {renderSession({ item })}
-          </View>
+          </CollapsibleSessionRow>
         )}
         contentContainerStyle={styles.list}
         refreshing={isRefreshing}
@@ -591,11 +679,17 @@ export default function SessionsListScreenV2() {
           </>
         )}
         ListEmptyComponent={!isLoading ? (
-          <View style={styles.sectionEmpty}>
+          <Animated.View
+            entering={FadeInDown.duration(230).withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 10 }],
+            })}
+            style={styles.sectionEmpty}
+          >
             <ThemedText type="bodyMedium" lightColor="#666" darkColor="#aaa">
               No sessions yet
             </ThemedText>
-          </View>
+          </Animated.View>
         ) : null}
       />
 
@@ -648,9 +742,8 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
   },
-  sessionWrapper: {
+  sessionRowContainer: {
     paddingHorizontal: 16,
-    paddingTop: 12,
   },
   errorContainer: {
     margin: 16,
@@ -751,6 +844,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
+  },
+  liveIndicatorWrap: {
+    marginRight: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hostBadge: {
     paddingHorizontal: 8,

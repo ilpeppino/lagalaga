@@ -46,7 +46,13 @@ export default function SessionsLayout() {
   }
 
   return (
-    <Stack>
+    <Stack
+      screenOptions={{
+        animation: 'slide_from_right',
+        animationDuration: 220,
+        gestureEnabled: true,
+      }}
+    >
       <Stack.Screen
         name="index"
         options={{

@@ -3,7 +3,7 @@ import { View, StyleSheet } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
-import { Button } from "@/components/ui/paper";
+import { AnimatedButton } from "@/components/ui/paper";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export default function SignInScreen() {
@@ -43,12 +43,13 @@ export default function SignInScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          <Button
+          <AnimatedButton
             title="Sign in with Roblox"
             variant="filled"
             onPress={handleRobloxSignIn}
             loading={loading}
             disabled={loading}
+            enableHaptics
             buttonColor="#007AFF"
             style={styles.button}
             contentStyle={styles.buttonContent}

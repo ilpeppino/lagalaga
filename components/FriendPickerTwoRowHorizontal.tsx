@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,13 @@ import {
   StyleSheet,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import type { RobloxFriend } from '@/src/features/sessions/types-v2';
 import { buildTwoRowColumns } from '@/src/features/sessions/friendSelection';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -17,6 +24,85 @@ interface FriendPickerTwoRowHorizontalProps {
   selectedIds: number[];
   onToggle: (friendId: number) => void;
   disabled?: boolean;
+}
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedCheckmark = Animated.createAnimatedComponent(View);
+
+function FriendChip({
+  friend,
+  selected,
+  disabled,
+  isDark,
+  onToggle,
+}: {
+  friend: RobloxFriend;
+  selected: boolean;
+  disabled: boolean;
+  isDark: boolean;
+  onToggle: (friendId: number) => void;
+}) {
+  const pressScale = useSharedValue(1);
+  const selectedProgress = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    selectedProgress.value = withTiming(selected ? 1 : 0, { duration: 170 });
+  }, [selected, selectedProgress]);
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+    borderWidth: 1 + selectedProgress.value,
+    borderColor: interpolateColor(
+      selectedProgress.value,
+      [0, 1],
+      [isDark ? '#2f2f2f' : '#ddd', '#007AFF']
+    ),
+    backgroundColor: interpolateColor(
+      selectedProgress.value,
+      [0, 1],
+      [isDark ? '#171717' : '#f8f8f8', isDark ? '#10253f' : '#EAF3FF']
+    ),
+  }));
+
+  const checkmarkAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: selectedProgress.value,
+    transform: [{ scale: 0.85 + selectedProgress.value * 0.15 }],
+  }));
+
+  return (
+    <AnimatedPressable
+      style={[styles.card, cardAnimatedStyle, disabled && styles.cardDisabled]}
+      onPress={() => onToggle(friend.id)}
+      onPressIn={() => {
+        if (disabled) return;
+        pressScale.value = withTiming(0.96, { duration: 90 });
+      }}
+      onPressOut={() => {
+        if (disabled) return;
+        pressScale.value = withSpring(1, {
+          damping: 14,
+          stiffness: 260,
+          mass: 0.7,
+        });
+      }}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled }}
+      testID={`friend-chip-${friend.id}`}
+    >
+      {friend.avatarUrl ? (
+        <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
+      ) : (
+        <View style={[styles.avatar, styles.avatarFallback]} />
+      )}
+      <AnimatedCheckmark style={[styles.checkmarkBadge, checkmarkAnimatedStyle]}>
+        <MaterialIcons name="check" size={12} color="#fff" />
+      </AnimatedCheckmark>
+      <Text numberOfLines={1} style={[styles.name, { color: isDark ? '#e9e9e9' : '#222' }]}>
+        {friend.displayName || friend.name}
+      </Text>
+    </AnimatedPressable>
+  );
 }
 
 export function FriendPickerTwoRowHorizontal({
@@ -43,46 +129,16 @@ export function FriendPickerTwoRowHorizontal({
       >
         {columns.map((column, columnIndex) => (
           <View key={`col-${columnIndex}`} style={styles.column}>
-            {column.map((friend) => {
-              const selected = selectedSet.has(friend.id);
-              return (
-                <Pressable
-                  key={friend.id}
-                  style={[
-                    styles.card,
-                    {
-                      borderColor: isDark ? '#2f2f2f' : '#ddd',
-                      backgroundColor: isDark ? '#171717' : '#f8f8f8',
-                    },
-                    selected && styles.cardSelected,
-                    selected && {
-                      borderColor: '#007AFF',
-                      backgroundColor: isDark ? '#10253f' : '#EAF3FF',
-                    },
-                    disabled && styles.cardDisabled,
-                  ]}
-                  onPress={() => onToggle(friend.id)}
-                  disabled={disabled}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled }}
-                  testID={`friend-chip-${friend.id}`}
-                >
-                  {friend.avatarUrl ? (
-                    <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
-                  ) : (
-                    <View style={[styles.avatar, styles.avatarFallback]} />
-                  )}
-                  {selected && (
-                    <View style={styles.checkmarkBadge}>
-                      <MaterialIcons name="check" size={12} color="#fff" />
-                    </View>
-                  )}
-                  <Text numberOfLines={1} style={[styles.name, { color: isDark ? '#e9e9e9' : '#222' }]}>
-                    {friend.displayName || friend.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            {column.map((friend) => (
+              <FriendChip
+                key={friend.id}
+                friend={friend}
+                selected={selectedSet.has(friend.id)}
+                disabled={disabled}
+                isDark={isDark}
+                onToggle={onToggle}
+              />
+            ))}
             {column.length === 1 && <View style={styles.cardSpacer} />}
           </View>
         ))}
@@ -107,7 +163,6 @@ const styles = StyleSheet.create({
   card: {
     width: 120,
     minHeight: 70,
-    borderWidth: 1,
     borderRadius: 10,
     padding: 8,
     flexDirection: 'row',
@@ -115,9 +170,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
     position: 'relative',
-  },
-  cardSelected: {
-    borderWidth: 2,
   },
   cardDisabled: {
     opacity: 0.6,
@@ -150,5 +202,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
+    opacity: 0,
   },
 });

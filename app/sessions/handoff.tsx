@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { ThemedText } from '@/components/themed-text';
-import { Button } from '@/components/ui/paper';
+import { AnimatedButton as Button } from '@/components/ui/paper';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
@@ -84,7 +84,7 @@ export default function SessionHandoffScreen() {
 
     try {
       await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to open Roblox. Please try again.');
     } finally {
       setBusyAction(null);
@@ -98,7 +98,7 @@ export default function SessionHandoffScreen() {
       await sessionsAPIStoreV2.updateHandoffState(session.id, 'confirmed_in_game');
       Alert.alert('Confirmed', "Great - we've updated your status for the host.");
       await load();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to confirm state. Please try again.');
     } finally {
       setBusyAction(null);
@@ -112,7 +112,7 @@ export default function SessionHandoffScreen() {
       await sessionsAPIStoreV2.updateHandoffState(session.id, 'stuck');
       Alert.alert('Updated', 'The host can now see that you need help.');
       await load();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to update state. Please try again.');
     } finally {
       setBusyAction(null);
@@ -178,6 +178,7 @@ export default function SessionHandoffScreen() {
         style={styles.button}
         onPress={handleOpenRoblox}
         loading={busyAction === 'open'}
+        enableHaptics
       />
 
       <Button

@@ -24,10 +24,11 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Button } from '@/components/ui/paper';
+import { AnimatedButton as Button } from '@/components/ui/paper';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { Dialog, Portal, RadioButton } from 'react-native-paper';
 import type { RobloxPresencePayload } from '@/src/features/sessions/apiStore-v2';
+import { LivePulseDot } from '@/components/LivePulseDot';
 import {
   getHostPresenceLabel,
   getLiveStatusSublabel,
@@ -309,9 +310,12 @@ export default function SessionDetailScreenV2() {
         styles.titleSection,
         { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
-        <ThemedText type="headlineSmall" style={styles.title}>
-          {session.title}
-        </ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="headlineSmall" style={styles.title}>
+            {session.title}
+          </ThemedText>
+          {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
+        </View>
         <ThemedText type="titleLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
           {session.game.gameName || 'Game'}
         </ThemedText>
@@ -370,6 +374,7 @@ export default function SessionDetailScreenV2() {
             onPress={handleJoin}
             loading={isJoining}
             disabled={isJoining}
+            enableHaptics
           />
         )}
 
@@ -383,6 +388,7 @@ export default function SessionDetailScreenV2() {
             contentStyle={styles.actionButtonContent}
             labelStyle={styles.actionButtonLabel}
             onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
+            enableHaptics={isHost}
           />
         )}
 
@@ -598,6 +604,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: {
+    marginBottom: 0,
+    flex: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
   gameName: {

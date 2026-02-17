@@ -27,6 +27,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { Dialog, Portal, RadioButton } from 'react-native-paper';
+import type { RobloxPresencePayload } from '@/src/features/sessions/apiStore-v2';
+import {
+  getHostPresenceLabel,
+  getLiveStatusSublabel,
+  getPresenceUi,
+  getSessionLiveBadge,
+  sessionUiColors,
+} from '@/src/ui/sessionStatusUi';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -43,7 +51,7 @@ export default function SessionDetailScreenV2() {
   const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
-  const [presenceLabel, setPresenceLabel] = useState<string>('Checking...');
+  const [hostPresence, setHostPresence] = useState<RobloxPresencePayload | null>(null);
   const hasShownCreatedPromptRef = useRef(false);
   const [isResultDialogVisible, setIsResultDialogVisible] = useState(false);
   const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
@@ -56,22 +64,9 @@ export default function SessionDetailScreenV2() {
       setSession(data);
       try {
         const presence = await sessionsAPIStoreV2.getRobloxPresence([data.hostId]);
-        if (!presence.available) {
-          setPresenceLabel('Presence unavailable - connect Roblox');
-        } else {
-          const status = presence.statuses?.[0]?.status ?? 'unknown';
-          setPresenceLabel(
-            status === 'in_game'
-              ? 'In game'
-              : status === 'online'
-                ? 'Online'
-                : status === 'offline'
-                  ? 'Offline'
-                  : 'Unknown'
-          );
-        }
+        setHostPresence(presence);
       } catch {
-        setPresenceLabel('Presence unavailable - connect Roblox');
+        setHostPresence({ available: false });
       }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load session details' });
@@ -288,6 +283,10 @@ export default function SessionDetailScreenV2() {
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
   const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
+  const sessionStatusUi = getSessionLiveBadge(session);
+  const hostPresenceUi = getPresenceUi(hostPresence);
+  const hostPresenceLabel = getHostPresenceLabel(hostPresence);
+  const liveStatusSublabel = getLiveStatusSublabel(session, hostPresence);
 
   return (
     <ScrollView
@@ -317,16 +316,23 @@ export default function SessionDetailScreenV2() {
           {session.game.gameName || 'Game'}
         </ThemedText>
         <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
-          Host Presence: {presenceLabel}
+          {hostPresenceLabel}
         </ThemedText>
 
         {/* Status Badges */}
         <View style={styles.badges}>
-          <View style={[styles.badge, styles.statusBadge]}>
-            <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
-              {session.status.toUpperCase()}
+          <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
+            <ThemedText type="labelMedium" lightColor={sessionStatusUi.textColor} darkColor={sessionStatusUi.textColor}>
+              {sessionStatusUi.label}
             </ThemedText>
           </View>
+          {liveStatusSublabel && (
+            <View style={[styles.badge, styles.liveSublabelBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+                {liveStatusSublabel}
+              </ThemedText>
+            </View>
+          )}
           {session.visibility !== 'public' && (
             <View style={[styles.badge, styles.visibilityBadge]}>
               <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
@@ -420,7 +426,12 @@ export default function SessionDetailScreenV2() {
             </View>
             {getParticipantStatusLabel(participant) && (
               <View style={styles.handoffBadge}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                <ThemedText
+                  type="labelSmall"
+                  lightColor="#fff"
+                  darkColor="#fff"
+                  style={styles.handoffBadgeText}
+                >
                   {getParticipantStatusLabel(participant)}
                 </ThemedText>
               </View>
@@ -447,7 +458,7 @@ export default function SessionDetailScreenV2() {
         )}
       </View>
 
-      {(isHost && session.isRanked) || presenceLabel.includes('unavailable') ? (
+      {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
         <View style={[
           styles.section,
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
@@ -466,7 +477,7 @@ export default function SessionDetailScreenV2() {
               loading={isSubmittingResult}
             />
           )}
-          {presenceLabel.includes('unavailable') && (
+          {hostPresenceUi.isUnavailable && (
             <Button
               title="Connect Roblox for Presence"
               variant="outlined"
@@ -605,11 +616,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 4,
   },
-  statusBadge: {
-    backgroundColor: '#34C759',
-  },
   visibilityBadge: {
     backgroundColor: '#007AFF',
+  },
+  liveSublabelBadge: {
+    backgroundColor: sessionUiColors.warning,
   },
   fullBadge: {
     backgroundColor: '#ff3b30',
@@ -653,10 +664,15 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     backgroundColor: '#6c757d',
-    borderRadius: 12,
+    borderRadius: 14,
+    justifyContent: 'center',
+  },
+  handoffBadgeText: {
+    lineHeight: 16,
   },
   stuckUserText: {
     marginBottom: 4,

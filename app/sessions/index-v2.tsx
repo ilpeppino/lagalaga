@@ -23,6 +23,7 @@ import { Card } from '@/components/ui/paper';
 import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
+import { getSessionLiveBadge, sessionUiColors } from '@/src/ui/sessionStatusUi';
 
 /**
  * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
@@ -290,7 +291,8 @@ export default function SessionsListScreenV2() {
   const renderSession = ({ item }: { item: Session }) => {
     const isFull = item.currentParticipants >= item.maxParticipants;
     const isPlanned = plannedSessionIds.has(item.id);
-    const isActive = item.status === 'active';
+    const sessionStatusUi = getSessionLiveBadge(item);
+    const isLive = sessionStatusUi.isLive;
     const isSelected = selectedIds.has(item.id);
     const thumbnailUrl = item.game.thumbnailUrl || fallbackThumbnails[item.game.placeId];
     const visibilityLabel =
@@ -300,7 +302,7 @@ export default function SessionsListScreenV2() {
       <Card
         style={[
           styles.sessionCard,
-          isActive && styles.sessionCardActive,
+          isLive && styles.sessionCardLive,
           isSelected && styles.sessionCardSelected,
         ]}
         mode="elevated"
@@ -358,10 +360,10 @@ export default function SessionsListScreenV2() {
                 >
                   {item.title || item.game.gameName || 'Roblox Session'}
                 </ThemedText>
-                {isActive && (
-                  <View style={styles.activeBadge}>
-                    <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                      Active
+                {isLive && (
+                  <View style={[styles.liveBadge, { backgroundColor: sessionStatusUi.color }]}>
+                    <ThemedText type="labelSmall" lightColor={sessionStatusUi.textColor} darkColor={sessionStatusUi.textColor}>
+                      {sessionStatusUi.label}
                     </ThemedText>
                   </View>
                 )}
@@ -609,9 +611,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  sessionCardActive: {
+  sessionCardLive: {
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: sessionUiColors.live,
     elevation: 5,
   },
   sessionCardSelected: {
@@ -682,10 +684,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  activeBadge: {
+  liveBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: '#007AFF',
     borderRadius: 999,
   },
   hostBadge: {

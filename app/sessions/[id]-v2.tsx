@@ -48,11 +48,6 @@ export default function SessionDetailScreenV2() {
   const [isResultDialogVisible, setIsResultDialogVisible] = useState(false);
   const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
-  const [summary, setSummary] = useState<{
-    participantCount: number;
-    maxParticipants: number;
-    countsByHandoffState: Record<string, number>;
-  } | null>(null);
 
   const loadSession = useCallback(async () => {
     try {
@@ -85,15 +80,6 @@ export default function SessionDetailScreenV2() {
     }
   }, [handleError, id]);
 
-  const loadSummary = useCallback(async () => {
-    try {
-      const data = await sessionsAPIStoreV2.getSessionSummary(id);
-      setSummary(data);
-    } catch (error) {
-      logger.warn('Failed to load session summary', { error: (error as Error).message });
-    }
-  }, [id]);
-
   const handleShare = useCallback(async (inviteLink?: string) => {
     const link = inviteLink || session?.inviteLink;
     if (!link || !session) return;
@@ -111,12 +97,6 @@ export default function SessionDetailScreenV2() {
   useEffect(() => {
     loadSession();
   }, [loadSession]);
-
-  useEffect(() => {
-    loadSummary();
-    const interval = setInterval(loadSummary, 5000);
-    return () => clearInterval(interval);
-  }, [loadSummary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,23 +216,24 @@ export default function SessionDetailScreenV2() {
     }
   };
 
-  const formatDateTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    return date.toLocaleString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
   const hasJoined = Boolean(
     user && session && (
       session.hostId === user.id ||
       session.participants.some((p) => p.userId === user.id && p.state === 'joined')
     )
   );
+
+  const getParticipantStatusLabel = (participant: SessionDetail['participants'][number]): string | null => {
+    if (participant.handoffState === 'rsvp_joined') return 'Joined';
+    if (participant.handoffState === 'opened_roblox') return 'Opening';
+    if (participant.handoffState === 'confirmed_in_game') return 'In Game';
+    if (participant.handoffState === 'stuck') return 'Stuck';
+    if (participant.state === 'joined') return 'Joined';
+    if (participant.state === 'invited') return 'Invited';
+    if (participant.state === 'left') return 'Left';
+    if (participant.state === 'kicked') return 'Removed';
+    return null;
+  };
 
   if (isLoading) {
     return (
@@ -317,7 +298,7 @@ export default function SessionDetailScreenV2() {
           {session.title}
         </ThemedText>
         <ThemedText type="titleLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
-          {session.game.gameName || 'Roblox Game'}
+          {session.game.gameName || 'Game'}
         </ThemedText>
         <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
           Host Presence: {presenceLabel}
@@ -354,189 +335,7 @@ export default function SessionDetailScreenV2() {
         </View>
       </View>
 
-      {/* Info Grid */}
-      <View style={styles.infoGrid}>
-        <View style={[
-          styles.infoCard,
-          { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-        ]}>
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.infoLabel}>
-            Players
-          </ThemedText>
-          <ThemedText type="titleMedium">
-            {session.currentParticipants}/{session.maxParticipants}
-          </ThemedText>
-        </View>
-
-        {session.scheduledStart && (
-          <View style={[
-            styles.infoCard,
-            { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-          ]}>
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.infoLabel}>
-              Starts
-            </ThemedText>
-            <ThemedText type="titleMedium">
-              {formatDateTime(session.scheduledStart)}
-            </ThemedText>
-          </View>
-        )}
-      </View>
-
-      {/* Lobby Status Summary */}
-      {summary && (
-        <View style={[
-          styles.section,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type="titleMedium" style={styles.sectionTitle}>
-            Lobby Status
-          </ThemedText>
-          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={{ marginBottom: 12 }}>
-            {summary.participantCount} / {summary.maxParticipants} players
-          </ThemedText>
-          <View style={styles.handoffStates}>
-            {summary.countsByHandoffState.rsvp_joined > 0 && (
-              <View style={[styles.handoffChip, { backgroundColor: '#4CAF50' }]}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  Joined: {summary.countsByHandoffState.rsvp_joined}
-                </ThemedText>
-              </View>
-            )}
-            {summary.countsByHandoffState.opened_roblox > 0 && (
-              <View style={[styles.handoffChip, { backgroundColor: '#2196F3' }]}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  Opened: {summary.countsByHandoffState.opened_roblox}
-                </ThemedText>
-              </View>
-            )}
-            {summary.countsByHandoffState.confirmed_in_game > 0 && (
-              <View style={[styles.handoffChip, { backgroundColor: '#8BC34A' }]}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  In Game: {summary.countsByHandoffState.confirmed_in_game}
-                </ThemedText>
-              </View>
-            )}
-            {summary.countsByHandoffState.stuck > 0 && (
-              <View style={[styles.handoffChip, { backgroundColor: '#FF9800' }]}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  Stuck: {summary.countsByHandoffState.stuck}
-                </ThemedText>
-              </View>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Description */}
-      {session.description && (
-        <View style={[
-          styles.section,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type="titleLarge" style={styles.sectionTitle}>
-            Description
-          </ThemedText>
-          <ThemedText type="bodyLarge" lightColor="#666" darkColor="#ccc" style={styles.description}>
-            {session.description}
-          </ThemedText>
-        </View>
-      )}
-
-      {/* Participants */}
-      <View style={[
-        styles.section,
-        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-      ]}>
-        <ThemedText type="titleLarge" style={styles.sectionTitle}>
-          Participants ({session.participants.length})
-        </ThemedText>
-        {session.participants.map((participant) => (
-          <View
-            key={participant.userId}
-            style={[
-              styles.participant,
-              { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
-            ]}
-          >
-            <View style={styles.participantAvatar}>
-              <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-                {participant.userId.substring(0, 2).toUpperCase()}
-              </ThemedText>
-            </View>
-            <View style={styles.participantInfo}>
-              <ThemedText type="bodyLarge">
-                {participant.userId === session.hostId ? 'Host' : 'Member'}
-              </ThemedText>
-              <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
-                {participant.role}
-              </ThemedText>
-            </View>
-            {participant.handoffState && (
-              <View style={styles.handoffBadge}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  {participant.handoffState.replaceAll('_', ' ').toUpperCase()}
-                </ThemedText>
-              </View>
-            )}
-            {participant.role === 'host' && (
-              <View style={styles.hostBadgeSmall}>
-                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                  HOST
-                </ThemedText>
-              </View>
-            )}
-          </View>
-        ))}
-      </View>
-
-      {isHost && (
-        <View style={[
-          styles.section,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type="titleLarge" style={styles.sectionTitle}>
-            Stuck Users ({stuckParticipants.length})
-          </ThemedText>
-          {stuckParticipants.length === 0 ? (
-            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
-              No users marked as stuck.
-            </ThemedText>
-          ) : (
-            stuckParticipants.map((participant) => (
-              <ThemedText key={`stuck-${participant.userId}`} type="bodyLarge" style={styles.stuckUserText}>
-                {participant.userId}
-              </ThemedText>
-            ))
-          )}
-          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.stuckTipText}>
-            Tip: Ask stuck users to open Roblox, then join you from Friends - Join or party invite.
-          </ThemedText>
-          <Button
-            title="Copy Host Tip"
-            variant="outlined"
-            textColor="#007AFF"
-            style={styles.copyTipButton}
-            onPress={() => Clipboard.setStringAsync("Open Roblox, join host from Friends -> Join (or party invite), then return and tap I'm in.")}
-          />
-        </View>
-      )}
-
-      {/* Action Buttons */}
-      <View style={styles.actions}>
-        {session.inviteLink && (
-          <Button
-            title="Share Invite"
-            variant="outlined"
-            textColor="#007AFF"
-            style={[
-              styles.shareButton,
-              { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
-            ]}
-            onPress={() => handleShare()}
-          />
-        )}
-
+      <View style={styles.primaryActions}>
         {!hasJoined && !isFull && (
           <Button
             title="Join Session"
@@ -565,31 +364,6 @@ export default function SessionDetailScreenV2() {
           />
         )}
 
-        {isHost && session.isRanked && (
-          <Button
-            title="Submit Result"
-            variant="filled"
-            buttonColor="#FF6B00"
-            textColor="#fff"
-            style={styles.launchButton}
-            contentStyle={styles.actionButtonContent}
-            labelStyle={styles.actionButtonLabel}
-            onPress={handleOpenResultDialog}
-            disabled={joinedParticipants.length < 2 || isSubmittingResult}
-            loading={isSubmittingResult}
-          />
-        )}
-
-        {presenceLabel.includes('unavailable') && (
-          <Button
-            title="Connect Roblox for Presence"
-            variant="outlined"
-            textColor="#007AFF"
-            style={styles.shareButton}
-            onPress={handleConnectRoblox}
-          />
-        )}
-
         {isFull && !hasJoined && (
           <View style={styles.fullMessage}>
             <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
@@ -599,21 +373,118 @@ export default function SessionDetailScreenV2() {
         )}
       </View>
 
-      {/* Game Info */}
+      {/* Participants */}
       <View style={[
         styles.section,
         { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
         <ThemedText type="titleLarge" style={styles.sectionTitle}>
-          Game Information
+          Players ({joinedParticipants.length} / {session.maxParticipants})
         </ThemedText>
-        <ThemedText type="bodySmall" lightColor="#888" darkColor="#666" style={styles.label}>
-          Canonical URL
-        </ThemedText>
-        <ThemedText type="bodyMedium" lightColor="#007AFF" darkColor="#007AFF" style={styles.link}>
-          {session.game.canonicalWebUrl}
-        </ThemedText>
+        {session.participants.map((participant) => (
+          <View
+            key={participant.userId}
+            style={[
+              styles.participant,
+              { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
+            ]}
+          >
+            <View style={styles.participantAvatar}>
+              <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+                {participant.userId.substring(0, 2).toUpperCase()}
+              </ThemedText>
+            </View>
+            <View style={styles.participantInfo}>
+              <ThemedText type="bodyLarge">
+                {participant.userId}
+              </ThemedText>
+              <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
+                {participant.userId === session.hostId ? 'Host' : 'Member'}
+              </ThemedText>
+            </View>
+            {getParticipantStatusLabel(participant) && (
+              <View style={styles.handoffBadge}>
+                <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
+                  {getParticipantStatusLabel(participant)}
+                </ThemedText>
+              </View>
+            )}
+          </View>
+        ))}
       </View>
+
+      <View style={[
+        styles.section,
+        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        {session.inviteLink && (
+          <Button
+            title="Share Invite"
+            variant="outlined"
+            textColor="#007AFF"
+            style={[
+              styles.shareButton,
+              { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
+            ]}
+            onPress={() => handleShare()}
+          />
+        )}
+      </View>
+
+      {(isHost && session.isRanked) || presenceLabel.includes('unavailable') ? (
+        <View style={[
+          styles.section,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleMedium" style={styles.hostToolsTitle}>
+            Host tools
+          </ThemedText>
+          {isHost && session.isRanked && (
+            <Button
+              title="Submit Result"
+              variant="outlined"
+              textColor="#FF6B00"
+              style={styles.hostToolButton}
+              onPress={handleOpenResultDialog}
+              disabled={joinedParticipants.length < 2 || isSubmittingResult}
+              loading={isSubmittingResult}
+            />
+          )}
+          {presenceLabel.includes('unavailable') && (
+            <Button
+              title="Connect Roblox for Presence"
+              variant="outlined"
+              textColor="#007AFF"
+              style={styles.hostToolButton}
+              onPress={handleConnectRoblox}
+            />
+          )}
+        </View>
+      ) : null}
+
+      {isHost && stuckParticipants.length > 0 && (
+        <View style={[
+          styles.section,
+          styles.stuckCard,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleMedium" style={styles.stuckTitle}>
+            ⚠ Stuck players ({stuckParticipants.length})
+          </ThemedText>
+          {stuckParticipants.map((participant) => (
+            <ThemedText key={`stuck-${participant.userId}`} type="bodyMedium" style={styles.stuckUserText}>
+              {participant.userId}
+            </ThemedText>
+          ))}
+          <Button
+            title="Copy Host Tip"
+            variant="outlined"
+            textColor="#007AFF"
+            style={styles.copyTipButton}
+            onPress={() => Clipboard.setStringAsync("Open Roblox, join host from Friends -> Join (or party invite), then return and tap I'm in.")}
+          />
+        </View>
+      )}
 
       <Portal>
         <Dialog visible={isResultDialogVisible} onDismiss={() => setIsResultDialogVisible(false)}>
@@ -730,34 +601,24 @@ const styles = StyleSheet.create({
   rankedBadge: {
     backgroundColor: '#FF6B00',
   },
-  infoGrid: {
-    flexDirection: 'row',
-    padding: 16,
+  primaryActions: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
     gap: 12,
   },
-  infoCard: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 8,
-  },
-  infoLabel: {
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
   section: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderTopWidth: 1,
   },
   sectionTitle: {
-    marginBottom: 12,
-  },
-  description: {
-    lineHeight: 24,
+    marginBottom: 10,
   },
   participant: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
   },
   participantAvatar: {
@@ -776,34 +637,27 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    marginRight: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
     backgroundColor: '#6c757d',
-    borderRadius: 4,
-  },
-  hostBadgeSmall: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
-  },
-  actions: {
-    padding: 16,
-    gap: 12,
+    borderRadius: 12,
   },
   stuckUserText: {
-    marginBottom: 6,
-  },
-  stuckTipText: {
-    marginTop: 10,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   copyTipButton: {
     borderRadius: 8,
+    marginTop: 6,
   },
   shareButton: {
     borderRadius: 8,
+  },
+  hostToolsTitle: {
+    marginBottom: 8,
+  },
+  hostToolButton: {
+    borderRadius: 8,
+    marginTop: 8,
   },
   joinButton: {
     borderRadius: 8,
@@ -825,21 +679,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  label: {
-    marginBottom: 4,
-    textTransform: 'uppercase',
+  stuckCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#ffd8a8',
+    borderRadius: 10,
+    backgroundColor: '#fff9f1',
+    paddingTop: 10,
+    paddingBottom: 12,
   },
-  link: {
-    marginTop: 4,
-  },
-  handoffStates: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  handoffChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  stuckTitle: {
+    marginBottom: 8,
   },
 });

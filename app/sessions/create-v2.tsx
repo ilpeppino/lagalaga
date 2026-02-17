@@ -18,9 +18,12 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Pressable,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { RobloxFriend, SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
@@ -61,6 +64,7 @@ export default function CreateSessionScreenV2() {
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
   const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
+  const [gameInputMode, setGameInputMode] = useState<'favorites' | 'link'>('favorites');
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [isRanked, setIsRanked] = useState(false);
@@ -76,6 +80,8 @@ export default function CreateSessionScreenV2() {
   const [robloxNotConnected, setRobloxNotConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [friendSearch, setFriendSearch] = useState('');
 
   useEffect(() => {
     if (!user?.id) {
@@ -121,6 +127,15 @@ export default function CreateSessionScreenV2() {
     if (preferredTitle) {
       setTitle(preferredTitle);
     }
+  };
+
+  const switchToLinkMode = () => {
+    setGameInputMode('link');
+    setSelectedFavorite(null);
+  };
+
+  const switchToFavoritesMode = () => {
+    setGameInputMode('favorites');
   };
 
   /**
@@ -209,82 +224,104 @@ export default function CreateSessionScreenV2() {
     }
   };
 
-  return (
-    <ScrollView
-      style={[
-        styles.container,
-        { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }
-      ]}
-      contentContainerStyle={styles.content}
-    >
-      {/* Roblox URL Input (disabled, auto-filled from favorite selection) */}
-      <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Roblox Game Link *
-        </ThemedText>
-        <TextInput
-          style={styles.input}
-          value={robloxUrl}
-          placeholder="Paste a Roblox game URL or select a favorite below"
-          autoCapitalize="none"
-          keyboardType="url"
-          autoCorrect={false}
-          variant="outlined"
-          editable
-          onChangeText={setRobloxUrl}
-        />
-        <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
-          Favorites auto-fill this field. You can also paste a URL manually.
-        </ThemedText>
-      </View>
+  const filteredFriends = friendSearch.trim().length === 0
+    ? friends
+    : friends.filter((friend) => {
+        const q = friendSearch.trim().toLowerCase();
+        const display = (friend.displayName || '').toLowerCase();
+        const username = (friend.name || '').toLowerCase();
+        return display.includes(q) || username.includes(q);
+      });
 
-      {/* Favorites Dropdown */}
+  return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+      {/* Game */}
       <View style={styles.field}>
         <ThemedText type="titleMedium" style={styles.label}>
-          Favorite Game *
+          Game *
         </ThemedText>
-        <Menu
-          visible={favoritesMenuVisible}
-          onDismiss={() => setFavoritesMenuVisible(false)}
-          anchor={(
+        {gameInputMode === 'favorites' ? (
+          <>
+            <Menu
+              visible={favoritesMenuVisible}
+              onDismiss={() => setFavoritesMenuVisible(false)}
+              anchor={(
+                <Button
+                  title={
+                    selectedFavorite
+                      ? getFavoriteDisplayName(selectedFavorite)
+                      : 'Select from your Roblox favorites'
+                  }
+                  variant="outlined"
+                  style={styles.dropdownButton}
+                  contentStyle={styles.dropdownButtonContent}
+                  labelStyle={styles.dropdownButtonLabel}
+                  onPress={() => setFavoritesMenuVisible(true)}
+                />
+              )}
+            >
+              {favorites.map((favorite) => (
+                <Menu.Item
+                  key={favorite.id}
+                  title={getFavoriteDisplayName(favorite)}
+                  onPress={() => handleSelectFavorite(favorite)}
+                />
+              ))}
+              {favorites.length === 0 && isLoadingFavorites && (
+                <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
+              )}
+              {favorites.length === 0 && !!favoritesError && (
+                <Menu.Item
+                  title="Couldn't load favorites. Tap to retry"
+                  onPress={() => {
+                    void refreshFavorites();
+                    setFavoritesMenuVisible(false);
+                  }}
+                />
+              )}
+              {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
+                <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
+              )}
+            </Menu>
             <Button
-              title={
-                selectedFavorite
-                  ? getFavoriteDisplayName(selectedFavorite)
-                  : 'Select from your Roblox favorites'
-              }
+              title="Paste a link instead"
+              variant="text"
+              style={styles.modeSwitchButton}
+              textColor="#007AFF"
+              onPress={switchToLinkMode}
+            />
+          </>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              value={robloxUrl}
+              placeholder="https://www.roblox.com/games/..."
+              autoCapitalize="none"
+              keyboardType="url"
+              autoCorrect={false}
               variant="outlined"
-              style={styles.dropdownButton}
-              contentStyle={styles.dropdownButtonContent}
-              labelStyle={styles.dropdownButtonLabel}
-              onPress={() => setFavoritesMenuVisible(true)}
+              editable
+              onChangeText={setRobloxUrl}
             />
-          )}
-        >
-          {favorites.map((favorite) => (
-            <Menu.Item
-              key={favorite.id}
-              title={getFavoriteDisplayName(favorite)}
-              onPress={() => handleSelectFavorite(favorite)}
+            <Button
+              title="Back to favorites"
+              variant="text"
+              style={styles.modeSwitchButton}
+              textColor="#007AFF"
+              onPress={switchToFavoritesMode}
             />
-          ))}
-          {favorites.length === 0 && isLoadingFavorites && (
-            <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
-          )}
-          {favorites.length === 0 && !!favoritesError && (
-            <Menu.Item
-              title="Couldn't load favorites. Tap to retry"
-              onPress={() => {
-                void refreshFavorites();
-                setFavoritesMenuVisible(false);
-              }}
-            />
-          )}
-          {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
-            <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
-          )}
-        </Menu>
-        {favoritesError && (
+          </>
+        )}
+        {favoritesError && gameInputMode === 'favorites' && (
           <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
             {favoritesError}
           </ThemedText>
@@ -334,35 +371,18 @@ export default function CreateSessionScreenV2() {
         )}
       </View>
 
-      {/* Ranked Mode */}
-      <View style={styles.field}>
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleTextWrap}>
-            <ThemedText type="titleMedium" style={styles.label}>
-              Ranked Mode
-            </ThemedText>
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-              Winner +25, other joined players -25. Quick Play is casual-only.
-            </ThemedText>
-          </View>
-          <Switch
-            value={isRanked}
-            onValueChange={(value) => {
-              setIsRanked(value);
-              if (value) {
-                setVisibility('public');
-              }
-            }}
-            disabled={isCreating}
-          />
-        </View>
-      </View>
-
       {/* Friend Picker */}
       <View style={styles.field}>
         <ThemedText type="titleMedium" style={styles.label}>
           Invite Friends
         </ThemedText>
+        <TextInput
+          style={styles.searchInput}
+          value={friendSearch}
+          onChangeText={setFriendSearch}
+          placeholder="Search friends"
+          variant="outlined"
+        />
         {isLoadingFriends ? (
           <View style={styles.loadingFriendsContainer}>
             <View style={styles.skeletonRow}>
@@ -414,7 +434,7 @@ export default function CreateSessionScreenV2() {
 
         {!isLoadingFriends && !robloxNotConnected && !friendsError && (
           <FriendPickerTwoRowHorizontal
-            friends={friends}
+            friends={filteredFriends}
             selectedIds={selectedFriendIds}
             onToggle={(friendId) => {
               setSelectedFriendIds((current) => toggleFriendSelection(current, friendId));
@@ -424,33 +444,94 @@ export default function CreateSessionScreenV2() {
         )}
       </View>
 
-      {/* Scheduled Start (Optional) */}
+      {/* Advanced Options */}
       <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Scheduled Start (optional)
-        </ThemedText>
-        <Button
-          title={scheduledStart ? scheduledStart.toLocaleString() : 'Tap to set start time'}
-          variant="outlined"
-          style={styles.dateButton}
-          contentStyle={styles.dateButtonContent}
-          labelStyle={styles.dateButtonLabel}
+        <Pressable
+          style={[
+            styles.advancedHeader,
+            { borderColor: colorScheme === 'dark' ? '#2d2d2d' : '#d9d9d9' },
+          ]}
           onPress={() => {
-            if (Platform.OS === 'android') {
-              openAndroidDateTimePicker();
-            } else {
-              setShowDatePicker(true);
-            }
+            setShowAdvancedOptions((current) => !current);
           }}
-        />
-        {scheduledStart && (
-          <Button
-            title="Clear"
-            variant="text"
-            style={styles.clearButton}
-            textColor="#007AFF"
-            onPress={() => setScheduledStart(null)}
+        >
+          <View style={styles.advancedHeaderTextWrap}>
+            <ThemedText type="titleMedium">Advanced options</ThemedText>
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+              Ranked and schedule settings
+            </ThemedText>
+          </View>
+          <MaterialIcons
+            name={showAdvancedOptions ? 'expand-less' : 'expand-more'}
+            size={20}
+            color={colorScheme === 'dark' ? '#bbb' : '#555'}
           />
+        </Pressable>
+
+        {showAdvancedOptions && (
+          <View style={styles.advancedBody}>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleTextWrap}>
+                <ThemedText type="titleMedium" style={styles.label}>
+                  Ranked session
+                </ThemedText>
+                <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+                  Ranked session (affects rating)
+                </ThemedText>
+                <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+                  Only applies to eligible sessions.
+                </ThemedText>
+              </View>
+              <Switch
+                value={isRanked}
+                onValueChange={(value) => {
+                  setIsRanked(value);
+                  if (value) {
+                    setVisibility('public');
+                  }
+                }}
+                disabled={isCreating}
+              />
+            </View>
+
+            <View style={styles.advancedInnerSection}>
+              <ThemedText type="titleMedium" style={styles.label}>
+                Scheduled Start (optional)
+              </ThemedText>
+              <Pressable
+                style={[
+                  styles.scheduleRow,
+                  { borderColor: colorScheme === 'dark' ? '#333' : '#d9d9d9' },
+                  { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fb' },
+                ]}
+                onPress={() => {
+                  if (Platform.OS === 'android') {
+                    openAndroidDateTimePicker();
+                  } else {
+                    setShowDatePicker(true);
+                  }
+                }}
+                disabled={isCreating}
+              >
+                <View style={styles.scheduleLeft}>
+                  <MaterialIcons name="calendar-today" size={18} color={colorScheme === 'dark' ? '#bbb' : '#666'} />
+                  <ThemedText type="bodyLarge" lightColor="#222" darkColor="#eee" style={styles.scheduleValue}>
+                    {scheduledStart ? scheduledStart.toLocaleString() : 'Set start time'}
+                  </ThemedText>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color={colorScheme === 'dark' ? '#bbb' : '#666'} />
+              </Pressable>
+              {scheduledStart && (
+                <Button
+                  title="Clear"
+                  variant="text"
+                  style={styles.clearButton}
+                  textColor="#007AFF"
+                  onPress={() => setScheduledStart(null)}
+                />
+              )}
+            </View>
+          </View>
         )}
       </View>
 
@@ -474,17 +555,18 @@ export default function CreateSessionScreenV2() {
 
       {/* Submit Button */}
       <Button
-        title={isCreating ? 'Creating Session...' : 'Create Session'}
+        title={isCreating ? 'Creating Session...' : 'CREATE SESSION'}
         variant="filled"
         buttonColor="#007AFF"
-        style={styles.submitButton}
+        style={[styles.submitButton, (isCreating || !robloxUrl || !title) && styles.submitButtonDisabled]}
         contentStyle={styles.submitButtonContent}
         labelStyle={styles.submitButtonLabel}
         onPress={handleCreate}
         loading={isCreating}
         disabled={isCreating || !robloxUrl || !title}
       />
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -494,15 +576,19 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 56,
   },
   field: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   label: {
     marginBottom: 8,
   },
   helperText: {
+    marginTop: 4,
+  },
+  modeSwitchButton: {
+    alignSelf: 'flex-start',
     marginTop: 4,
   },
   resolveHint: {
@@ -525,9 +611,36 @@ const styles = StyleSheet.create({
   visibilityPicker: {
     marginTop: 4,
   },
-  toggleRow: {
+  searchInput: {
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  advancedHeader: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  advancedHeaderTextWrap: {
+    flex: 1,
+  },
+  advancedBody: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 12,
+    gap: 10,
+  },
+  advancedInnerSection: {
+    marginTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   },
@@ -556,16 +669,23 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 4,
   },
-  dateButton: {
-    borderRadius: 8,
-  },
-  dateButtonContent: {
+  scheduleRow: {
+    borderWidth: 1,
+    borderRadius: 10,
     minHeight: 52,
-    justifyContent: 'center',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  dateButtonLabel: {
-    textAlign: 'left',
-    width: '100%',
+  scheduleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  scheduleValue: {
+    flex: 1,
   },
   clearButton: {
     marginTop: 8,
@@ -578,11 +698,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   submitButton: {
-    borderRadius: 8,
-    marginTop: 8,
+    borderRadius: 12,
+    marginTop: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+    shadowOpacity: 0,
   },
   submitButtonContent: {
-    minHeight: 56,
+    minHeight: 60,
   },
   submitButtonLabel: {
     color: '#fff',

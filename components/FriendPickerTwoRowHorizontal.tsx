@@ -7,8 +7,10 @@ import {
   Image,
   StyleSheet,
 } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import type { RobloxFriend } from '@/src/features/sessions/types-v2';
 import { buildTwoRowColumns } from '@/src/features/sessions/friendSelection';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface FriendPickerTwoRowHorizontalProps {
   friends: RobloxFriend[];
@@ -23,12 +25,16 @@ export function FriendPickerTwoRowHorizontal({
   onToggle,
   disabled = false,
 }: FriendPickerTwoRowHorizontalProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const columns = useMemo(() => buildTwoRowColumns(friends), [friends]);
 
   return (
     <View>
-      <Text style={styles.countLabel}>Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}</Text>
+      <Text style={[styles.countLabel, { color: isDark ? '#a5a5a5' : '#666' }]}>
+        Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}
+      </Text>
 
       <ScrollView
         horizontal
@@ -42,7 +48,19 @@ export function FriendPickerTwoRowHorizontal({
               return (
                 <Pressable
                   key={friend.id}
-                  style={[styles.card, selected && styles.cardSelected, disabled && styles.cardDisabled]}
+                  style={[
+                    styles.card,
+                    {
+                      borderColor: isDark ? '#2f2f2f' : '#ddd',
+                      backgroundColor: isDark ? '#171717' : '#f8f8f8',
+                    },
+                    selected && styles.cardSelected,
+                    selected && {
+                      borderColor: '#007AFF',
+                      backgroundColor: isDark ? '#10253f' : '#EAF3FF',
+                    },
+                    disabled && styles.cardDisabled,
+                  ]}
                   onPress={() => onToggle(friend.id)}
                   disabled={disabled}
                   accessibilityRole="button"
@@ -54,7 +72,12 @@ export function FriendPickerTwoRowHorizontal({
                   ) : (
                     <View style={[styles.avatar, styles.avatarFallback]} />
                   )}
-                  <Text numberOfLines={1} style={styles.name}>
+                  {selected && (
+                    <View style={styles.checkmarkBadge}>
+                      <MaterialIcons name="check" size={12} color="#fff" />
+                    </View>
+                  )}
+                  <Text numberOfLines={1} style={[styles.name, { color: isDark ? '#e9e9e9' : '#222' }]}>
                     {friend.displayName || friend.name}
                   </Text>
                 </Pressable>
@@ -85,18 +108,16 @@ const styles = StyleSheet.create({
     width: 120,
     minHeight: 70,
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 10,
     padding: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#fff',
     marginBottom: 8,
+    position: 'relative',
   },
   cardSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#EAF3FF',
+    borderWidth: 2,
   },
   cardDisabled: {
     opacity: 0.6,
@@ -118,6 +139,16 @@ const styles = StyleSheet.create({
   name: {
     flex: 1,
     fontSize: 12,
-    color: '#222',
+  },
+  checkmarkBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

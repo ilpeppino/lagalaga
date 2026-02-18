@@ -214,74 +214,58 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 #### app_users
 ```sql
 id                   UUID PRIMARY KEY
-roblox_user_id       VARCHAR(255) UNIQUE
-roblox_username      VARCHAR(100)
-roblox_display_name  VARCHAR(100)
+roblox_user_id       VARCHAR UNIQUE
+roblox_username      VARCHAR
+roblox_display_name  VARCHAR
 roblox_profile_url   TEXT
 avatar_headshot_url  TEXT            -- Cached avatar
 avatar_cached_at     TIMESTAMPTZ     -- Cache timestamp
+status               TEXT            -- 'ACTIVE' | 'PENDING_DELETION' | 'DELETED'
+token_version        INTEGER         -- JWT invalidation counter (default 0)
 created_at           TIMESTAMPTZ
 updated_at           TIMESTAMPTZ
 last_login_at        TIMESTAMPTZ
 ```
 
 **Purpose**: User accounts linked to Roblox OAuth
-**Migration**: `supabase/migrations/20260211000000_create_app_users.sql`, `20260214140159_add_avatar_cache.sql`
 
 #### games
 ```sql
--- v1 fields (legacy)
-id                   UUID PRIMARY KEY
-platform_key         TEXT
-name                 TEXT
-url                  TEXT UNIQUE
-genre                TEXT
-
--- v2 fields (current)
-place_id             BIGINT UNIQUE
-canonical_web_url    TEXT
-canonical_start_url  TEXT
+place_id             BIGINT PRIMARY KEY  -- Roblox place ID
+canonical_web_url    TEXT NOT NULL
+canonical_start_url  TEXT NOT NULL
 game_name            TEXT
-
+game_description     TEXT
+thumbnail_url        TEXT
+max_players          INTEGER
+creator_id           BIGINT
+creator_name         TEXT
 created_at           TIMESTAMPTZ
 updated_at           TIMESTAMPTZ
 ```
 
-**Purpose**: Game metadata supporting both v1 (UUID) and v2 (Roblox place_id) approaches
-**Migration**: `backend/migrations/002_create_sessions_games_v1_v2.sql`
+**Purpose**: Roblox game/experience catalog
 
 #### sessions
 ```sql
 id                   UUID PRIMARY KEY
-
--- v1 fields (legacy)
-host_user_id         UUID
-game_id              UUID (FK -> games.id)
-start_time_utc       TIMESTAMPTZ
-duration_minutes     INTEGER
-max_players          INTEGER
-session_type         TEXT
-
--- Shared fields
-title                TEXT NOT NULL
-visibility           TEXT ('public', 'friends', 'invite_only')
-status               TEXT ('active', 'completed', 'cancelled')
-
--- v2 fields (current)
 place_id             BIGINT (FK -> games.place_id)
 host_id              UUID (FK -> app_users.id)
+title                TEXT NOT NULL
 description          TEXT
-max_participants     INTEGER
+visibility           session_visibility  -- 'public' | 'friends' | 'invite_only'
+status               session_status      -- 'scheduled' | 'active' | 'completed' | 'cancelled'
+max_participants     INTEGER (default 10)
 scheduled_start      TIMESTAMPTZ
-original_input_url   TEXT
-normalized_from      TEXT
-
+scheduled_end        TIMESTAMPTZ
+original_input_url   TEXT NOT NULL
+normalized_from      TEXT NOT NULL
+is_ranked            BOOLEAN (default false)
 created_at           TIMESTAMPTZ
 updated_at           TIMESTAMPTZ
 ```
 
-**Purpose**: Gaming sessions with hybrid v1/v2 schema
-**Migration**: `backend/migrations/002_create_sessions_games_v1_v2.sql`
+**Purpose**: Gaming sessions
 
 #### session_participants
 ```sql
@@ -332,25 +316,31 @@ UNIQUE (user_id, friend_id)
 
 #### roblox_friends_cache
 ```sql
-id                        BIGSERIAL PRIMARY KEY
-user_id                   UUID (FK -> app_users.id)
-roblox_friend_user_id     TEXT
-roblox_friend_username    TEXT
-roblox_friend_display_name TEXT
-synced_at                 TIMESTAMPTZ
-UNIQUE (user_id, roblox_friend_user_id)
+user_id              UUID PRIMARY KEY (FK -> app_users.id)
+roblox_user_id       BIGINT
+friends_json         JSONB DEFAULT '[]'  -- Full friends array blob
+etag                 TEXT
+fetched_at           TIMESTAMPTZ
+expires_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
 ```
 
-**Purpose**: Cached Roblox friends for discovery and suggestions
-**Migration**: `supabase/migrations/20260214123000_add_roblox_friends_cache.sql`
+**Purpose**: Per-user blob cache of Roblox friends list (single row per user)
+**Note**: `roblox_friends_cache_legacy` (row-per-friend) is superseded by this table
+
+#### roblox_friends_cache_legacy
+Row-per-friend legacy cache. Superseded by `roblox_friends_cache`.
 
 #### user_favorites_cache
 ```sql
-(Schema details in database_schema.md)
+user_id              UUID PRIMARY KEY
+favorites_json       JSONB DEFAULT '[]'
+etag                 TEXT
+cached_at            TIMESTAMPTZ
+expires_at           TIMESTAMPTZ
 ```
 
-**Purpose**: Cached user favorite Roblox experiences
-**Migration**: `supabase/migrations/20260214110000_create_user_favorites_cache.sql`
+**Purpose**: Cached user favorite Roblox experiences (blob per user)
 
 #### roblox_experience_cache
 ```sql
@@ -365,7 +355,121 @@ created_at           TIMESTAMPTZ
 ```
 
 **Purpose**: Cache for resolved Roblox game metadata from URLs
-**Migration**: `supabase/migrations/007_add_roblox_experience_cache.sql`
+
+#### session_invited_roblox
+```sql
+session_id           UUID (FK -> sessions.id)
+roblox_user_id       BIGINT
+created_at           TIMESTAMPTZ
+PRIMARY KEY (session_id, roblox_user_id)
+```
+
+**Purpose**: Roblox users explicitly invited to a session before they have app accounts
+
+#### user_push_tokens
+```sql
+id                   UUID PRIMARY KEY
+user_id              UUID (FK -> app_users.id)
+expo_push_token      TEXT UNIQUE with user_id
+device_id            TEXT
+platform             TEXT  -- 'ios' | 'android' | 'web'
+created_at           TIMESTAMPTZ
+last_seen_at         TIMESTAMPTZ
+```
+
+**Purpose**: Expo push notification tokens
+
+#### user_stats
+```sql
+user_id              UUID PRIMARY KEY (FK -> app_users.id)
+sessions_hosted      INTEGER DEFAULT 0
+sessions_joined      INTEGER DEFAULT 0
+streak_days          INTEGER DEFAULT 0
+last_active_date     DATE
+created_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+```
+
+**Purpose**: Aggregate user activity statistics
+
+#### user_achievements
+```sql
+id                   UUID PRIMARY KEY
+user_id              UUID (FK -> app_users.id)
+code                 TEXT
+unlocked_at          TIMESTAMPTZ
+UNIQUE (user_id, code)
+```
+
+**Purpose**: Achievements unlocked by users
+
+#### user_rankings
+```sql
+user_id              UUID PRIMARY KEY (FK -> app_users.id)
+rating               INTEGER DEFAULT 1000  -- ELO-style
+wins                 INTEGER DEFAULT 0
+losses               INTEGER DEFAULT 0
+last_ranked_match_at TIMESTAMPTZ
+created_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+```
+
+**Purpose**: Current competitive ratings
+
+#### match_results
+```sql
+id                   UUID PRIMARY KEY
+session_id           UUID UNIQUE (FK -> sessions.id)
+winner_id            UUID (FK -> app_users.id)
+rating_delta         INTEGER
+created_at           TIMESTAMPTZ
+```
+
+**Purpose**: Results for ranked matches
+
+#### seasons
+```sql
+id                   UUID PRIMARY KEY
+season_number        INTEGER UNIQUE
+start_date           TIMESTAMPTZ
+end_date             TIMESTAMPTZ
+is_active            BOOLEAN DEFAULT false
+created_at           TIMESTAMPTZ
+```
+
+**Purpose**: Competitive seasons
+
+#### season_rankings
+```sql
+id                   UUID PRIMARY KEY
+season_id            UUID (FK -> seasons.id)
+user_id              UUID (FK -> app_users.id)
+final_rating         INTEGER
+created_at           TIMESTAMPTZ
+UNIQUE (season_id, user_id)
+```
+
+**Purpose**: Historical end-of-season rankings
+
+#### account_deletion_requests
+```sql
+id                   UUID PRIMARY KEY
+user_id              UUID (FK -> app_users.id)
+status               TEXT  -- 'PENDING' | 'COMPLETED' | 'CANCELED' | 'FAILED'
+initiator            TEXT  -- 'IN_APP' | 'WEB'
+reason               TEXT
+requested_at         TIMESTAMPTZ
+scheduled_purge_at   TIMESTAMPTZ
+completed_at         TIMESTAMPTZ
+canceled_at          TIMESTAMPTZ
+failed_at            TIMESTAMPTZ
+failure_reason       TEXT
+created_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+UNIQUE (user_id) WHERE status = 'PENDING'  -- one pending request per user
+```
+
+**Purpose**: Lifecycle tracking for GDPR/user-initiated account deletion
 
 ### Relationships
 
@@ -373,11 +477,17 @@ created_at           TIMESTAMPTZ
 - `games` 1 → N `sessions` (via `place_id`)
 - `sessions` N ↔ N `app_users` (via `session_participants`)
 - `sessions` 1 → N `session_invites`
-- `app_users` N ↔ N `app_users` (via `friendships` with canonical ordering)
-- `app_users` 1 → N `roblox_friends_cache` (cached Roblox friends)
+- `sessions` 1 → N `session_invited_roblox`
+- `sessions` 1 → 1 `match_results` (ranked sessions only)
+- `app_users` N ↔ N `app_users` (via `friendships`)
+- `app_users` 1 → 1 `roblox_friends_cache`
+- `app_users` 1 → 1 `user_stats`
+- `app_users` 1 → N `user_achievements`
+- `app_users` 1 → 1 `user_rankings`
+- `seasons` 1 → N `season_rankings`
 
 ### Schema Documentation
-Reference: `docs/canonical/database_schema.md`
+Reference: `docs/canonical/database_schema.md` and `database-schema.md` (live Supabase state)
 
 ## 6. Sessions Domain
 
@@ -604,11 +714,17 @@ fastify.register(robloxRoutes)
 #### Sessions v2 Routes (`/api/sessions`)
 **File**: `backend/src/routes/sessions-v2.ts`
 
-- `POST /api/sessions` - Create session (authenticated)
+- `POST /api/sessions` - Create session; supports `template=quick` and `is_ranked` flag (authenticated)
 - `GET /api/sessions` - List sessions (public, with filters)
 - `GET /api/user/sessions` - List user's planned sessions (authenticated)
 - `GET /api/sessions/:id` - Get session details (public)
+- `GET /api/sessions/:id/invite-details` - Get invite details for a session (authenticated)
+- `GET /api/sessions/:id/summary` - Get session summary / result (authenticated)
+- `POST /api/sessions/:id/result` - Submit match result for ranked session (authenticated)
 - `POST /api/sessions/:id/join` - Join session (authenticated)
+- `POST /api/sessions/:id/decline-invite` - Decline a session invitation (authenticated)
+- `DELETE /api/sessions/:id` - Delete session (host only, authenticated)
+- `POST /api/sessions/bulk-delete` - Bulk delete sessions (authenticated)
 - `GET /api/invites/:code` - Get session by invite code (public)
 
 #### Sessions v1 Routes (Legacy)
@@ -642,12 +758,23 @@ fastify.register(robloxRoutes)
 - `POST /api/me/roblox/sync-friends` - Sync Roblox friends to cache (authenticated)
 - `POST /api/me/register-push-token` - Register push notification token (authenticated)
 
-#### Roblox Connect Routes (`/api/roblox`)
+#### Roblox Connect Routes (`/api/auth`)
 **File**: `backend/src/routes/roblox-connect.routes.ts`
 
-- `GET /api/roblox/start` - Start Roblox OAuth flow for token refresh (authenticated)
-- `POST /api/roblox/callback` - Complete Roblox OAuth token exchange (authenticated)
-- `POST /api/roblox/disconnect` - Disconnect Roblox account (authenticated)
+- `GET /api/auth/roblox/start` - Start Roblox OAuth flow for token refresh (authenticated)
+- `POST /api/auth/roblox/callback` - Complete Roblox OAuth token exchange (authenticated)
+
+#### Leaderboard Routes
+**File**: `backend/src/routes/leaderboard.routes.ts`
+
+- `GET /api/leaderboard` - Get leaderboard (query: `type=weekly|all_time`); feature-flagged by `competitive_depth`
+
+#### Account Routes (`/v1/account`)
+**File**: `backend/src/routes/account.routes.ts`
+
+- `POST /v1/account/deletion-request` - Request account deletion (authenticated)
+- `GET /v1/account/deletion-status` - Get deletion request status (authenticated)
+- `POST /v1/account/deletion-cancel` - Cancel pending deletion request (authenticated)
 
 #### Roblox Routes
 **File**: `backend/src/routes/roblox.ts`
@@ -965,10 +1092,13 @@ Based on the current architecture, the following extensions are feasible:
 - Roblox Presence API integration
 - "Who's playing now" indicators
 
-### 7. Session History & Statistics
-- Archive completed sessions
-- Track user stats (sessions hosted, attended, hours played)
-- Leaderboards
+### 7. ✅ Session History, Statistics & Rankings (Implemented)
+- `user_stats`: sessions_hosted, sessions_joined, streak_days
+- `user_achievements`: achievement codes per user
+- `user_rankings`: ELO-style ratings, wins, losses
+- `match_results`: result per ranked session
+- `seasons` + `season_rankings`: competitive season history
+- `GET /api/leaderboard`: leaderboard endpoint (feature-flagged)
 
 ### 8. Advanced Authorization
 - Role-based permissions (admin, moderator)
@@ -980,9 +1110,15 @@ Based on the current architecture, the following extensions are feasible:
 - Games table already has `platform_key` for other platforms
 - Add Steam, Epic Games, etc.
 
-### 9. Production Hardening
+### 9. ✅ Account Deletion (Implemented)
+- `account_deletion_requests` table with full lifecycle (PENDING → COMPLETED/CANCELED/FAILED)
+- Grace period before purge (configurable `ACCOUNT_DELETION_GRACE_DAYS`)
+- Routes: `POST /v1/account/deletion-request`, `GET /v1/account/deletion-status`, `POST /v1/account/deletion-cancel`
+- Sets `app_users.status = 'PENDING_DELETION'` during grace period
+
+### 10. Production Hardening
 - Redis for session state (currently in-memory Map)
-- Token blacklist for logout
+- Token blacklist for logout (currently mitigated by `token_version` on `app_users`)
 - Rate limiting per user
 - Database connection pooling
 

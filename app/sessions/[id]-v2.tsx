@@ -445,27 +445,28 @@ export default function SessionDetailScreenV2() {
         )}
       </View>
 
-      {/* Participants */}
-      <View style={[
-        styles.section,
-        isCompact && styles.sectionCompact,
-        styles.playersSection,
-        isCompact && styles.playersSectionCompact,
-        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-      ]}>
-        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-          Players ({joinedParticipants.length} / {session.maxParticipants})
-        </ThemedText>
-        <FlatList
-          data={session.participants}
-          keyExtractor={(item) => item.userId}
-          renderItem={renderParticipant}
-          style={styles.playersList}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.playersListContent}
-        />
-      </View>
-      <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
+      <View style={styles.mainContent}>
+        {/* Participants */}
+        <View style={[
+          styles.section,
+          isCompact && styles.sectionCompact,
+          styles.playersSection,
+          isCompact && styles.playersSectionCompact,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
+            Players ({joinedParticipants.length} / {session.maxParticipants})
+          </ThemedText>
+          <FlatList
+            data={session.participants}
+            keyExtractor={(item) => item.userId}
+            renderItem={renderParticipant}
+            style={styles.playersList}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.playersListContent}
+          />
+        </View>
+        <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
 
       <View style={[
         styles.section,
@@ -484,6 +485,7 @@ export default function SessionDetailScreenV2() {
             onPress={() => handleShare()}
           />
         )}
+        </View>
       </View>
 
       {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
@@ -695,8 +697,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: 10,
   },
+  mainContent: {
+    flex: 1,
+    minHeight: 0,
+  },
   playersSection: {
     flex: 1,
+    minHeight: 0,
     marginTop: 12,
   },
   playersSectionCompact: {
@@ -704,12 +711,14 @@ const styles = StyleSheet.create({
   },
   playersList: {
     flex: 1,
+    minHeight: 0,
   },
   playersListContent: {
     paddingBottom: 8,
   },
   footerSections: {
     paddingBottom: 12,
+    flexShrink: 0,
   },
   footerSectionsCompact: {
     paddingBottom: 8,

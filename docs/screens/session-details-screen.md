@@ -14,58 +14,59 @@ Session Details Screen (/sessions/[id])
 Component: SessionDetailScreenV2 (type: React Function Component)
 
 ┌──────────────────────────────────────────────────────────┐
-│ Root Container                                           │
-│ name: styles.container                                   │
-│ type: View                                               │
+│ Root Wrapper                                             │
+│ type: Fragment                                           │
 ├──────────────────────────────────────────────────────────┤
-│ Header Banner                                            │
-│ names: banner / bannerPlaceholder                        │
-│ types: Image OR View + ThemedText                        │
-├──────────────────────────────────────────────────────────┤
-│ Title Section                                            │
-│ name: titleSection                                       │
-│ type: View                                               │
-│ children: titleRow (View), title/game/presence text      │
-│           (ThemedText), status badges (View+ThemedText), │
-│           live indicator (LivePulseDot)                  │
-├──────────────────────────────────────────────────────────┤
-│ Primary Actions                                          │
-│ name: primaryActions                                     │
-│ type: View                                               │
-│ children: Join/Launch/Handoff buttons (Button),          │
-│           full message (View + ThemedText)               │
-├──────────────────────────────────────────────────────────┤
-│ Main Content                                             │
-│ name: mainContent                                        │
-│ type: View                                               │
+│ Main Scroll Content                                      │
+│ type: ScrollView                                         │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ Players Section                                    │  │
-│  │ name: playersSection                               │  │
-│  │ type: View                                         │  │
-│  │ children:                                          │  │
-│  │ - section title (ThemedText)                       │  │
-│  │ - playersList (FlatList)                           │  │
-│  │   - participant row (View) x N                     │  │
-│  │   - ListFooterComponent (optional extra sections)  │  │
+│  │ Header Banner                                     │  │
+│  │ types: Image OR placeholder View + ThemedText     │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Title And Status                                  │  │
+│  │ types: View, ThemedText, LivePulseDot, badge rows │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Primary Actions                                   │  │
+│  │ types: Button, optional full-capacity message     │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Players Header                                    │  │
+│  │ type: View + ThemedText                           │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Players List                                      │  │
+│  │ type: mapped View rows (participant + placeholders│  │
+│  │ for invited/unfilled slots), optional empty state │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Footer Sections (conditional)                     │  │
+│  │ types:                                            │  │
+│  │ - Invite section (Share Invite button)            │  │
+│  │ - Host tools (Submit Result / Connect Roblox)     │  │
+│  │ - Stuck players card (Copy Host Tip)              │  │
 │  └────────────────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────┤
-│ Overlay Dialog Layer                                     │
+│ Overlay Dialog Layer (conditional)                       │
 │ type: Portal > Dialog                                    │
-│ children: Dialog.Title, Dialog.Content, Dialog.Actions   │
-│ row input: RadioButton.Item                              │
+│ children: winner radio options + confirm/cancel actions  │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## Types Used In The Screen
 - `SessionDetail` from `@/src/features/sessions/types-v2`
 - `RobloxPresencePayload` from `@/src/features/sessions/apiStore-v2`
-- `SessionDetail['participants'][number]` for participant items
+- `SessionDetail['participants'][number]` for participant row rendering
 
 ## Important Named UI Elements
-- `Players`
+- `Join Session`
+- `Launch Roblox`
+- `Open Join Handoff`
 - `Share Invite`
 - `Host tools`
 - `Submit Result`
 - `Connect Roblox for Presence`
 - `Copy Host Tip`
+- `Select Winner`

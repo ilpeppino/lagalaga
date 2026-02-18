@@ -15,7 +15,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import type { RobloxFriend } from '@/src/features/sessions/types-v2';
+import type { RobloxFriend, RobloxPresenceType } from '@/src/features/sessions/types-v2';
 import { buildTwoRowColumns } from '@/src/features/sessions/friendSelection';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -28,6 +28,13 @@ interface FriendPickerTwoRowHorizontalProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedCheckmark = Animated.createAnimatedComponent(View);
+
+const PRESENCE_COLORS: Record<RobloxPresenceType, string> = {
+  0: '#8E8E93', // offline — grey
+  1: '#34C759', // online — green
+  2: '#007AFF', // in game — blue
+  3: '#AF52DE', // studio — purple
+};
 
 function FriendChip({
   friend,
@@ -69,6 +76,13 @@ function FriendChip({
     transform: [{ scale: 0.85 + selectedProgress.value * 0.15 }],
   }));
 
+  const presenceType = friend.presence?.userPresenceType;
+  const isInGame = presenceType === 2;
+  const presenceDotColor = presenceType != null ? PRESENCE_COLORS[presenceType] : null;
+  const locationText = isInGame && friend.presence?.lastLocation
+    ? friend.presence.lastLocation
+    : null;
+
   return (
     <AnimatedPressable
       style={[styles.card, cardAnimatedStyle, disabled && styles.cardDisabled]}
@@ -90,17 +104,29 @@ function FriendChip({
       accessibilityState={{ selected, disabled }}
       testID={`friend-chip-${friend.id}`}
     >
-      {friend.avatarUrl ? (
-        <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
-      ) : (
-        <View style={[styles.avatar, styles.avatarFallback]} />
-      )}
+      <View style={styles.avatarWrap}>
+        {friend.avatarUrl ? (
+          <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
+        ) : (
+          <View style={[styles.avatar, styles.avatarFallback]} />
+        )}
+        {presenceDotColor != null && (
+          <View style={[styles.presenceDot, { backgroundColor: presenceDotColor }]} />
+        )}
+      </View>
       <AnimatedCheckmark style={[styles.checkmarkBadge, checkmarkAnimatedStyle]}>
         <MaterialIcons name="check" size={12} color="#fff" />
       </AnimatedCheckmark>
-      <Text numberOfLines={1} style={[styles.name, { color: isDark ? '#e9e9e9' : '#222' }]}>
-        {friend.displayName || friend.name}
-      </Text>
+      <View style={styles.textStack}>
+        <Text numberOfLines={1} style={[styles.name, { color: isDark ? '#e9e9e9' : '#222' }]}>
+          {friend.displayName || friend.name}
+        </Text>
+        {locationText != null && (
+          <Text numberOfLines={1} style={[styles.presenceLocation, { color: isDark ? '#6fb8ff' : '#0055cc' }]}>
+            {locationText}
+          </Text>
+        )}
+      </View>
     </AnimatedPressable>
   );
 }
@@ -179,6 +205,11 @@ const styles = StyleSheet.create({
     minHeight: 70,
     marginBottom: 8,
   },
+  avatarWrap: {
+    position: 'relative',
+    width: 32,
+    height: 32,
+  },
   avatar: {
     width: 32,
     height: 32,
@@ -188,9 +219,26 @@ const styles = StyleSheet.create({
   avatarFallback: {
     backgroundColor: '#ccc',
   },
-  name: {
+  presenceDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  textStack: {
     flex: 1,
+    flexDirection: 'column',
+    gap: 2,
+  },
+  name: {
     fontSize: 12,
+  },
+  presenceLocation: {
+    fontSize: 10,
   },
   checkmarkBadge: {
     position: 'absolute',

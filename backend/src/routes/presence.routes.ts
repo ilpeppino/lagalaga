@@ -17,6 +17,38 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
       connectionService: new RobloxConnectionService(fastify),
     });
 
+    fastify.post<{
+      Body: { userIds: number[] };
+    }>('/api/roblox/presence', {
+      preHandler: authPreHandler,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['userIds'],
+          properties: {
+            userIds: {
+              type: 'array',
+              items: { type: 'integer' },
+              maxItems: 50,
+            },
+          },
+        },
+      },
+    }, async (request, reply) => {
+      const { userIds } = request.body;
+
+      const data = await presenceService.getPresenceByRobloxIds(
+        request.user.userId,
+        userIds
+      );
+
+      return reply.send({
+        success: true,
+        data,
+        requestId: String(request.id),
+      });
+    });
+
     fastify.get<{
       Querystring: { userIds: string };
     }>('/api/presence/roblox/users', {

@@ -12,6 +12,7 @@ import {
   ListSessionsResponse,
   RobloxFavoritesResponse,
   RobloxFriendsResponse,
+  RobloxFriendPresence,
   MatchResultResponse,
   LeaderboardResponse,
   MatchHistoryResponse,
@@ -199,6 +200,46 @@ class SessionsAPIStoreV2 {
     }
 
     return response.data;
+  }
+
+  /**
+   * Fetch presence for a list of Roblox user IDs.
+   * Chunks into batches of 50 and merges results.
+   * Returns a map from robloxUserId → presence.
+   */
+  async fetchBulkPresence(robloxUserIds: number[]): Promise<Map<number, RobloxFriendPresence>> {
+    const CHUNK_SIZE = 50;
+    const presenceMap = new Map<number, RobloxFriendPresence>();
+
+    for (let i = 0; i < robloxUserIds.length; i += CHUNK_SIZE) {
+      const chunk = robloxUserIds.slice(i, i + CHUNK_SIZE);
+      try {
+        const response = await fetchWithAuth<{
+          success: boolean;
+          data: { userPresences: Array<RobloxFriendPresence & { userId: number }> };
+        }>('/api/roblox/presence', {
+          method: 'POST',
+          body: JSON.stringify({ userIds: chunk }),
+          suppressErrorStatusCodes: [429],
+        });
+        if (response.success) {
+          for (const p of response.data.userPresences) {
+            presenceMap.set(p.userId, {
+              userPresenceType: p.userPresenceType,
+              lastLocation: p.lastLocation,
+              placeId: p.placeId,
+              universeId: p.universeId,
+              gameId: p.gameId,
+              lastOnline: p.lastOnline,
+            });
+          }
+        }
+      } catch {
+        // Presence is best-effort; silently degrade on chunk failure
+      }
+    }
+
+    return presenceMap;
   }
 
   /**

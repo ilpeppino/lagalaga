@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { request } from 'undici';
 import { getSupabase } from '../config/supabase.js';
-import { AppError } from '../utils/errors.js';
+import { AppError, ExternalServiceError } from '../utils/errors.js';
 import { RobloxConnectionService } from './roblox-connection.service.js';
+import { TtlCache } from '../lib/ttlCache.js';
+import type { FetchLike } from '../lib/http.js';
+import { fetchWithTimeoutAndRetry } from '../lib/http.js';
 
 export type PresenceStatus = 'offline' | 'online' | 'in_game' | 'in_studio' | 'unknown';
 
@@ -22,11 +25,24 @@ interface PresenceCacheEntry {
   statusesByRobloxId: Map<string, { status: PresenceStatus; lastOnline?: string | null; placeId?: number | null }>;
 }
 
+export interface FriendPresenceItem {
+  userId: number;
+  userPresenceType: 0 | 1 | 2 | 3;
+  lastLocation: string | null;
+  placeId: number | null;
+  universeId: number | null;
+  gameId: string | null;
+  lastOnline: string | null;
+}
+
 interface PresenceDeps {
   supabase?: SupabaseClient;
   connectionService?: Pick<RobloxConnectionService, 'getAccessToken'>;
   requestFn?: typeof request;
   cacheTtlMs?: number;
+  fetchFn?: FetchLike;
+  friendPresenceCache?: TtlCache<string, FriendPresenceItem[]>;
+  friendPresenceCacheTtlMs?: number;
 }
 
 const defaultCacheTtlMs = 20_000;
@@ -52,6 +68,8 @@ export class RobloxPresenceService {
   private readonly connectionService: Pick<RobloxConnectionService, 'getAccessToken'>;
   private readonly requestFn: typeof request;
   private readonly cacheTtlMs: number;
+  private readonly fetchFn: FetchLike;
+  private readonly friendPresenceCache: TtlCache<string, FriendPresenceItem[]>;
 
   constructor(deps: PresenceDeps = {}) {
     this.supabase = deps.supabase ?? getSupabase();
@@ -61,6 +79,9 @@ export class RobloxPresenceService {
     this.connectionService = deps.connectionService;
     this.requestFn = deps.requestFn ?? request;
     this.cacheTtlMs = deps.cacheTtlMs ?? defaultCacheTtlMs;
+    this.fetchFn = deps.fetchFn ?? fetch;
+    this.friendPresenceCache = deps.friendPresenceCache ??
+      new TtlCache<string, FriendPresenceItem[]>(deps.friendPresenceCacheTtlMs ?? 30_000);
   }
 
   async getPresenceForUsers(requesterUserId: string, appUserIds: string[]): Promise<RobloxPresenceResult> {
@@ -202,5 +223,85 @@ export class RobloxPresenceService {
     });
 
     return statusesByRobloxId;
+  }
+
+  /**
+   * Fetch rich presence data for a list of Roblox user IDs directly.
+   * Used by POST /api/roblox/presence.
+   * Returns empty array if requester has no Roblox connection.
+   * Results cached for 30 s (configurable via friendPresenceCacheTtlMs).
+   */
+  async getPresenceByRobloxIds(
+    requesterUserId: string,
+    robloxUserIds: number[]
+  ): Promise<{ userPresences: FriendPresenceItem[] }> {
+    if (robloxUserIds.length === 0) {
+      return { userPresences: [] };
+    }
+
+    const tokenResult = await this.connectionService.getAccessToken(requesterUserId);
+    if ('unavailable' in tokenResult) {
+      return { userPresences: [] };
+    }
+
+    const cacheKey = robloxUserIds.slice().sort((a, b) => a - b).join(',');
+    const cached = this.friendPresenceCache.get(cacheKey);
+    if (cached !== undefined) {
+      return { userPresences: cached };
+    }
+
+    const response = await fetchWithTimeoutAndRetry(
+      'https://presence.roblox.com/v1/presence/users',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokenResult.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userIds: robloxUserIds }),
+      },
+      { fetchFn: this.fetchFn, timeoutMs: 5000, retries: 1, source: 'Roblox Presence' }
+    );
+
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterSec = retryAfterHeader != null ? Number(retryAfterHeader) : undefined;
+      throw new AppError('ROBLOX_RATE_LIMIT', 'Roblox presence rate limit exceeded', 429, {
+        severity: 'warning',
+        metadata: retryAfterSec != null ? { retryAfterSec } : {},
+      });
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new ExternalServiceError('Roblox Presence', `HTTP ${response.status}`);
+    }
+
+    const payload = await response.json() as {
+      userPresences?: Array<{
+        userId?: number;
+        userPresenceType?: number;
+        lastLocation?: string;
+        placeId?: number;
+        rootPlaceId?: number;
+        universeId?: number;
+        gameId?: string;
+        lastOnline?: string;
+      }>;
+    };
+
+    const userPresences: FriendPresenceItem[] = (payload.userPresences ?? [])
+      .filter((p) => p.userId != null)
+      .map((p) => ({
+        userId: p.userId as number,
+        userPresenceType: Math.min(Math.max(p.userPresenceType ?? 0, 0), 3) as 0 | 1 | 2 | 3,
+        lastLocation: p.lastLocation ?? null,
+        placeId: p.placeId ?? p.rootPlaceId ?? null,
+        universeId: p.universeId ?? null,
+        gameId: p.gameId ?? null,
+        lastOnline: p.lastOnline ?? null,
+      }));
+
+    this.friendPresenceCache.set(cacheKey, userPresences);
+    return { userPresences };
   }
 }

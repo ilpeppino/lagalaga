@@ -117,11 +117,23 @@ export interface MatchHistoryResponse {
   entries: MatchHistoryEntry[];
 }
 
+export type RobloxPresenceType = 0 | 1 | 2 | 3;
+
+export interface RobloxFriendPresence {
+  userPresenceType: RobloxPresenceType;
+  lastLocation: string | null;
+  placeId: number | null;
+  universeId: number | null;
+  gameId: string | null;
+  lastOnline: string | null;
+}
+
 export interface RobloxFriend {
   id: number;
   name: string;
   displayName: string;
   avatarUrl: string | null;
+  presence?: RobloxFriendPresence;
 }
 
 export interface RobloxFriendsResponse {

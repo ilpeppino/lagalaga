@@ -11,7 +11,7 @@
  * - Error handling via useErrorHandler
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -20,12 +20,14 @@ import {
   ActivityIndicator,
   Pressable,
   KeyboardAvoidingView,
+  RefreshControl,
+  AppState,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import type { RobloxFriend, SessionVisibility } from '@/src/features/sessions/types-v2';
+import type { RobloxFriend, RobloxFriendPresence, SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -83,6 +85,11 @@ export default function CreateSessionScreenV2() {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [friendSearch, setFriendSearch] = useState('');
 
+  // Presence state (separate from friends — best-effort, updated frequently)
+  const [presenceMap, setPresenceMap] = useState<Map<number, RobloxFriendPresence>>(new Map());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (!user?.id) {
       return;
@@ -117,6 +124,55 @@ export default function CreateSessionScreenV2() {
 
     void loadFriends();
   }, [user?.id, getErrorMessage]);
+
+  const fetchPresence = useCallback(async (friendIds: number[]) => {
+    if (friendIds.length === 0) return;
+    try {
+      const map = await sessionsAPIStoreV2.fetchBulkPresence(friendIds);
+      setPresenceMap(map);
+    } catch {
+      // Presence is best-effort; ignore errors
+    }
+  }, []);
+
+  // Refresh presence on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      if (friends.length > 0) {
+        void fetchPresence(friends.map((f) => f.id));
+      }
+
+      // Refresh every 30 s while screen is focused and app is active
+      presenceIntervalRef.current = setInterval(() => {
+        if (AppState.currentState === 'active' && friends.length > 0) {
+          void fetchPresence(friends.map((f) => f.id));
+        }
+      }, 30_000);
+
+      return () => {
+        if (presenceIntervalRef.current != null) {
+          clearInterval(presenceIntervalRef.current);
+          presenceIntervalRef.current = null;
+        }
+      };
+    }, [friends, fetchPresence])
+  );
+
+  // Fetch presence once friends are loaded
+  useEffect(() => {
+    if (friends.length > 0) {
+      void fetchPresence(friends.map((f) => f.id));
+    }
+  }, [friends, fetchPresence]);
+
+  const handlePullToRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchPresence(friends.map((f) => f.id));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [friends, fetchPresence]);
 
   const handleSelectFavorite = (favorite: Favorite) => {
     setFavoritesMenuVisible(false);
@@ -224,9 +280,14 @@ export default function CreateSessionScreenV2() {
     }
   };
 
+  const friendsWithPresence = useMemo<RobloxFriend[]>(
+    () => friends.map((f) => ({ ...f, presence: presenceMap.get(f.id) })),
+    [friends, presenceMap]
+  );
+
   const filteredFriends = friendSearch.trim().length === 0
-    ? friends
-    : friends.filter((friend) => {
+    ? friendsWithPresence
+    : friendsWithPresence.filter((friend) => {
         const q = friendSearch.trim().toLowerCase();
         const display = (friend.displayName || '').toLowerCase();
         const username = (friend.name || '').toLowerCase();
@@ -242,6 +303,13 @@ export default function CreateSessionScreenV2() {
         style={styles.container}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => { void handlePullToRefresh(); }}
+            tintColor="#007AFF"
+          />
+        }
       >
       {/* Game */}
       <View style={styles.field}>

@@ -290,6 +290,10 @@ export default function SessionDetailScreenV2() {
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
   const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
+  const invitedPlaceholderCount = session.visibility === 'public'
+    ? 0
+    : Math.max(session.maxParticipants - session.participants.length, 0);
+  const totalDisplayedPlayers = session.participants.length + invitedPlaceholderCount;
   const sessionStatusUi = getSessionLiveBadge(session);
   const hostPresenceUi = getPresenceUi(hostPresence);
   const hostPresenceLabel = getHostPresenceLabel(hostPresence);
@@ -334,6 +338,40 @@ export default function SessionDetailScreenV2() {
     (isHost && session.isRanked) ||
     hostPresenceUi.isUnavailable ||
     (isHost && stuckParticipants.length > 0)
+  );
+
+  const renderInvitedPlaceholderRow = (index: number) => (
+    <View
+      key={`invited-placeholder-${index}`}
+      style={[
+        styles.participant,
+        { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
+      ]}
+    >
+      <View style={[styles.participantAvatar, styles.invitedPlaceholderAvatar]}>
+        <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+          ?
+        </ThemedText>
+      </View>
+      <View style={styles.participantInfo}>
+        <ThemedText type="bodyLarge">
+          Invited player
+        </ThemedText>
+        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
+          Member
+        </ThemedText>
+      </View>
+      <View style={styles.handoffBadge}>
+        <ThemedText
+          type="labelSmall"
+          lightColor="#fff"
+          darkColor="#fff"
+          style={styles.handoffBadgeText}
+        >
+          Invited
+        </ThemedText>
+      </View>
+    </View>
   );
 
   return (
@@ -464,23 +502,31 @@ export default function SessionDetailScreenV2() {
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
         ]}>
           <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-            Players ({session.participants.length} / {session.maxParticipants})
+            Players ({totalDisplayedPlayers} / {session.maxParticipants})
           </ThemedText>
         </View>
 
         <View style={styles.playersListContainer}>
           {session.participants.length > 0 ? (
-            session.participants.map((participant) => (
-              <View key={participant.userId}>
-                {renderParticipantRow(participant)}
-              </View>
-            ))
+            <>
+              {session.participants.map((participant) => (
+                <View key={participant.userId}>
+                  {renderParticipantRow(participant)}
+                </View>
+              ))}
+              {Array.from({ length: invitedPlaceholderCount }).map((_, index) => renderInvitedPlaceholderRow(index))}
+            </>
           ) : (
-            <View style={styles.emptyState}>
-              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
-                No participants yet.
-              </ThemedText>
-            </View>
+            <>
+              {Array.from({ length: invitedPlaceholderCount }).map((_, index) => renderInvitedPlaceholderRow(index))}
+              {invitedPlaceholderCount === 0 ? (
+                <View style={styles.emptyState}>
+                  <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
+                    No participants yet.
+                  </ThemedText>
+                </View>
+              ) : null}
+            </>
           )}
         </View>
 
@@ -756,6 +802,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  invitedPlaceholderAvatar: {
+    backgroundColor: '#7a7a7a',
   },
   participantInfo: {
     flex: 1,

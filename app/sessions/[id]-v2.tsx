@@ -293,6 +293,7 @@ export default function SessionDetailScreenV2() {
     <ScrollView
       style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
       contentContainerStyle={styles.content}
+      nestedScrollEnabled
     >
       {/* Header Banner */}
       {session.game.thumbnailUrl || fallbackThumbnail ? (
@@ -409,41 +410,44 @@ export default function SessionDetailScreenV2() {
         <ThemedText type="titleLarge" style={styles.sectionTitle}>
           Players ({joinedParticipants.length} / {session.maxParticipants})
         </ThemedText>
-        {session.participants.map((participant) => (
-          <View
-            key={participant.userId}
-            style={[
-              styles.participant,
-              { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
-            ]}
-          >
-            <View style={styles.participantAvatar}>
-              <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-                {getParticipantInitials(participant)}
-              </ThemedText>
-            </View>
-            <View style={styles.participantInfo}>
-              <ThemedText type="bodyLarge">
-                {getParticipantName(participant)}
-              </ThemedText>
-              <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
-                {participant.userId === session.hostId ? 'Host' : 'Member'}
-              </ThemedText>
-            </View>
-            {getParticipantStatusLabel(participant) && (
-              <View style={styles.handoffBadge}>
-                <ThemedText
-                  type="labelSmall"
-                  lightColor="#fff"
-                  darkColor="#fff"
-                  style={styles.handoffBadgeText}
-                >
-                  {getParticipantStatusLabel(participant)}
+        <ScrollView style={styles.participantsList} contentContainerStyle={styles.participantsListContent} nestedScrollEnabled>
+          {session.participants.map((participant) => (
+            <View
+              key={participant.userId}
+              style={[
+                styles.participant,
+                { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
+              ]}
+            >
+              <View style={styles.participantAvatar}>
+                <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+                  {getParticipantInitials(participant)}
                 </ThemedText>
               </View>
-            )}
-          </View>
-        ))}
+              <View style={styles.participantInfo}>
+                <ThemedText type="bodyLarge">
+                  {getParticipantName(participant)}
+                </ThemedText>
+                <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
+                  {participant.userId === session.hostId ? 'Host' : 'Member'}
+                </ThemedText>
+              </View>
+              {getParticipantStatusLabel(participant) && (
+                <View style={styles.handoffBadge}>
+                  <ThemedText
+                    type="labelSmall"
+                    lightColor="#fff"
+                    darkColor="#fff"
+                    style={styles.handoffBadgeText}
+                    allowFontScaling={false}
+                  >
+                    {getParticipantStatusLabel(participant)}
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+          ))}
+        </ScrollView>
       </View>
 
       <View style={[
@@ -654,6 +658,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: 10,
   },
+  participantsList: {
+    maxHeight: 320,
+  },
+  participantsListContent: {
+    paddingBottom: 2,
+  },
   participant: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -676,15 +686,20 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    minHeight: 34,
+    minHeight: 36,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     backgroundColor: '#6c757d',
-    borderRadius: 17,
+    borderRadius: 18,
     justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   handoffBadgeText: {
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   stuckUserText: {
     marginBottom: 4,

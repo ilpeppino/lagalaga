@@ -12,6 +12,7 @@ import {
   Share,
   Image,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -47,6 +48,9 @@ export default function SessionDetailScreenV2() {
   const { user } = useAuth();
   const { handleError, getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const { height } = useWindowDimensions();
+  const bannerHeight = Math.min(220, Math.max(140, height * 0.22));
+  const isCompact = height < 700;
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
@@ -327,9 +331,12 @@ export default function SessionDetailScreenV2() {
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
       {/* Header Banner */}
       {session.game.thumbnailUrl || fallbackThumbnail ? (
-        <Image source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }} style={styles.banner} />
+        <Image
+          source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }}
+          style={[styles.banner, { height: bannerHeight }]}
+        />
       ) : (
-        <View style={[styles.banner, styles.bannerPlaceholder]}>
+        <View style={[styles.banner, styles.bannerPlaceholder, { height: bannerHeight }]}>
           <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
             {session.game.gameName?.[0] || '?'}
           </ThemedText>
@@ -339,15 +346,16 @@ export default function SessionDetailScreenV2() {
       {/* Title Section */}
       <View style={[
         styles.titleSection,
+        isCompact && styles.titleSectionCompact,
         { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
         <View style={styles.titleRow}>
-          <ThemedText type="headlineSmall" style={styles.title}>
+          <ThemedText type={isCompact ? 'titleLarge' : 'headlineSmall'} style={styles.title}>
             {session.title}
           </ThemedText>
           {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
         </View>
-        <ThemedText type="titleLarge" lightColor="#666" darkColor="#999" style={styles.gameName}>
+        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
           {session.game.gameName || 'Game'}
         </ThemedText>
         <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
@@ -397,7 +405,7 @@ export default function SessionDetailScreenV2() {
         </View>
       </View>
 
-      <View style={styles.primaryActions}>
+      <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
         {!hasJoined && !isFull && (
           <Button
             title="Join Session"
@@ -405,8 +413,8 @@ export default function SessionDetailScreenV2() {
             buttonColor="#34C759"
             textColor="#fff"
             style={styles.joinButton}
-            contentStyle={styles.actionButtonContent}
-            labelStyle={styles.actionButtonLabel}
+            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
             onPress={handleJoin}
             loading={isJoining}
             disabled={isJoining}
@@ -421,8 +429,8 @@ export default function SessionDetailScreenV2() {
             buttonColor="#007AFF"
             textColor="#fff"
             style={styles.launchButton}
-            contentStyle={styles.actionButtonContent}
-            labelStyle={styles.actionButtonLabel}
+            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
             onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
             enableHaptics={isHost}
           />
@@ -440,10 +448,12 @@ export default function SessionDetailScreenV2() {
       {/* Participants */}
       <View style={[
         styles.section,
+        isCompact && styles.sectionCompact,
         styles.playersSection,
+        isCompact && styles.playersSectionCompact,
         { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
-        <ThemedText type="titleLarge" style={styles.sectionTitle}>
+        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
           Players ({joinedParticipants.length} / {session.maxParticipants})
         </ThemedText>
         <FlatList
@@ -455,10 +465,11 @@ export default function SessionDetailScreenV2() {
           contentContainerStyle={styles.playersListContent}
         />
       </View>
-      <View style={styles.footerSections}>
+      <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
 
       <View style={[
         styles.section,
+        isCompact && styles.sectionCompact,
         { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
         {session.inviteLink && (
@@ -478,6 +489,7 @@ export default function SessionDetailScreenV2() {
       {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
         <View style={[
           styles.section,
+          isCompact && styles.sectionCompact,
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
         ]}>
           <ThemedText type="titleMedium" style={styles.hostToolsTitle}>
@@ -509,7 +521,9 @@ export default function SessionDetailScreenV2() {
       {isHost && stuckParticipants.length > 0 && (
         <View style={[
           styles.section,
+          isCompact && styles.sectionCompact,
           styles.stuckCard,
+          isCompact && styles.stuckCardCompact,
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
         ]}>
           <ThemedText type="titleMedium" style={styles.stuckTitle}>
@@ -601,7 +615,6 @@ const styles = StyleSheet.create({
   },
   banner: {
     width: '100%',
-    height: 200,
     backgroundColor: '#e0e0e0',
   },
   bannerPlaceholder: {
@@ -611,6 +624,10 @@ const styles = StyleSheet.create({
   titleSection: {
     padding: 16,
     borderBottomWidth: 1,
+  },
+  titleSectionCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   title: {
     marginBottom: 0,
@@ -661,10 +678,19 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     gap: 12,
   },
+  primaryActionsCompact: {
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 8,
+  },
   section: {
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderTopWidth: 1,
+  },
+  sectionCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   sectionTitle: {
     marginBottom: 10,
@@ -672,6 +698,9 @@ const styles = StyleSheet.create({
   playersSection: {
     flex: 1,
     marginTop: 12,
+  },
+  playersSectionCompact: {
+    marginTop: 8,
   },
   playersList: {
     flex: 1,
@@ -681,6 +710,9 @@ const styles = StyleSheet.create({
   },
   footerSections: {
     paddingBottom: 12,
+  },
+  footerSectionsCompact: {
+    paddingBottom: 8,
   },
   participant: {
     flexDirection: 'row',
@@ -747,10 +779,16 @@ const styles = StyleSheet.create({
   actionButtonContent: {
     minHeight: 56,
   },
+  actionButtonContentCompact: {
+    minHeight: 50,
+  },
   actionButtonLabel: {
     color: '#fff',
     fontSize: 22,
     fontWeight: '600',
+  },
+  actionButtonLabelCompact: {
+    fontSize: 20,
   },
   fullMessage: {
     backgroundColor: '#ffebee',
@@ -767,6 +805,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff9f1',
     paddingTop: 10,
     paddingBottom: 12,
+  },
+  stuckCardCompact: {
+    marginHorizontal: 14,
+    marginTop: 6,
+    paddingTop: 8,
+    paddingBottom: 10,
   },
   stuckTitle: {
     marginBottom: 8,

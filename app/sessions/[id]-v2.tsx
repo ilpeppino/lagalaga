@@ -290,9 +290,7 @@ export default function SessionDetailScreenV2() {
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
   const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
-  const invitedPlaceholderCount = session.visibility === 'public'
-    ? 0
-    : Math.max(session.maxParticipants - session.participants.length, 0);
+  const invitedPlaceholderCount = Math.max(session.maxParticipants - session.participants.length, 0);
   const totalDisplayedPlayers = session.participants.length + invitedPlaceholderCount;
   const sessionStatusUi = getSessionLiveBadge(session);
   const hostPresenceUi = getPresenceUi(hostPresence);

@@ -49,8 +49,10 @@ export default function SessionDetailScreenV2() {
   const { handleError, getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
   const { height } = useWindowDimensions();
-  const bannerHeight = Math.min(200, Math.max(120, height * 0.18));
   const isCompact = height < 700;
+  const bannerHeight = isCompact
+    ? Math.min(170, Math.max(110, height * 0.16))
+    : Math.min(200, Math.max(120, height * 0.18));
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
@@ -292,7 +294,7 @@ export default function SessionDetailScreenV2() {
   const hostPresenceUi = getPresenceUi(hostPresence);
   const hostPresenceLabel = getHostPresenceLabel(hostPresence);
   const liveStatusSublabel = getLiveStatusSublabel(session, hostPresence);
-  const renderParticipant = ({ item: participant }: { item: SessionDetail['participants'][number] }) => (
+  const renderParticipantRow = ({ item: participant }: { item: SessionDetail['participants'][number] }) => (
     <View
       style={[
         styles.participant,
@@ -327,14 +329,141 @@ export default function SessionDetailScreenV2() {
     </View>
   );
 
-  const shouldRenderPlayersListFooter = Boolean(
+  const shouldRenderFooter = Boolean(
     session.inviteLink ||
     (isHost && session.isRanked) ||
     hostPresenceUi.isUnavailable ||
     (isHost && stuckParticipants.length > 0)
   );
 
-  const playersListFooter = shouldRenderPlayersListFooter ? (
+  const renderListHeader = () => (
+    <View>
+      {session.game.thumbnailUrl || fallbackThumbnail ? (
+        <Image
+          source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }}
+          style={[styles.banner, { height: bannerHeight }]}
+        />
+      ) : (
+        <View style={[styles.banner, styles.bannerPlaceholder, { height: bannerHeight }]}>
+          <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
+            {session.game.gameName?.[0] || '?'}
+          </ThemedText>
+        </View>
+      )}
+
+      <View style={[
+        styles.titleSection,
+        isCompact && styles.titleSectionCompact,
+        { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        <View style={styles.titleRow}>
+          <ThemedText type={isCompact ? 'titleLarge' : 'headlineSmall'} style={styles.title}>
+            {session.title}
+          </ThemedText>
+          {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
+        </View>
+        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
+          {session.game.gameName || 'Game'}
+        </ThemedText>
+        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
+          {hostPresenceLabel}
+        </ThemedText>
+
+        <View style={styles.badges}>
+          <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
+            <ThemedText
+              type="labelMedium"
+              lightColor={sessionStatusUi.textColor}
+              darkColor={sessionStatusUi.textColor}
+              style={styles.badgeText}
+            >
+              {sessionStatusUi.label}
+            </ThemedText>
+          </View>
+          {liveStatusSublabel && (
+            <View style={[styles.badge, styles.liveSublabelBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                {liveStatusSublabel}
+              </ThemedText>
+            </View>
+          )}
+          {session.visibility !== 'public' && (
+            <View style={[styles.badge, styles.visibilityBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
+              </ThemedText>
+            </View>
+          )}
+          {session.isRanked && (
+            <View style={[styles.badge, styles.rankedBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                RANKED
+              </ThemedText>
+            </View>
+          )}
+          {isFull && (
+            <View style={[styles.badge, styles.fullBadge]}>
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                FULL
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
+        {!hasJoined && !isFull && (
+          <Button
+            title="Join Session"
+            variant="filled"
+            buttonColor="#34C759"
+            textColor="#fff"
+            style={styles.joinButton}
+            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
+            onPress={handleJoin}
+            loading={isJoining}
+            disabled={isJoining}
+            enableHaptics
+          />
+        )}
+
+        {hasJoined && (
+          <Button
+            title={isHost ? 'Launch Roblox' : 'Open Join Handoff'}
+            variant="filled"
+            buttonColor="#007AFF"
+            textColor="#fff"
+            style={styles.launchButton}
+            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
+            onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
+            enableHaptics={isHost}
+          />
+        )}
+
+        {isFull && !hasJoined && (
+          <View style={styles.fullMessage}>
+            <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
+              This session is full
+            </ThemedText>
+          </View>
+        )}
+      </View>
+
+      <View style={[
+        styles.playersHeader,
+        isCompact && styles.playersHeaderCompact,
+        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+      ]}>
+        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
+          Players ({joinedParticipants.length} / {session.maxParticipants})
+        </ThemedText>
+      </View>
+    </View>
+  );
+
+  const renderListFooter = shouldRenderFooter ? (
     <View style={styles.playersListFooter}>
       <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
         <View style={[
@@ -419,149 +548,28 @@ export default function SessionDetailScreenV2() {
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-      {/* Header Banner */}
-      {session.game.thumbnailUrl || fallbackThumbnail ? (
-        <Image
-          source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }}
-          style={[styles.banner, { height: bannerHeight }]}
-        />
-      ) : (
-        <View style={[styles.banner, styles.bannerPlaceholder, { height: bannerHeight }]}>
-          <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
-            {session.game.gameName?.[0] || '?'}
-          </ThemedText>
-        </View>
-      )}
-
-      {/* Title Section */}
-      <View style={[
-        styles.titleSection,
-        isCompact && styles.titleSectionCompact,
-        { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-      ]}>
-        <View style={styles.titleRow}>
-          <ThemedText type={isCompact ? 'titleLarge' : 'headlineSmall'} style={styles.title}>
-            {session.title}
-          </ThemedText>
-          {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
-        </View>
-        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
-          {session.game.gameName || 'Game'}
-        </ThemedText>
-        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
-          {hostPresenceLabel}
-        </ThemedText>
-
-        {/* Status Badges */}
-        <View style={styles.badges}>
-          <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
-            <ThemedText
-              type="labelMedium"
-              lightColor={sessionStatusUi.textColor}
-              darkColor={sessionStatusUi.textColor}
-              style={styles.badgeText}
-            >
-              {sessionStatusUi.label}
-            </ThemedText>
-          </View>
-          {liveStatusSublabel && (
-            <View style={[styles.badge, styles.liveSublabelBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                {liveStatusSublabel}
-              </ThemedText>
-            </View>
-          )}
-          {session.visibility !== 'public' && (
-            <View style={[styles.badge, styles.visibilityBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
-              </ThemedText>
-            </View>
-          )}
-          {session.isRanked && (
-            <View style={[styles.badge, styles.rankedBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                RANKED
-              </ThemedText>
-            </View>
-          )}
-          {isFull && (
-            <View style={[styles.badge, styles.fullBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                FULL
-              </ThemedText>
-            </View>
-          )}
-        </View>
-      </View>
-
-      <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
-        {!hasJoined && !isFull && (
-          <Button
-            title="Join Session"
-            variant="filled"
-            buttonColor="#34C759"
-            textColor="#fff"
-            style={styles.joinButton}
-            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
-            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
-            onPress={handleJoin}
-            loading={isJoining}
-            disabled={isJoining}
-            enableHaptics
-          />
-        )}
-
-        {hasJoined && (
-          <Button
-            title={isHost ? 'Launch Roblox' : 'Open Join Handoff'}
-            variant="filled"
-            buttonColor="#007AFF"
-            textColor="#fff"
-            style={styles.launchButton}
-            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
-            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
-            onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
-            enableHaptics={isHost}
-          />
-        )}
-
-        {isFull && !hasJoined && (
-          <View style={styles.fullMessage}>
-            <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
-              This session is full
+      <FlatList
+        data={session.participants}
+        keyExtractor={(item) => item.userId}
+        renderItem={renderParticipantRow}
+        style={styles.playersList}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderListHeader}
+        ListFooterComponent={renderListFooter}
+        ListEmptyComponent={(
+          <View style={styles.emptyState}>
+            <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
+              No participants yet.
             </ThemedText>
           </View>
         )}
-      </View>
-
-      <View style={styles.mainContent}>
-        <View style={[
-          styles.section,
-          isCompact && styles.sectionCompact,
-          styles.playersSection,
-          isCompact && styles.playersSectionCompact,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-            Players ({joinedParticipants.length} / {session.maxParticipants})
-          </ThemedText>
-          <View style={styles.playersListContainer}>
-            <FlatList
-              data={session.participants}
-              keyExtractor={(item) => item.userId}
-              renderItem={renderParticipant}
-              style={styles.playersList}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.playersListContent}
-              ListFooterComponent={playersListFooter}
-              removeClippedSubviews={true}
-              scrollEnabled={true}
-            />
-          </View>
-        </View>
-      </View>
+        removeClippedSubviews={true}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+      />
 
       {isResultDialogVisible ? (
         <Portal>
@@ -715,31 +723,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: 10,
   },
-  mainContent: {
-    flex: 1,
-    minHeight: 0,
-  },
-  playersSection: {
-    flex: 1,
-    minHeight: 0,
-    marginTop: 12,
-  },
-  playersSectionCompact: {
-    marginTop: 8,
-  },
   playersList: {
     flex: 1,
-    minHeight: 0,
   },
-  playersListContainer: {
-    flex: 1,
-    minHeight: 0,
-  },
-  playersListContent: {
-    paddingBottom: 6,
+  listContent: {
+    paddingBottom: 20,
   },
   playersListFooter: {
-    paddingBottom: 16,
+    paddingBottom: 24,
+  },
+  playersHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+  },
+  playersHeaderCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   footerSections: {
     paddingBottom: 12,
@@ -771,11 +773,10 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    minHeight: 34,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     backgroundColor: '#6c757d',
-    borderRadius: 18,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -783,9 +784,7 @@ const styles = StyleSheet.create({
   },
   handoffBadgeText: {
     fontSize: 12,
-    lineHeight: 18,
     textAlign: 'center',
-    flexShrink: 1,
   },
   stuckUserText: {
     marginBottom: 4,
@@ -848,5 +847,9 @@ const styles = StyleSheet.create({
   },
   stuckTitle: {
     marginBottom: 8,
+  },
+  emptyState: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 });

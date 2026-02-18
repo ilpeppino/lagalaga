@@ -293,7 +293,6 @@ export default function SessionDetailScreenV2() {
     <ScrollView
       style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
       contentContainerStyle={styles.content}
-      nestedScrollEnabled
     >
       {/* Header Banner */}
       {session.game.thumbnailUrl || fallbackThumbnail ? (
@@ -327,34 +326,39 @@ export default function SessionDetailScreenV2() {
         {/* Status Badges */}
         <View style={styles.badges}>
           <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
-            <ThemedText type="labelMedium" lightColor={sessionStatusUi.textColor} darkColor={sessionStatusUi.textColor}>
+            <ThemedText
+              type="labelMedium"
+              lightColor={sessionStatusUi.textColor}
+              darkColor={sessionStatusUi.textColor}
+              style={styles.badgeText}
+            >
               {sessionStatusUi.label}
             </ThemedText>
           </View>
           {liveStatusSublabel && (
             <View style={[styles.badge, styles.liveSublabelBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
                 {liveStatusSublabel}
               </ThemedText>
             </View>
           )}
           {session.visibility !== 'public' && (
             <View style={[styles.badge, styles.visibilityBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
                 {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
               </ThemedText>
             </View>
           )}
           {session.isRanked && (
             <View style={[styles.badge, styles.rankedBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
                 RANKED
               </ThemedText>
             </View>
           )}
           {isFull && (
             <View style={[styles.badge, styles.fullBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff">
+              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
                 FULL
               </ThemedText>
             </View>
@@ -410,7 +414,7 @@ export default function SessionDetailScreenV2() {
         <ThemedText type="titleLarge" style={styles.sectionTitle}>
           Players ({joinedParticipants.length} / {session.maxParticipants})
         </ThemedText>
-        <ScrollView style={styles.participantsList} contentContainerStyle={styles.participantsListContent} nestedScrollEnabled>
+        <View style={styles.participantsList}>
           {session.participants.map((participant) => (
             <View
               key={participant.userId}
@@ -439,7 +443,6 @@ export default function SessionDetailScreenV2() {
                     lightColor="#fff"
                     darkColor="#fff"
                     style={styles.handoffBadgeText}
-                    allowFontScaling={false}
                   >
                     {getParticipantStatusLabel(participant)}
                   </ThemedText>
@@ -447,7 +450,7 @@ export default function SessionDetailScreenV2() {
               )}
             </View>
           ))}
-        </ScrollView>
+        </View>
       </View>
 
       <View style={[
@@ -565,7 +568,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   centered: {
     flex: 1,
@@ -630,7 +633,13 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 4,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  badgeText: {
+    flexShrink: 1,
   },
   visibilityBadge: {
     backgroundColor: '#007AFF',
@@ -659,10 +668,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   participantsList: {
-    maxHeight: 320,
-  },
-  participantsListContent: {
-    paddingBottom: 2,
+    width: '100%',
   },
   participant: {
     flexDirection: 'row',
@@ -681,25 +687,27 @@ const styles = StyleSheet.create({
   },
   participantInfo: {
     flex: 1,
+    marginRight: 10,
   },
   participantRole: {
     textTransform: 'capitalize',
   },
   handoffBadge: {
-    minHeight: 36,
+    minHeight: 34,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     backgroundColor: '#6c757d',
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     flexShrink: 0,
   },
   handoffBadgeText: {
     fontSize: 12,
-    lineHeight: 16,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    lineHeight: 18,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   stuckUserText: {
     marginBottom: 4,

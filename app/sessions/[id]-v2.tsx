@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
+  FlatList,
   ActivityIndicator,
   Alert,
   Share,
@@ -288,12 +288,43 @@ export default function SessionDetailScreenV2() {
   const hostPresenceUi = getPresenceUi(hostPresence);
   const hostPresenceLabel = getHostPresenceLabel(hostPresence);
   const liveStatusSublabel = getLiveStatusSublabel(session, hostPresence);
+  const renderParticipant = ({ item: participant }: { item: SessionDetail['participants'][number] }) => (
+    <View
+      style={[
+        styles.participant,
+        { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
+      ]}
+    >
+      <View style={styles.participantAvatar}>
+        <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
+          {getParticipantInitials(participant)}
+        </ThemedText>
+      </View>
+      <View style={styles.participantInfo}>
+        <ThemedText type="bodyLarge">
+          {getParticipantName(participant)}
+        </ThemedText>
+        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
+          {participant.userId === session.hostId ? 'Host' : 'Member'}
+        </ThemedText>
+      </View>
+      {getParticipantStatusLabel(participant) && (
+        <View style={styles.handoffBadge}>
+          <ThemedText
+            type="labelSmall"
+            lightColor="#fff"
+            darkColor="#fff"
+            style={styles.handoffBadgeText}
+          >
+            {getParticipantStatusLabel(participant)}
+          </ThemedText>
+        </View>
+      )}
+    </View>
+  );
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
-      contentContainerStyle={styles.content}
-    >
+    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
       {/* Header Banner */}
       {session.game.thumbnailUrl || fallbackThumbnail ? (
         <Image source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }} style={styles.banner} />
@@ -409,49 +440,22 @@ export default function SessionDetailScreenV2() {
       {/* Participants */}
       <View style={[
         styles.section,
+        styles.playersSection,
         { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
       ]}>
         <ThemedText type="titleLarge" style={styles.sectionTitle}>
           Players ({joinedParticipants.length} / {session.maxParticipants})
         </ThemedText>
-        <View style={styles.participantsList}>
-          {session.participants.map((participant) => (
-            <View
-              key={participant.userId}
-              style={[
-                styles.participant,
-                { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
-              ]}
-            >
-              <View style={styles.participantAvatar}>
-                <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-                  {getParticipantInitials(participant)}
-                </ThemedText>
-              </View>
-              <View style={styles.participantInfo}>
-                <ThemedText type="bodyLarge">
-                  {getParticipantName(participant)}
-                </ThemedText>
-                <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
-                  {participant.userId === session.hostId ? 'Host' : 'Member'}
-                </ThemedText>
-              </View>
-              {getParticipantStatusLabel(participant) && (
-                <View style={styles.handoffBadge}>
-                  <ThemedText
-                    type="labelSmall"
-                    lightColor="#fff"
-                    darkColor="#fff"
-                    style={styles.handoffBadgeText}
-                  >
-                    {getParticipantStatusLabel(participant)}
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-          ))}
-        </View>
+        <FlatList
+          data={session.participants}
+          keyExtractor={(item) => item.userId}
+          renderItem={renderParticipant}
+          style={styles.playersList}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.playersListContent}
+        />
       </View>
+      <View style={styles.footerSections}>
 
       <View style={[
         styles.section,
@@ -525,6 +529,7 @@ export default function SessionDetailScreenV2() {
           />
         </View>
       )}
+      </View>
 
       <Portal>
         <Dialog visible={isResultDialogVisible} onDismiss={() => setIsResultDialogVisible(false)}>
@@ -559,16 +564,13 @@ export default function SessionDetailScreenV2() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    paddingBottom: 40,
   },
   centered: {
     flex: 1,
@@ -667,8 +669,18 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: 10,
   },
-  participantsList: {
-    width: '100%',
+  playersSection: {
+    flex: 1,
+    marginTop: 12,
+  },
+  playersList: {
+    flex: 1,
+  },
+  playersListContent: {
+    paddingBottom: 8,
+  },
+  footerSections: {
+    paddingBottom: 12,
   },
   participant: {
     flexDirection: 'row',

@@ -18,36 +18,26 @@ Component: SessionDetailScreenV2 (type: React Function Component)
 │ name: styles.container                                   │
 │ type: View                                               │
 ├──────────────────────────────────────────────────────────┤
-│ Main Scroll                                              │
-│ name: contentScroll                                      │
-│ type: ScrollView                                         │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Banner Area                                        │  │
-│  │ names: banner / bannerPlaceholder                  │  │
-│  │ types: Image OR View + ThemedText                  │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Title Section                                      │  │
-│  │ name: titleSection                                 │  │
-│  │ type: View                                         │  │
-│  │ children:                                          │  │
-│  │ - titleRow (View)                                  │  │
-│  │ - title/game/hostPresence (ThemedText)             │  │
-│  │ - live indicator (LivePulseDot)                    │  │
-│  │ - badges container (View) + badge chips (View)     │  │
-│  │   with badge text (ThemedText)                     │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Primary Actions                                    │  │
-│  │ name: primaryActions                               │  │
-│  │ type: View                                         │  │
-│  │ children:                                          │  │
-│  │ - Join / Launch / Handoff buttons (Button)         │  │
-│  │ - Full message (View + ThemedText)                 │  │
-│  └────────────────────────────────────────────────────┘  │
+│ Header Banner                                            │
+│ names: banner / bannerPlaceholder                        │
+│ types: Image OR View + ThemedText                        │
+├──────────────────────────────────────────────────────────┤
+│ Title Section                                            │
+│ name: titleSection                                       │
+│ type: View                                               │
+│ children: titleRow (View), title/game/presence text      │
+│           (ThemedText), status badges (View+ThemedText), │
+│           live indicator (LivePulseDot)                  │
+├──────────────────────────────────────────────────────────┤
+│ Primary Actions                                          │
+│ name: primaryActions                                     │
+│ type: View                                               │
+│ children: Join/Launch/Handoff buttons (Button),          │
+│           full message (View + ThemedText)               │
+├──────────────────────────────────────────────────────────┤
+│ Main Content                                             │
+│ name: mainContent                                        │
+│ type: View                                               │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ Players Section                                    │  │
@@ -55,48 +45,27 @@ Component: SessionDetailScreenV2 (type: React Function Component)
 │  │ type: View                                         │  │
 │  │ children:                                          │  │
 │  │ - section title (ThemedText)                       │  │
-│  │ - playersList (View)                               │  │
+│  │ - playersList (FlatList)                           │  │
 │  │   - participant row (View) x N                     │  │
-│  │     - avatar (View + ThemedText)                   │  │
-│  │     - info (View + ThemedText)                     │  │
-│  │     - status chip (View + ThemedText)              │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Footer Section                                     │  │
-│  │ name: footerSections                               │  │
-│  │ type: View                                         │  │
-│  │ child: Share Invite (Button)                       │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Host Tools (conditional)                           │  │
-│  │ type: View                                         │  │
-│  │ children: title (ThemedText), buttons (Button)     │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Stuck Players Card (conditional)                   │  │
-│  │ type: View                                         │  │
-│  │ children: text rows (ThemedText), copy button      │  │
+│  │   - ListFooterComponent (optional extra sections)  │  │
 │  └────────────────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────┤
-│ Overlay Dialog Layer                                    │
-│ type: Portal > Dialog                                   │
-│ children: Dialog.Title, Dialog.Content, Dialog.Actions  │
-│ row input: RadioButton.Item                             │
+│ Overlay Dialog Layer                                     │
+│ type: Portal > Dialog                                    │
+│ children: Dialog.Title, Dialog.Content, Dialog.Actions   │
+│ row input: RadioButton.Item                              │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## Types Used In The Screen
 - `SessionDetail` from `@/src/features/sessions/types-v2`
 - `RobloxPresencePayload` from `@/src/features/sessions/apiStore-v2`
-- `SessionDetail['participants'][number]` as participant item type
+- `SessionDetail['participants'][number]` for participant items
 
 ## Important Named UI Elements
 - `Players`
-- `Host tools`
 - `Share Invite`
+- `Host tools`
 - `Submit Result`
 - `Connect Roblox for Presence`
 - `Copy Host Tip`

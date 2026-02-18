@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Alert,
@@ -13,7 +14,6 @@ import {
   Linking,
   useWindowDimensions,
 } from 'react-native';
-import { FlatList } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
@@ -294,7 +294,7 @@ export default function SessionDetailScreenV2() {
   const hostPresenceUi = getPresenceUi(hostPresence);
   const hostPresenceLabel = getHostPresenceLabel(hostPresence);
   const liveStatusSublabel = getLiveStatusSublabel(session, hostPresence);
-  const renderParticipantRow = ({ item: participant }: { item: SessionDetail['participants'][number] }) => (
+  const renderParticipantRow = (participant: SessionDetail['participants'][number]) => (
     <View
       style={[
         styles.participant,
@@ -336,240 +336,235 @@ export default function SessionDetailScreenV2() {
     (isHost && stuckParticipants.length > 0)
   );
 
-  const renderListHeader = () => (
-    <View>
-      {session.game.thumbnailUrl || fallbackThumbnail ? (
-        <Image
-          source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }}
-          style={[styles.banner, { height: bannerHeight }]}
-        />
-      ) : (
-        <View style={[styles.banner, styles.bannerPlaceholder, { height: bannerHeight }]}>
-          <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
-            {session.game.gameName?.[0] || '?'}
-          </ThemedText>
-        </View>
-      )}
-
-      <View style={[
-        styles.titleSection,
-        isCompact && styles.titleSectionCompact,
-        { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-      ]}>
-        <View style={styles.titleRow}>
-          <ThemedText type={isCompact ? 'titleLarge' : 'headlineSmall'} style={styles.title}>
-            {session.title}
-          </ThemedText>
-          {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
-        </View>
-        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
-          {session.game.gameName || 'Game'}
-        </ThemedText>
-        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
-          {hostPresenceLabel}
-        </ThemedText>
-
-        <View style={styles.badges}>
-          <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
-            <ThemedText
-              type="labelMedium"
-              lightColor={sessionStatusUi.textColor}
-              darkColor={sessionStatusUi.textColor}
-              style={styles.badgeText}
-            >
-              {sessionStatusUi.label}
-            </ThemedText>
-          </View>
-          {liveStatusSublabel && (
-            <View style={[styles.badge, styles.liveSublabelBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                {liveStatusSublabel}
-              </ThemedText>
-            </View>
-          )}
-          {session.visibility !== 'public' && (
-            <View style={[styles.badge, styles.visibilityBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
-              </ThemedText>
-            </View>
-          )}
-          {session.isRanked && (
-            <View style={[styles.badge, styles.rankedBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                RANKED
-              </ThemedText>
-            </View>
-          )}
-          {isFull && (
-            <View style={[styles.badge, styles.fullBadge]}>
-              <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                FULL
-              </ThemedText>
-            </View>
-          )}
-        </View>
-      </View>
-
-      <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
-        {!hasJoined && !isFull && (
-          <Button
-            title="Join Session"
-            variant="filled"
-            buttonColor="#34C759"
-            textColor="#fff"
-            style={styles.joinButton}
-            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
-            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
-            onPress={handleJoin}
-            loading={isJoining}
-            disabled={isJoining}
-            enableHaptics
-          />
-        )}
-
-        {hasJoined && (
-          <Button
-            title={isHost ? 'Launch Roblox' : 'Open Join Handoff'}
-            variant="filled"
-            buttonColor="#007AFF"
-            textColor="#fff"
-            style={styles.launchButton}
-            contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
-            labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
-            onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
-            enableHaptics={isHost}
-          />
-        )}
-
-        {isFull && !hasJoined && (
-          <View style={styles.fullMessage}>
-            <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
-              This session is full
-            </ThemedText>
-          </View>
-        )}
-      </View>
-
-      <View style={[
-        styles.playersHeader,
-        isCompact && styles.playersHeaderCompact,
-        { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-      ]}>
-        <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-          Players ({joinedParticipants.length} / {session.maxParticipants})
-        </ThemedText>
-      </View>
-    </View>
-  );
-
-  const renderListFooter = shouldRenderFooter ? (
-    <View style={styles.playersListFooter}>
-      <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
-        <View style={[
-          styles.section,
-          isCompact && styles.sectionCompact,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          {session.inviteLink && (
-            <Button
-              title="Share Invite"
-              variant="outlined"
-              textColor="#007AFF"
-              style={[
-                styles.shareButton,
-                { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
-              ]}
-              onPress={() => handleShare()}
-            />
-          )}
-        </View>
-      </View>
-
-      {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
-        <View style={[
-          styles.section,
-          isCompact && styles.sectionCompact,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type="titleMedium" style={styles.hostToolsTitle}>
-            Host tools
-          </ThemedText>
-          {isHost && session.isRanked && (
-            <Button
-              title="Submit Result"
-              variant="outlined"
-              textColor="#FF6B00"
-              style={styles.hostToolButton}
-              onPress={handleOpenResultDialog}
-              disabled={joinedParticipants.length < 2 || isSubmittingResult}
-              loading={isSubmittingResult}
-            />
-          )}
-          {hostPresenceUi.isUnavailable && (
-            <Button
-              title="Connect Roblox for Presence"
-              variant="outlined"
-              textColor="#007AFF"
-              style={styles.hostToolButton}
-              onPress={handleConnectRoblox}
-            />
-          )}
-        </View>
-      ) : null}
-
-      {isHost && stuckParticipants.length > 0 && (
-        <View style={[
-          styles.section,
-          isCompact && styles.sectionCompact,
-          styles.stuckCard,
-          isCompact && styles.stuckCardCompact,
-          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-        ]}>
-          <ThemedText type="titleMedium" style={styles.stuckTitle}>
-            ⚠ Stuck players ({stuckParticipants.length})
-          </ThemedText>
-          {stuckParticipants.map((participant) => (
-            <ThemedText key={`stuck-${participant.userId}`} type="bodyMedium" style={styles.stuckUserText}>
-              {getParticipantName(participant)}
-            </ThemedText>
-          ))}
-          <Button
-            title="Copy Host Tip"
-            variant="outlined"
-            textColor="#007AFF"
-            style={styles.copyTipButton}
-            onPress={() => Clipboard.setStringAsync("Open Roblox, join host from Friends -> Join (or party invite), then return and tap I'm in.")}
-          />
-        </View>
-      )}
-    </View>
-  ) : null;
-
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-      <FlatList
-        data={session.participants}
-        keyExtractor={(item) => item.userId}
-        renderItem={renderParticipantRow}
-        style={styles.playersList}
-        keyboardShouldPersistTaps="handled"
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={renderListHeader}
-        ListFooterComponent={renderListFooter}
-        ListEmptyComponent={(
-          <View style={styles.emptyState}>
-            <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
-              No participants yet.
+      >
+        {session.game.thumbnailUrl || fallbackThumbnail ? (
+          <Image
+            source={{ uri: session.game.thumbnailUrl || fallbackThumbnail || '' }}
+            style={[styles.banner, { height: bannerHeight }]}
+          />
+        ) : (
+          <View style={[styles.banner, styles.bannerPlaceholder, { height: bannerHeight }]}>
+            <ThemedText type="displaySmall" lightColor="#999" darkColor="#666">
+              {session.game.gameName?.[0] || '?'}
             </ThemedText>
           </View>
         )}
-        removeClippedSubviews={true}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-      />
+
+        <View style={[
+          styles.titleSection,
+          isCompact && styles.titleSectionCompact,
+          { borderBottomColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <View style={styles.titleRow}>
+            <ThemedText type={isCompact ? 'titleLarge' : 'headlineSmall'} style={styles.title}>
+              {session.title}
+            </ThemedText>
+            {sessionStatusUi.isLive && <LivePulseDot color={sessionUiColors.live} />}
+          </View>
+          <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
+            {session.game.gameName || 'Game'}
+          </ThemedText>
+          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
+            {hostPresenceLabel}
+          </ThemedText>
+
+          <View style={styles.badges}>
+            <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
+              <ThemedText
+                type="labelMedium"
+                lightColor={sessionStatusUi.textColor}
+                darkColor={sessionStatusUi.textColor}
+                style={styles.badgeText}
+              >
+                {sessionStatusUi.label}
+              </ThemedText>
+            </View>
+            {liveStatusSublabel && (
+              <View style={[styles.badge, styles.liveSublabelBadge]}>
+                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                  {liveStatusSublabel}
+                </ThemedText>
+              </View>
+            )}
+            {session.visibility !== 'public' && (
+              <View style={[styles.badge, styles.visibilityBadge]}>
+                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                  {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
+                </ThemedText>
+              </View>
+            )}
+            {session.isRanked && (
+              <View style={[styles.badge, styles.rankedBadge]}>
+                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                  RANKED
+                </ThemedText>
+              </View>
+            )}
+            {isFull && (
+              <View style={[styles.badge, styles.fullBadge]}>
+                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
+                  FULL
+                </ThemedText>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
+          {!hasJoined && !isFull && (
+            <Button
+              title="Join Session"
+              variant="filled"
+              buttonColor="#34C759"
+              textColor="#fff"
+              style={styles.joinButton}
+              contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+              labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
+              onPress={handleJoin}
+              loading={isJoining}
+              disabled={isJoining}
+              enableHaptics
+            />
+          )}
+
+          {hasJoined && (
+            <Button
+              title={isHost ? 'Launch Roblox' : 'Open Join Handoff'}
+              variant="filled"
+              buttonColor="#007AFF"
+              textColor="#fff"
+              style={styles.launchButton}
+              contentStyle={[styles.actionButtonContent, isCompact && styles.actionButtonContentCompact]}
+              labelStyle={[styles.actionButtonLabel, isCompact && styles.actionButtonLabelCompact]}
+              onPress={isHost ? handleLaunchRoblox : handleOpenHandoff}
+              enableHaptics={isHost}
+            />
+          )}
+
+          {isFull && !hasJoined && (
+            <View style={styles.fullMessage}>
+              <ThemedText type="titleMedium" lightColor="#c62828" darkColor="#ff5252">
+                This session is full
+              </ThemedText>
+            </View>
+          )}
+        </View>
+
+        <View style={[
+          styles.playersHeader,
+          isCompact && styles.playersHeaderCompact,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
+            Players ({joinedParticipants.length} / {session.maxParticipants})
+          </ThemedText>
+        </View>
+
+        <View style={styles.playersListContainer}>
+          {session.participants.length > 0 ? (
+            session.participants.map((participant) => (
+              <View key={participant.userId}>
+                {renderParticipantRow(participant)}
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
+                No participants yet.
+              </ThemedText>
+            </View>
+          )}
+        </View>
+
+        {shouldRenderFooter ? (
+          <View style={styles.playersListFooter}>
+            <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
+              <View style={[
+                styles.section,
+                isCompact && styles.sectionCompact,
+                { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+              ]}>
+                {session.inviteLink && (
+                  <Button
+                    title="Share Invite"
+                    variant="outlined"
+                    textColor="#007AFF"
+                    style={[
+                      styles.shareButton,
+                      { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
+                    ]}
+                    onPress={() => handleShare()}
+                  />
+                )}
+              </View>
+            </View>
+
+            {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
+              <View style={[
+                styles.section,
+                isCompact && styles.sectionCompact,
+                { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+              ]}>
+                <ThemedText type="titleMedium" style={styles.hostToolsTitle}>
+                  Host tools
+                </ThemedText>
+                {isHost && session.isRanked && (
+                  <Button
+                    title="Submit Result"
+                    variant="outlined"
+                    textColor="#FF6B00"
+                    style={styles.hostToolButton}
+                    onPress={handleOpenResultDialog}
+                    disabled={joinedParticipants.length < 2 || isSubmittingResult}
+                    loading={isSubmittingResult}
+                  />
+                )}
+                {hostPresenceUi.isUnavailable && (
+                  <Button
+                    title="Connect Roblox for Presence"
+                    variant="outlined"
+                    textColor="#007AFF"
+                    style={styles.hostToolButton}
+                    onPress={handleConnectRoblox}
+                  />
+                )}
+              </View>
+            ) : null}
+
+            {isHost && stuckParticipants.length > 0 && (
+              <View style={[
+                styles.section,
+                isCompact && styles.sectionCompact,
+                styles.stuckCard,
+                isCompact && styles.stuckCardCompact,
+                { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+              ]}>
+                <ThemedText type="titleMedium" style={styles.stuckTitle}>
+                  ⚠ Stuck players ({stuckParticipants.length})
+                </ThemedText>
+                {stuckParticipants.map((participant) => (
+                  <ThemedText key={`stuck-${participant.userId}`} type="bodyMedium" style={styles.stuckUserText}>
+                    {getParticipantName(participant)}
+                  </ThemedText>
+                ))}
+                <Button
+                  title="Copy Host Tip"
+                  variant="outlined"
+                  textColor="#007AFF"
+                  style={styles.copyTipButton}
+                  onPress={() => Clipboard.setStringAsync("Open Roblox, join host from Friends -> Join (or party invite), then return and tap I'm in.")}
+                />
+              </View>
+            )}
+          </View>
+        ) : null}
+      </ScrollView>
 
       {isResultDialogVisible ? (
         <Portal>
@@ -614,6 +609,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  content: {
+    padding: 16,
+    paddingBottom: 48,
+  },
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -650,12 +649,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   titleSection: {
-    padding: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
   titleSectionCompact: {
     paddingVertical: 12,
-    paddingHorizontal: 14,
   },
   title: {
     marginBottom: 0,
@@ -701,7 +699,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF6B00',
   },
   primaryActions: {
-    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 6,
     gap: 12,
@@ -712,36 +709,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   section: {
-    paddingHorizontal: 16,
     paddingVertical: 14,
     borderTopWidth: 1,
   },
   sectionCompact: {
     paddingVertical: 10,
-    paddingHorizontal: 14,
   },
   sectionTitle: {
     marginBottom: 10,
   },
-  playersList: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
   playersListFooter: {
-    paddingBottom: 24,
+    paddingBottom: 8,
   },
   playersHeader: {
-    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 8,
     borderTopWidth: 1,
   },
   playersHeaderCompact: {
-    paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 6,
+  },
+  playersListContainer: {
+    width: '100%',
   },
   footerSections: {
     paddingBottom: 12,
@@ -830,7 +820,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stuckCard: {
-    marginHorizontal: 16,
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#ffd8a8',
@@ -840,7 +829,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   stuckCardCompact: {
-    marginHorizontal: 14,
     marginTop: 6,
     paddingTop: 8,
     paddingBottom: 10,
@@ -849,7 +837,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyState: {
-    paddingHorizontal: 16,
     paddingVertical: 12,
   },
 });

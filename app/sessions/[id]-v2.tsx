@@ -464,7 +464,7 @@ export default function SessionDetailScreenV2() {
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
         ]}>
           <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-            Players ({joinedParticipants.length} / {session.maxParticipants})
+            Players ({session.participants.length} / {session.maxParticipants})
           </ThemedText>
         </View>
 

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   Alert,
   Share,
@@ -14,6 +13,7 @@ import {
   Linking,
   useWindowDimensions,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
@@ -49,7 +49,7 @@ export default function SessionDetailScreenV2() {
   const { handleError, getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
   const { height } = useWindowDimensions();
-  const bannerHeight = Math.min(220, Math.max(140, height * 0.22));
+  const bannerHeight = Math.min(200, Math.max(120, height * 0.18));
   const isCompact = height < 700;
 
   const [session, setSession] = useState<SessionDetail | null>(null);
@@ -546,52 +546,58 @@ export default function SessionDetailScreenV2() {
           <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
             Players ({joinedParticipants.length} / {session.maxParticipants})
           </ThemedText>
-          <FlatList
-            data={session.participants}
-            keyExtractor={(item) => item.userId}
-            renderItem={renderParticipant}
-            style={styles.playersList}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.playersListContent}
-            ListFooterComponent={playersListFooter}
-            nestedScrollEnabled
-          />
+          <View style={styles.playersListContainer}>
+            <FlatList
+              data={session.participants}
+              keyExtractor={(item) => item.userId}
+              renderItem={renderParticipant}
+              style={styles.playersList}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.playersListContent}
+              ListFooterComponent={playersListFooter}
+              removeClippedSubviews={true}
+              scrollEnabled={true}
+            />
+          </View>
         </View>
       </View>
 
-      <Portal>
-        <Dialog visible={isResultDialogVisible} onDismiss={() => setIsResultDialogVisible(false)}>
-          <Dialog.Title>Select Winner</Dialog.Title>
-          <Dialog.Content>
-            {joinedParticipants.map((participant) => (
-              <RadioButton.Item
-                key={`winner-${participant.userId}`}
-                label={`${getParticipantName(participant)}${participant.userId === session.hostId ? ' (Host)' : ''}`}
-                value={participant.userId}
-                status={selectedWinnerId === participant.userId ? 'checked' : 'unchecked'}
-                onPress={() => setSelectedWinnerId(participant.userId)}
+      {isResultDialogVisible ? (
+        <Portal>
+          <Dialog visible={isResultDialogVisible} onDismiss={() => setIsResultDialogVisible(false)}>
+            <Dialog.Title>Select Winner</Dialog.Title>
+            <Dialog.Content>
+              {joinedParticipants.map((participant) => (
+                <RadioButton.Item
+                  key={`winner-${participant.userId}`}
+                  label={`${getParticipantName(participant)}${participant.userId === session.hostId ? ' (Host)' : ''}`}
+                  value={participant.userId}
+                  status={selectedWinnerId === participant.userId ? 'checked' : 'unchecked'}
+                  onPress={() => setSelectedWinnerId(participant.userId)}
+                />
+              ))}
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button
+                title="Cancel"
+                variant="text"
+                onPress={() => setIsResultDialogVisible(false)}
+                disabled={isSubmittingResult}
               />
-            ))}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              title="Cancel"
-              variant="text"
-              onPress={() => setIsResultDialogVisible(false)}
-              disabled={isSubmittingResult}
-            />
-            <Button
-              title="Confirm Result"
-              variant="filled"
-              buttonColor="#FF6B00"
-              textColor="#fff"
-              onPress={handleSubmitResult}
-              disabled={!selectedWinnerId || isSubmittingResult}
-              loading={isSubmittingResult}
-            />
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              <Button
+                title="Confirm Result"
+                variant="filled"
+                buttonColor="#FF6B00"
+                textColor="#fff"
+                onPress={handleSubmitResult}
+                disabled={!selectedWinnerId || isSubmittingResult}
+                loading={isSubmittingResult}
+              />
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+      ) : null}
     </View>
   );
 }
@@ -725,8 +731,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
+  playersListContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
   playersListContent: {
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
   playersListFooter: {
     paddingBottom: 16,

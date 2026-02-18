@@ -770,6 +770,50 @@ export class SessionServiceV2 {
       );
     }
 
+    const { data: invitedRobloxRows, error: invitedRobloxError } = await supabase
+      .from('session_invited_roblox')
+      .select('roblox_user_id')
+      .eq('session_id', sessionId);
+
+    if (invitedRobloxError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to get invited Roblox users: ${invitedRobloxError.message}`
+      );
+    }
+
+    const invitedRobloxUserIds = Array.from(
+      new Set((invitedRobloxRows ?? []).map((row: any) => String(row.roblox_user_id)).filter(Boolean))
+    );
+    const { data: invitedAppUsers, error: invitedAppUsersError } = invitedRobloxUserIds.length > 0
+      ? await supabase
+        .from('app_users')
+        .select('id, roblox_user_id, roblox_display_name, roblox_username')
+        .in('roblox_user_id', invitedRobloxUserIds)
+      : { data: [], error: null };
+
+    if (invitedAppUsersError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to resolve invited Roblox users: ${invitedAppUsersError.message}`
+      );
+    }
+
+    const { data: hostFriendsCache, error: hostFriendsCacheError } = invitedRobloxUserIds.length > 0
+      ? await supabase
+        .from('roblox_friends_cache')
+        .select('friends_json')
+        .eq('user_id', sessionData.host_id)
+        .maybeSingle<{ friends_json: unknown }>()
+      : { data: null, error: null };
+
+    if (hostFriendsCacheError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_ERROR,
+        `Failed to load host Roblox friends cache: ${hostFriendsCacheError.message}`
+      );
+    }
+
     const displayNameByUserId = new Map<string, string>();
     for (const profile of participantProfiles ?? []) {
       const displayName = profile.roblox_display_name?.trim() || profile.roblox_username?.trim() || '';
@@ -777,6 +821,29 @@ export class SessionServiceV2 {
         displayNameByUserId.set(profile.id, displayName);
       }
     }
+
+    const invitedUserByRobloxId = new Map<string, { appUserId: string | null; displayName: string | null }>();
+    for (const invitedUser of invitedAppUsers ?? []) {
+      const robloxUserId = invitedUser.roblox_user_id?.trim();
+      if (!robloxUserId) {
+        continue;
+      }
+      const displayName = invitedUser.roblox_display_name?.trim() || invitedUser.roblox_username?.trim() || null;
+      invitedUserByRobloxId.set(robloxUserId, {
+        appUserId: invitedUser.id ?? null,
+        displayName,
+      });
+    }
+
+    const hostFriendDisplayNameByRobloxId = parseHostFriendDisplayNameMap(hostFriendsCache?.friends_json);
+    const invitedRobloxUsers = invitedRobloxUserIds.map((robloxUserId) => {
+      const invitedAppUser = invitedUserByRobloxId.get(robloxUserId);
+      return {
+        robloxUserId,
+        displayName: invitedAppUser?.displayName ?? hostFriendDisplayNameByRobloxId.get(robloxUserId) ?? null,
+        appUserId: invitedAppUser?.appUserId ?? null,
+      };
+    });
 
     const { data: inviteData, error: inviteError } = await supabase
       .from('session_invites')
@@ -824,6 +891,7 @@ export class SessionServiceV2 {
         handoffState: p.handoff_state || 'rsvp_joined',
         joinedAt: p.joined_at,
       })),
+      invitedRobloxUsers,
       host: {
         userId: sessionData.host_id,
         robloxUsername: hostProfile?.roblox_username ?? null,
@@ -1363,4 +1431,27 @@ function normalizeInvitedRobloxUserIds(input?: number[]): number[] {
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value > 0)
   )];
+}
+
+function parseHostFriendDisplayNameMap(friendsJson: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!Array.isArray(friendsJson)) {
+    return map;
+  }
+
+  for (const friend of friendsJson) {
+    if (!friend || typeof friend !== 'object') {
+      continue;
+    }
+    const idValue = (friend as { id?: unknown }).id;
+    const displayNameValue = (friend as { displayName?: unknown }).displayName;
+    const robloxUserId = typeof idValue === 'number' ? String(idValue) : typeof idValue === 'string' ? idValue : '';
+    const displayName = typeof displayNameValue === 'string' ? displayNameValue.trim() : '';
+
+    if (robloxUserId && displayName) {
+      map.set(robloxUserId, displayName);
+    }
+  }
+
+  return map;
 }

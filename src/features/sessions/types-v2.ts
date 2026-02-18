@@ -40,6 +40,11 @@ export interface SessionDetail extends Session {
     avatarHeadshotUrl: string | null;
   };
   participants: SessionParticipant[];
+  invitedRobloxUsers?: {
+    robloxUserId: string;
+    displayName: string | null;
+    appUserId: string | null;
+  }[];
   inviteLink?: string;
 }
 

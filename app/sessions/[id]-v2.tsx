@@ -290,8 +290,13 @@ export default function SessionDetailScreenV2() {
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
   const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
+  const participantUserIds = new Set(session.participants.map((participant) => participant.userId));
+  const unresolvedInvitedUsers = (session.invitedRobloxUsers ?? [])
+    .filter((invitedUser) => !invitedUser.appUserId || !participantUserIds.has(invitedUser.appUserId));
   const invitedPlaceholderCount = Math.max(session.maxParticipants - session.participants.length, 0);
-  const totalDisplayedPlayers = session.participants.length + invitedPlaceholderCount;
+  const genericPlaceholderCount = Math.max(invitedPlaceholderCount - unresolvedInvitedUsers.length, 0);
+  const displayedInvitedPlaceholderCount = unresolvedInvitedUsers.length + genericPlaceholderCount;
+  const totalDisplayedPlayers = session.participants.length + displayedInvitedPlaceholderCount;
   const sessionStatusUi = getSessionLiveBadge(session);
   const hostPresenceUi = getPresenceUi(hostPresence);
   const hostPresenceLabel = getHostPresenceLabel(hostPresence);
@@ -338,7 +343,7 @@ export default function SessionDetailScreenV2() {
     (isHost && stuckParticipants.length > 0)
   );
 
-  const renderInvitedPlaceholderRow = (index: number) => (
+  const renderInvitedPlaceholderRow = (index: number, displayName?: string | null) => (
     <View
       key={`invited-placeholder-${index}`}
       style={[
@@ -353,7 +358,7 @@ export default function SessionDetailScreenV2() {
       </View>
       <View style={styles.participantInfo}>
         <ThemedText type="bodyLarge">
-          Invited player
+          {displayName?.trim() || 'Invited player'}
         </ThemedText>
         <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
           Member
@@ -512,12 +517,22 @@ export default function SessionDetailScreenV2() {
                   {renderParticipantRow(participant)}
                 </View>
               ))}
-              {Array.from({ length: invitedPlaceholderCount }).map((_, index) => renderInvitedPlaceholderRow(index))}
+              {unresolvedInvitedUsers.map((invitedUser, index) =>
+                renderInvitedPlaceholderRow(index, invitedUser.displayName)
+              )}
+              {Array.from({ length: genericPlaceholderCount }).map((_, index) =>
+                renderInvitedPlaceholderRow(unresolvedInvitedUsers.length + index)
+              )}
             </>
           ) : (
             <>
-              {Array.from({ length: invitedPlaceholderCount }).map((_, index) => renderInvitedPlaceholderRow(index))}
-              {invitedPlaceholderCount === 0 ? (
+              {unresolvedInvitedUsers.map((invitedUser, index) =>
+                renderInvitedPlaceholderRow(index, invitedUser.displayName)
+              )}
+              {Array.from({ length: genericPlaceholderCount }).map((_, index) =>
+                renderInvitedPlaceholderRow(unresolvedInvitedUsers.length + index)
+              )}
+              {displayedInvitedPlaceholderCount === 0 ? (
                 <View style={styles.emptyState}>
                   <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
                     No participants yet.
@@ -527,7 +542,6 @@ export default function SessionDetailScreenV2() {
             </>
           )}
         </View>
-
         {shouldRenderFooter ? (
           <View style={styles.playersListFooter}>
             <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>

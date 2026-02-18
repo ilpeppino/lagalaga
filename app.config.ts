@@ -55,6 +55,18 @@ const config: ExpoConfig = {
           },
         ],
       },
+      {
+        action: "VIEW",
+        autoVerify: true,
+        category: ["BROWSABLE", "DEFAULT"],
+        data: [
+          {
+            scheme: "https",
+            host: "ilpeppino.github.io",
+            pathPrefix: "/lagalaga/invite",
+          },
+        ],
+      },
     ],
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,

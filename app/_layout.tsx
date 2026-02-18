@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -13,6 +13,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/src/features/auth/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
+import { extractInviteCodeFromUrl } from '@/src/lib/deepLinking';
 import { DarkPaperTheme, LightPaperTheme } from '@/constants/paperTheme';
 import { useFavoritesForegroundRefresh } from '@/src/features/favorites/useFavoritesForegroundRefresh';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
@@ -32,6 +33,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const paperTheme = colorScheme === 'dark' ? DarkPaperTheme : LightPaperTheme;
+  const router = useRouter();
   const [fontsLoaded, fontError] = useFonts({
     'BitcountSingle-Regular': require('@/assets/fonts/BitcountSingle-Regular.ttf'),
     'BitcountSingle-Bold': require('@/assets/fonts/BitcountSingle-Bold.ttf'),
@@ -44,22 +46,34 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    // Log initial URL if app was opened via deep link
+    // Handle HTTPS App Link invite URLs (Android App Links).
+    // Custom scheme URLs (lagalaga://invite/CODE) are routed automatically by Expo Router.
+    const handleHttpsInviteUrl = (url: string) => {
+      if (!url.startsWith('https://')) return;
+      const code = extractInviteCodeFromUrl(url);
+      if (code) {
+        logger.info('App opened via HTTPS App Link invite', { urlType: 'https-app-link' });
+        router.replace(`/invite/${code}` as any);
+      }
+    };
+
     Linking.getInitialURL().then((url) => {
       if (url) {
-        logger.info('App opened with initial URL', { url });
+        logger.info('App opened with initial URL', { urlType: url.startsWith('https') ? 'https' : 'scheme' });
+        handleHttpsInviteUrl(url);
       }
     });
 
-    // Listen for deep link events while app is running
+    // Also handle HTTPS App Links received while the app is running
     const subscription = Linking.addEventListener('url', (event) => {
-      logger.info('Deep link received', { url: event.url });
+      logger.info('Deep link received', { urlType: event.url.startsWith('https') ? 'https' : 'scheme' });
+      handleHttpsInviteUrl(event.url);
     });
 
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     configureNotificationHandler();

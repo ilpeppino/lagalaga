@@ -61,6 +61,31 @@ export function extractInviteCode(url: string): string | null {
 }
 
 /**
+ * Extract invite code from either a custom scheme URL or the HTTPS App Link URL.
+ *
+ * Handles:
+ *   lagalaga://invite/CODE
+ *   https://ilpeppino.github.io/lagalaga/invite/?code=CODE
+ */
+export function extractInviteCodeFromUrl(url: string): string | null {
+  // Custom scheme (already handled by Expo Router, but kept for completeness)
+  const schemeMatch = url.match(/^lagalaga(?:-dev)?:\/\/invite\/([A-Z0-9]+)/i);
+  if (schemeMatch) return schemeMatch[1];
+
+  // HTTPS App Link
+  if (url.includes('ilpeppino.github.io/lagalaga/invite')) {
+    try {
+      const parsed = new URL(url);
+      return parsed.searchParams.get('code');
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract session ID from deep link
  */
 export function extractSessionId(url: string): string | null {

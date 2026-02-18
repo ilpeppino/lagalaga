@@ -8,6 +8,8 @@ import { sanitize } from '../lib/sanitizer.js';
 import { request } from 'undici';
 import { metrics } from '../plugins/metrics.js';
 
+const INVITE_LINK_BASE = 'https://ilpeppino.github.io/lagalaga/invite/';
+
 export type SessionVisibility = 'public' | 'friends' | 'invite_only';
 export type SessionStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
 export type ParticipantRole = 'host' | 'member';
@@ -473,7 +475,7 @@ export class SessionServiceV2 {
         },
         createdAt: sessionData.created_at,
       },
-      inviteLink: `lagalaga://invite/${inviteCode}`,
+      inviteLink: `${INVITE_LINK_BASE}?code=${inviteCode}`,
     };
   }
 
@@ -899,7 +901,7 @@ export class SessionServiceV2 {
         avatarHeadshotUrl: hostProfile?.avatar_headshot_url ?? null,
       },
       inviteLink: inviteData?.[0]?.invite_code
-        ? `lagalaga://invite/${inviteData[0].invite_code}`
+        ? `${INVITE_LINK_BASE}?code=${inviteData[0].invite_code}`
         : null,
       createdAt: sessionData.created_at,
     };

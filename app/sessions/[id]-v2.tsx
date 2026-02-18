@@ -2,7 +2,7 @@
  * Epic 4 Story 4.4: Session Detail UI
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -337,11 +337,13 @@ export default function SessionDetailScreenV2() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
+    <Fragment>
       <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
+        style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
+        contentContainerStyle={[styles.content, { minHeight: height + 1 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled
       >
         {session.game.thumbnailUrl || fallbackThumbnail ? (
           <Image
@@ -601,7 +603,7 @@ export default function SessionDetailScreenV2() {
           </Dialog>
         </Portal>
       ) : null}
-    </View>
+    </Fragment>
   );
 }
 

@@ -1,3 +1,4 @@
+import fp from 'fastify-plugin';
 import { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import type { ErrorSeverity } from '../../../shared/errors/codes.js';
@@ -36,7 +37,7 @@ function buildErrorResponse(
   };
 }
 
-export async function errorHandlerPlugin(fastify: FastifyInstance) {
+export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: FastifyInstance) {
   fastify.setErrorHandler(
     async (error: FastifyError | AppError, request: FastifyRequest, reply: FastifyReply) => {
       const requestId = String(request.id || '');
@@ -113,4 +114,4 @@ export async function errorHandlerPlugin(fastify: FastifyInstance) {
       );
     }
   );
-}
+});

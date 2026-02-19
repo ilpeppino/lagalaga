@@ -237,7 +237,12 @@ describe('RobloxEnrichmentService', () => {
         json: async () => ({ universeId }),
       } as Response);
 
-      // Games API fails
+      // Games API fails (both attempts — service retries 5xx once)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      } as Response);
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -412,6 +417,8 @@ describe('RobloxEnrichmentService', () => {
     });
 
     it('should not retry on 4xx errors', async () => {
+      mockCacheMiss();
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -456,9 +463,6 @@ describe('RobloxEnrichmentService', () => {
       const gameName = 'Test Game';
       const thumbnailUrl = 'https://thumbnail.url';
 
-      // Setup cache miss
-      mockCacheMiss();
-
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ universeId }),
@@ -495,9 +499,6 @@ describe('RobloxEnrichmentService', () => {
 
     it('should throw error on database failure', async () => {
       const placeId = 606849621;
-
-      // Setup cache miss
-      mockCacheMiss();
 
       mockFetch.mockResolvedValueOnce({
         ok: true,

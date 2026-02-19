@@ -64,15 +64,19 @@ function normalizePresenceType(value: number | undefined): PresenceStatus {
 }
 
 export class RobloxPresenceService {
-  private readonly supabase: SupabaseClient;
+  private readonly _supabase?: SupabaseClient;
   private readonly connectionService: Pick<RobloxConnectionService, 'getAccessToken'>;
   private readonly requestFn: typeof request;
   private readonly cacheTtlMs: number;
   private readonly fetchFn: FetchLike;
   private readonly friendPresenceCache: TtlCache<string, FriendPresenceItem[]>;
 
+  private get supabase(): SupabaseClient {
+    return this._supabase ?? getSupabase();
+  }
+
   constructor(deps: PresenceDeps = {}) {
-    this.supabase = deps.supabase ?? getSupabase();
+    this._supabase = deps.supabase;
     if (!deps.connectionService) {
       throw new Error('RobloxPresenceService requires connectionService dependency');
     }

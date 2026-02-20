@@ -1,16 +1,24 @@
 import { useState } from "react";
 import { View, StyleSheet } from "react-native";
+import * as Linking from "expo-linking";
+import { Checkbox } from "react-native-paper";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
 import { AnimatedButton } from "@/components/ui/paper";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
+const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
+const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
+
 export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const { signInWithRoblox } = useAuth();
   const { handleError } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const canSignIn = acceptedTerms && acceptedPrivacy && !loading;
 
   async function handleRobloxSignIn() {
     try {
@@ -48,13 +56,51 @@ export default function SignInScreen() {
             variant="filled"
             onPress={handleRobloxSignIn}
             loading={loading}
-            disabled={loading}
+            disabled={!canSignIn}
             enableHaptics
             buttonColor="#007AFF"
             style={styles.button}
             contentStyle={styles.buttonContent}
             labelStyle={styles.buttonLabel}
           />
+
+          <View style={styles.ackContainer}>
+            <View style={styles.ackRow}>
+              <Checkbox
+                status={acceptedTerms ? "checked" : "unchecked"}
+                onPress={() => setAcceptedTerms((current) => !current)}
+              />
+              <ThemedText type="bodyMedium" style={styles.ackText}>
+                I have read and agree to the{" "}
+                <ThemedText
+                  type="link"
+                  onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)}
+                  suppressHighlighting
+                >
+                  Terms of Service
+                </ThemedText>
+                .
+              </ThemedText>
+            </View>
+
+            <View style={styles.ackRow}>
+              <Checkbox
+                status={acceptedPrivacy ? "checked" : "unchecked"}
+                onPress={() => setAcceptedPrivacy((current) => !current)}
+              />
+              <ThemedText type="bodyMedium" style={styles.ackText}>
+                I have read and agree to the{" "}
+                <ThemedText
+                  type="link"
+                  onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+                  suppressHighlighting
+                >
+                  Privacy Policy
+                </ThemedText>
+                .
+              </ThemedText>
+            </View>
+          </View>
 
           <ThemedText
             type="bodyMedium"
@@ -92,6 +138,18 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 10,
+  },
+  ackContainer: {
+    gap: 4,
+    marginTop: 4,
+  },
+  ackRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  ackText: {
+    flex: 1,
+    paddingTop: 7,
   },
   button: {
     borderRadius: 8,

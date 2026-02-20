@@ -1,128 +1,234 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Learn how to delete your LagaLaga account, what data is removed, and what may be retained for legal and security reasons." />
-  <title>Delete Your LagaLaga Account</title>
+  <title>Delete Account • LagaLaga</title>
+  <meta name="description" content="How to delete your LagaLaga account, what data is removed, and what may be retained for legal and security reasons." />
+  <link rel="canonical" href="https://ilpeppino.github.io/lagalaga/delete-account.html" />
+  <meta name="theme-color" content="#1B2A67" />
+
+  <!-- Structured metadata (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "Delete Account",
+    "description": "How to delete your LagaLaga account, what data is removed, and what may be retained for legal and security reasons.",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": "LagaLaga",
+      "url": "https://ilpeppino.github.io/lagalaga/"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "LagaLaga"
+    }
+  }
+  </script>
+
   <style>
     :root {
-      --bg: #f7f8fa;
-      --surface: #ffffff;
-      --text: #1f2937;
-      --muted: #4b5563;
-      --border: #e5e7eb;
-      --accent: #111827;
+      --brand: #1B2A67;
+      --bg: #F7F1E8;
+      --text: #0E1328;
+      --muted: #4B5563;
+      --card: #FFFFFF;
+      --border: rgba(27,42,103,0.12);
+      --accent: #6D28D9;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
 
-    html,
     body {
       margin: 0;
-      padding: 0;
-      background: var(--bg);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
+      background:
+        radial-gradient(1200px 600px at 20% 0%, rgba(109,40,217,0.08), transparent 60%),
+        radial-gradient(900px 450px at 90% 10%, rgba(27,42,103,0.10), transparent 55%),
+        var(--bg);
     }
 
-    main {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 32px 16px;
-    }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     .container {
-      width: 100%;
-      max-width: 800px;
-      background: var(--surface);
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 18px 64px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 18px;
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 32px;
-      box-shadow: 0 8px 24px rgba(17, 24, 39, 0.06);
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(8px);
+      border-radius: 16px;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--brand);
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+
+    .logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brandtext {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brandtext .title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+      line-height: 1.1;
+    }
+
+    .brandtext .subtitle {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .nav {
+      margin-left: auto;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+    }
+
+    .nav a.active {
+      background: rgba(27,42,103,0.10);
+      border-color: rgba(27,42,103,0.18);
+    }
+
+    .main {
+      margin-top: 18px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
+      padding: 22px;
     }
 
     h1 {
-      margin: 0 0 12px;
-      font-size: clamp(1.8rem, 2.2vw, 2.4rem);
-      line-height: 1.2;
-      color: var(--accent);
-      letter-spacing: -0.01em;
+      margin: 0 0 10px;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 18px;
     }
 
     h2 {
-      margin: 28px 0 10px;
-      font-size: 1.2rem;
-      line-height: 1.3;
-      color: var(--accent);
+      font-size: 18px;
+      margin-top: 22px;
+      margin-bottom: 8px;
     }
 
-    p {
-      margin: 0 0 12px;
-      color: var(--muted);
+    p, li {
+      line-height: 1.6;
+      font-size: 15px;
     }
 
-    ul {
-      margin: 8px 0 0 20px;
-      padding: 0;
-      color: var(--muted);
-    }
-
-    li {
-      margin: 6px 0;
+    .callout {
+      border: 1px solid rgba(109,40,217,0.18);
+      background: rgba(109,40,217,0.06);
+      padding: 14px 14px;
+      border-radius: 14px;
+      margin: 14px 0;
     }
 
     .path {
       display: inline-block;
       margin-top: 8px;
       padding: 8px 12px;
-      border-radius: 8px;
+      border-radius: 12px;
       border: 1px solid var(--border);
-      background: #f9fafb;
+      background: rgba(27,42,103,0.06);
       color: var(--text);
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: 0.01em;
     }
 
-    a {
-      color: var(--accent);
-      font-weight: 600;
-      text-decoration: underline;
-      text-underline-offset: 2px;
+    ul { margin: 8px 0 0 20px; padding: 0; color: var(--muted); }
+    li { margin: 6px 0; color: var(--muted); }
+    p { margin: 0 0 12px; color: var(--muted); }
+
+    code {
+      background: rgba(27,42,103,0.08);
+      padding: 2px 6px;
+      border-radius: 8px;
     }
 
-    footer {
-      margin-top: 28px;
-      padding-top: 18px;
-      border-top: 1px solid var(--border);
-      color: #6b7280;
-      font-size: 0.95rem;
-    }
-
-    @media (max-width: 640px) {
-      .container {
-        padding: 24px;
-        border-radius: 12px;
-      }
-
-      h2 {
-        margin-top: 24px;
-      }
+    .footer {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
     }
   </style>
 </head>
+
 <body>
-  <main>
-    <article class="container" aria-labelledby="page-title">
-      <h1 id="page-title">Delete Your LagaLaga Account</h1>
-      <p>
-        You are in control of your personal data. If you decide to stop using LagaLaga, you can request permanent account deletion at any time using the app or the web-based fallback below.
-      </p>
+  <div class="container">
+    <header class="header">
+      <div class="logo" aria-hidden="true">
+        <!-- Keep consistent with the policy bundle -->
+        <img src="./assets/icon-512.png" alt="LagaLaga logo" />
+      </div>
+
+      <div class="brandtext">
+        <p class="title">LagaLaga Policies</p>
+        <p class="subtitle">Public standards and terms for Google Play compliance</p>
+      </div>
+
+      <nav class="nav" aria-label="Policy navigation">
+        <a href="./child-safety.html">Child Safety</a>
+        <a href="./privacy-policy.html">Privacy Policy</a>
+        <a href="./terms.html">Terms</a>
+        <a href="./delete-account.html" class="active">Delete Account</a>
+      </nav>
+    </header>
+
+    <main class="main" role="main">
+      <h1>Delete Your LagaLaga Account</h1>
+      <div class="meta">
+        <strong>Last updated:</strong> <span>[2026-02-20]</span>
+      </div>
+
+      <div class="callout">
+        <strong>You are in control of your personal data.</strong>
+        You can request permanent account deletion at any time using the in-app flow or the web fallback below.
+      </div>
 
       <section aria-labelledby="in-app-deletion">
         <h2 id="in-app-deletion">Delete your account in the app</h2>
@@ -170,11 +276,11 @@
         <h2 id="timeframe">Deletion timeframe</h2>
         <p>Deletion is initiated immediately and completed within 30 days.</p>
       </section>
+    </main>
 
-      <footer>
-        <p>LagaLaga &copy; 2026</p>
-      </footer>
-    </article>
-  </main>
+    <div class="footer">
+      © LagaLaga. This page is provided for transparency and compliance.
+    </div>
+  </div>
 </body>
 </html>

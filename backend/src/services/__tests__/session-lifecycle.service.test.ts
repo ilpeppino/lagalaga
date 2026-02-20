@@ -41,6 +41,15 @@ function buildSupabaseMock(params: {
         }
 
         return {
+          lte: jest.fn(() => ({
+            limit: async () => {
+              selectInvocation += 1;
+              return {
+                data: params.staleCompletedIds.map((id) => ({ id })),
+                error: null,
+              };
+            },
+          })),
           is: jest.fn(() => ({
             lte: jest.fn(() => ({
               limit: async () => {

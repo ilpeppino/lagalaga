@@ -534,7 +534,11 @@ export class SessionServiceV2 {
     }
 
     if (error) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list sessions: ${error.message}`);
+      logger.warn(
+        { error: error.message },
+        'list_sessions_optimized failed, falling back to direct query'
+      );
+      return this.listSessionsFallback(params, limit, offset);
     }
 
     const sessions = (data || []).map((row: any) => ({
@@ -600,7 +604,11 @@ export class SessionServiceV2 {
     });
 
     if (error) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list user sessions: ${error.message}`);
+      logger.warn(
+        { error: error.message },
+        'list_user_planned_sessions_optimized failed, falling back to direct query'
+      );
+      return this.listUserPlannedSessionsFallback(userId, limit, offset);
     }
 
     const sessions = (data || []).map((row: any) => ({
@@ -635,6 +643,217 @@ export class SessionServiceV2 {
         offset,
         hasMore: offset + limit < total,
       },
+    };
+  }
+
+  private async listSessionsFallback(
+    params: {
+      status?: SessionStatus;
+      visibility?: SessionVisibility;
+      placeId?: number;
+      hostId?: string;
+      requesterId?: string | null;
+    },
+    limit: number,
+    offset: number
+  ): Promise<{
+    sessions: any[];
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  }> {
+    const supabase = getSupabase();
+    const end = offset + limit - 1;
+
+    const runQuery = async (withArchivedFilter: boolean) => {
+      let query = supabase
+        .from('sessions')
+        .select(
+          `
+            id,
+            place_id,
+            host_id,
+            title,
+            description,
+            visibility,
+            status,
+            max_participants,
+            scheduled_start,
+            created_at,
+            original_input_url,
+            normalized_from,
+            is_ranked,
+            games (
+              place_id,
+              game_name,
+              canonical_web_url,
+              canonical_start_url,
+              thumbnail_url
+            ),
+            session_participants (
+              user_id,
+              state
+            )
+          `,
+          { count: 'exact' }
+        )
+        .order('scheduled_start', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .range(offset, end);
+
+      if (withArchivedFilter) query = query.is('archived_at', null);
+      if (params.status) query = query.eq('status', params.status);
+      if (params.visibility) query = query.eq('visibility', params.visibility);
+      if (params.placeId) query = query.eq('place_id', params.placeId);
+      if (params.hostId) query = query.eq('host_id', params.hostId);
+      if (!params.requesterId && !params.visibility) query = query.eq('visibility', 'public');
+
+      return query;
+    };
+
+    let { data, error, count } = await runQuery(true);
+    if (error && /archived_at/i.test(error.message)) {
+      ({ data, error, count } = await runQuery(false));
+    }
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list sessions: ${error.message}`);
+    }
+
+    const requesterId = params.requesterId ?? null;
+    const rows = (data || []).filter((row: any) => {
+      if (!requesterId) return row.visibility === 'public';
+      if (row.visibility === 'public') return true;
+      if (row.host_id === requesterId) return true;
+      const participants = Array.isArray(row.session_participants) ? row.session_participants : [];
+      return participants.some(
+        (participant: any) =>
+          participant.user_id === requesterId &&
+          (participant.state === 'joined' || participant.state === 'invited')
+      );
+    });
+
+    const sessions = rows.map((row: any) => this.mapSessionRowFromFallback(row));
+    const total = Number(count ?? sessions.length);
+
+    return {
+      sessions,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+      },
+    };
+  }
+
+  private async listUserPlannedSessionsFallback(
+    userId: string,
+    limit: number,
+    offset: number
+  ): Promise<{
+    sessions: any[];
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  }> {
+    const supabase = getSupabase();
+    const end = offset + limit - 1;
+
+    const runQuery = async (withArchivedFilter: boolean) => {
+      let query = supabase
+        .from('sessions')
+        .select(
+          `
+            id,
+            place_id,
+            host_id,
+            title,
+            description,
+            visibility,
+            status,
+            max_participants,
+            scheduled_start,
+            created_at,
+            original_input_url,
+            normalized_from,
+            is_ranked,
+            games (
+              place_id,
+              game_name,
+              canonical_web_url,
+              canonical_start_url,
+              thumbnail_url
+            ),
+            session_participants (
+              user_id,
+              state
+            )
+          `,
+          { count: 'exact' }
+        )
+        .eq('host_id', userId)
+        .in('status', ['scheduled', 'active'])
+        .order('scheduled_start', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .range(offset, end);
+
+      if (withArchivedFilter) query = query.is('archived_at', null);
+      return query;
+    };
+
+    let { data, error, count } = await runQuery(true);
+    if (error && /archived_at/i.test(error.message)) {
+      ({ data, error, count } = await runQuery(false));
+    }
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to list user sessions: ${error.message}`);
+    }
+
+    const sessions = (data || []).map((row: any) => this.mapSessionRowFromFallback(row));
+    const total = Number(count ?? sessions.length);
+
+    return {
+      sessions,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+      },
+    };
+  }
+
+  private mapSessionRowFromFallback(row: any): any {
+    const participants = Array.isArray(row.session_participants) ? row.session_participants : [];
+    const joinedCount = participants.filter((participant: any) => participant.state === 'joined').length;
+    const game = Array.isArray(row.games) ? row.games[0] : row.games;
+
+    return {
+      id: row.id,
+      placeId: row.place_id ?? 0,
+      hostId: row.host_id,
+      title: row.title,
+      description: row.description,
+      visibility: row.visibility,
+      isRanked: Boolean(row.is_ranked),
+      status: row.status,
+      maxParticipants: row.max_participants,
+      currentParticipants: joinedCount,
+      scheduledStart: row.scheduled_start,
+      game: {
+        placeId: game?.place_id ?? row.place_id ?? 0,
+        gameName: game?.game_name,
+        thumbnailUrl: game?.thumbnail_url,
+        canonicalWebUrl: game?.canonical_web_url ?? row.original_input_url,
+        canonicalStartUrl: game?.canonical_start_url ?? row.original_input_url,
+      },
+      createdAt: row.created_at,
     };
   }
 

@@ -1,4 +1,5 @@
 import { getSupabase } from '../config/supabase.js';
+import { logger } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
 interface SessionLifecycleServiceOptions {
@@ -28,6 +29,7 @@ export class SessionLifecycleService {
   private readonly autoCompleteAfterHours: number;
   private readonly completedRetentionHours: number;
   private readonly batchSize: number;
+  private archivedColumnAvailable: boolean | null = null;
 
   constructor(options: SessionLifecycleServiceOptions = {}) {
     this.autoCompleteAfterHours = clampPositiveInt(
@@ -39,6 +41,11 @@ export class SessionLifecycleService {
       DEFAULT_COMPLETED_RETENTION_HOURS
     );
     this.batchSize = clampPositiveInt(options.batchSize ?? DEFAULT_BATCH_SIZE, DEFAULT_BATCH_SIZE);
+  }
+
+  private isMissingArchivedAtColumn(error: { message?: string } | null | undefined): boolean {
+    const message = error?.message ?? '';
+    return /archived_at/i.test(message) && /column/i.test(message);
   }
 
   private staleActiveCutoffIso(now: Date): string {
@@ -108,13 +115,32 @@ export class SessionLifecycleService {
 
   private async findStaleCompletedSessionIds(cutoffIso: string): Promise<string[]> {
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    let query = supabase
       .from('sessions')
       .select('id')
-      .eq('status', 'completed')
-      .is('archived_at', null)
+      .eq('status', 'completed');
+
+    if (this.archivedColumnAvailable !== false) {
+      query = query.is('archived_at', null);
+    }
+
+    let { data, error } = await query
       .lte('updated_at', cutoffIso)
       .limit(this.batchSize);
+
+    if (error && this.isMissingArchivedAtColumn(error)) {
+      this.archivedColumnAvailable = false;
+      logger.warn(
+        { error: error.message },
+        'sessions.archived_at not available yet; skipping archival filter in lifecycle job'
+      );
+      ({ data, error } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('status', 'completed')
+        .lte('updated_at', cutoffIso)
+        .limit(this.batchSize));
+    }
 
     if (error) {
       throw new AppError(
@@ -130,16 +156,45 @@ export class SessionLifecycleService {
     if (sessionIds.length === 0) return 0;
 
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    const archivePayload =
+      this.archivedColumnAvailable === false
+        ? {
+            status: 'cancelled',
+            updated_at: nowIso,
+          }
+        : {
+            archived_at: nowIso,
+            updated_at: nowIso,
+          };
+
+    let query = supabase
       .from('sessions')
-      .update({
-        archived_at: nowIso,
-        updated_at: nowIso,
-      })
+      .update(archivePayload)
       .in('id', sessionIds)
-      .eq('status', 'completed')
-      .is('archived_at', null)
-      .select('id');
+      .eq('status', 'completed');
+
+    if (this.archivedColumnAvailable !== false) {
+      query = query.is('archived_at', null);
+    }
+
+    let { data, error } = await query.select('id');
+
+    if (error && this.isMissingArchivedAtColumn(error)) {
+      this.archivedColumnAvailable = false;
+      logger.warn(
+        { error: error.message },
+        'sessions.archived_at not available yet; falling back to status=cancelled archival'
+      );
+      ({ data, error } = await supabase
+        .from('sessions')
+        .update({
+          status: 'cancelled',
+          updated_at: nowIso,
+        })
+        .in('id', sessionIds)
+        .eq('status', 'completed')
+        .select('id'));
+    }
 
     if (error) {
       throw new AppError(

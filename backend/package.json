@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "purge:accounts": "tsx src/jobs/accountDeletionPurge.ts",
+    "lifecycle:sessions": "tsx src/jobs/sessionLifecycleMaintenance.ts",
     "build": "tsc",
     "start": "node dist/backend/src/server.js",
     "typecheck": "tsc --noEmit",

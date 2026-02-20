@@ -22,6 +22,7 @@ import { reportsRoutes } from './routes/reports.routes.js';
 import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
 import { SeasonService } from './services/seasonService.js';
 import { AccountDeletionService } from './services/account-deletion.service.js';
+import { SessionLifecycleService } from './services/session-lifecycle.service.js';
 import { monitoring } from './lib/monitoring.js';
 import { fileURLToPath } from 'node:url';
 
@@ -119,6 +120,44 @@ export async function buildServer() {
 
     fastify.addHook('onClose', async () => {
       clearInterval(purgeTimer);
+    });
+  }
+
+  if (fastify.config.SESSION_LIFECYCLE_ENABLED && fastify.config.NODE_ENV !== 'test') {
+    const lifecycleService = new SessionLifecycleService({
+      autoCompleteAfterHours: fastify.config.SESSION_AUTO_COMPLETE_AFTER_HOURS,
+      completedRetentionHours: fastify.config.SESSION_COMPLETED_RETENTION_HOURS,
+      batchSize: fastify.config.SESSION_LIFECYCLE_BATCH_SIZE,
+    });
+    const intervalMs = Math.max(1, fastify.config.SESSION_LIFECYCLE_INTERVAL_MINUTES) * 60 * 1000;
+
+    const runLifecycle = async () => {
+      try {
+        const result = await lifecycleService.processLifecycle();
+        if (result.autoCompletedCount > 0 || result.archivedCompletedCount > 0) {
+          fastify.log.info(
+            {
+              autoCompletedCount: result.autoCompletedCount,
+              archivedCompletedCount: result.archivedCompletedCount,
+            },
+            'Session lifecycle cycle finished'
+          );
+        }
+      } catch (error) {
+        fastify.log.error(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Session lifecycle cycle failed'
+        );
+      }
+    };
+
+    const lifecycleTimer = setInterval(() => {
+      void runLifecycle();
+    }, intervalMs);
+    void runLifecycle();
+
+    fastify.addHook('onClose', async () => {
+      clearInterval(lifecycleTimer);
     });
   }
 

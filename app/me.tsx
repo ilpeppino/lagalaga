@@ -112,6 +112,10 @@ export default function MeScreen() {
     router.push('/account/delete');
   };
 
+  const openSettings = () => {
+    router.push('/settings');
+  };
+
   const openSafetyReport = () => {
     router.push('/safety-report');
   };
@@ -372,6 +376,14 @@ export default function MeScreen() {
           </Text>
 
           <TouchableOpacity
+            style={[styles.listRowButton, { borderColor: rowBorderColor }]}
+            onPress={openSettings}
+          >
+            <Text style={[styles.listRowButtonText, { color: textColor }]}>Settings</Text>
+            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.button, styles.dangerButton, styles.primaryButtonSolid]}
             onPress={openDeleteAccount}
           >
@@ -604,5 +616,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  listRowButton: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  listRowButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

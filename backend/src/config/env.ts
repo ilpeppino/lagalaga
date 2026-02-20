@@ -82,6 +82,26 @@ export const envSchema = {
       type: 'boolean',
       default: true,
     },
+    SESSION_LIFECYCLE_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
+    SESSION_LIFECYCLE_INTERVAL_MINUTES: {
+      type: 'number',
+      default: 15,
+    },
+    SESSION_AUTO_COMPLETE_AFTER_HOURS: {
+      type: 'number',
+      default: 2,
+    },
+    SESSION_COMPLETED_RETENTION_HOURS: {
+      type: 'number',
+      default: 2,
+    },
+    SESSION_LIFECYCLE_BATCH_SIZE: {
+      type: 'number',
+      default: 200,
+    },
   },
 };
 
@@ -107,6 +127,11 @@ declare module 'fastify' {
       ACCOUNT_DELETION_GRACE_DAYS: number;
       ACCOUNT_PURGE_INTERVAL_MINUTES: number;
       ACCOUNT_PURGE_ENABLED: boolean;
+      SESSION_LIFECYCLE_ENABLED: boolean;
+      SESSION_LIFECYCLE_INTERVAL_MINUTES: number;
+      SESSION_AUTO_COMPLETE_AFTER_HOURS: number;
+      SESSION_COMPLETED_RETENTION_HOURS: number;
+      SESSION_LIFECYCLE_BATCH_SIZE: number;
     };
   }
 }

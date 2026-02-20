@@ -104,6 +104,7 @@ export default function RootLayout() {
                 />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
+                <Stack.Screen name="settings" options={{ headerShown: true, title: 'Settings' }} />
                 <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />
                 <Stack.Screen name="account/delete-confirm" options={{ headerShown: true, title: 'Confirm Deletion' }} />
                 <Stack.Screen name="account/delete-done" options={{ headerShown: true, title: 'Deletion Requested' }} />

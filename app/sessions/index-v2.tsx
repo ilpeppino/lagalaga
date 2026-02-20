@@ -27,11 +27,23 @@ import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Card } from '@/components/ui/paper';
-import { ActivityIndicator, FAB, IconButton } from 'react-native-paper';
+import { ActivityIndicator, FAB, IconButton, SegmentedButtons } from 'react-native-paper';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { getSessionLiveBadge, sessionUiColors } from '@/src/ui/sessionStatusUi';
 import { LivePulseDot } from '@/components/LivePulseDot';
+import {
+  DEFAULT_SESSION_SETTINGS,
+  type SessionSettings,
+  loadSessionSettings,
+} from '@/src/lib/sessionSettings';
+import {
+  type SessionListFilter,
+  applySessionFilter,
+  isAutoCompleted,
+  isAutoHiddenCompleted,
+  sortSessionsForList,
+} from '@/src/features/sessions/filtering';
 
 /**
  * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
@@ -126,6 +138,9 @@ export default function SessionsListScreenV2() {
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [plannedSessions, setPlannedSessions] = useState<Session[]>([]);
+  const [sessionFilter, setSessionFilter] = useState<SessionListFilter>('live');
+  const [sessionSettings, setSessionSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -145,6 +160,20 @@ export default function SessionsListScreenV2() {
 
   const LIMIT = 20;
 
+  const loadSettings = useCallback(async () => {
+    try {
+      setIsSettingsLoading(true);
+      const loaded = await loadSessionSettings();
+      setSessionSettings(loaded);
+    } catch (error) {
+      logger.warn('Failed to load session settings on sessions list', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  }, []);
+
   const loadAllSessions = useCallback(async (refresh = false) => {
     try {
       if (refresh) {
@@ -154,35 +183,61 @@ export default function SessionsListScreenV2() {
       }
       setLoadError(null);
 
-      const [activeResult, plannedResult] = await Promise.allSettled([
-        sessionsAPIStoreV2.listSessions({
-          status: 'active',
-          limit: LIMIT,
-          offset: 0,
-        }),
-        sessionsAPIStoreV2.listMyPlannedSessions({
-          limit: LIMIT,
-          offset: 0,
-        }),
+      const statusesToFetch: ('active' | 'scheduled')[] =
+        sessionFilter === 'live'
+          ? ['active']
+          : sessionFilter === 'starting_soon'
+            ? ['scheduled']
+            : ['active', 'scheduled'];
+
+      const [sessionResults, plannedResult] = await Promise.all([
+        Promise.allSettled(
+          statusesToFetch.map((status) =>
+            sessionsAPIStoreV2.listSessions({
+              status,
+              limit: LIMIT,
+              offset: 0,
+            })
+          )
+        ),
+        Promise.allSettled([
+          sessionsAPIStoreV2.listMyPlannedSessions({
+            limit: LIMIT,
+            offset: 0,
+          }),
+        ]),
       ]);
 
-      if (activeResult.status === 'fulfilled') {
-        setSessions(activeResult.value.sessions);
-      } else {
-        logger.error('Failed to load active sessions', {
-          error: activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason),
-        });
+      const fetchedSessions = new Map<string, Session>();
+      sessionResults.forEach((result, index) => {
+        const status = statusesToFetch[index];
+        if (result.status === 'fulfilled') {
+          result.value.sessions.forEach((session) => fetchedSessions.set(session.id, session));
+        } else {
+          logger.error(`Failed to load ${status} sessions`, {
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          });
+        }
+      });
+
+      if (fetchedSessions.size > 0) {
+        setSessions(Array.from(fetchedSessions.values()).sort(sortSessionsForList));
+      } else if (sessionResults.every((result) => result.status === 'rejected')) {
+        setSessions([]);
       }
 
-      if (plannedResult.status === 'fulfilled') {
-        setPlannedSessions(plannedResult.value.sessions);
+      const plannedSessionsResult = plannedResult[0];
+      if (plannedSessionsResult.status === 'fulfilled') {
+        setPlannedSessions(plannedSessionsResult.value.sessions);
       } else {
         logger.error('Failed to load planned sessions', {
-          error: plannedResult.reason instanceof Error ? plannedResult.reason.message : String(plannedResult.reason),
+          error: plannedSessionsResult.reason instanceof Error
+            ? plannedSessionsResult.reason.message
+            : String(plannedSessionsResult.reason),
         });
       }
 
-      if (activeResult.status === 'rejected' && plannedResult.status === 'rejected') {
+      if (sessionResults.every((result) => result.status === 'rejected') && plannedSessionsResult.status === 'rejected') {
         setLoadError('Failed to load sessions');
       }
     } catch (error) {
@@ -194,12 +249,13 @@ export default function SessionsListScreenV2() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []); // LIMIT is a constant, no need in deps
+  }, [sessionFilter]); // LIMIT is a constant, no need in deps
 
   useFocusEffect(
     useCallback(() => {
+      void loadSettings();
       loadAllSessions();
-    }, [loadAllSessions])
+    }, [loadAllSessions, loadSettings])
   );
 
   useEffect(() => {
@@ -209,6 +265,11 @@ export default function SessionsListScreenV2() {
   useEffect(() => {
     plannedSessionsRef.current = plannedSessions;
   }, [plannedSessions]);
+
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [sessionFilter]);
 
   const handleRefresh = useCallback(() => {
     loadAllSessions(true);
@@ -310,16 +371,7 @@ export default function SessionsListScreenV2() {
     });
   }, []);
 
-  const handleToggleAll = useCallback(() => {
-    const allPlannedIds = plannedSessions.map(s => s.id);
-    const allSelected = allPlannedIds.every(id => selectedIds.has(id));
-
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(allPlannedIds));
-    }
-  }, [plannedSessions, selectedIds]);
+  const plannedSessionIds = useMemo(() => new Set(plannedSessions.map((session) => session.id)), [plannedSessions]);
 
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -345,9 +397,60 @@ export default function SessionsListScreenV2() {
     }
   }, [presentError, router]);
 
-  const plannedSessionIds = useMemo(() => new Set(plannedSessions.map((session) => session.id)), [plannedSessions]);
-
   const mergedSessions = useMemo(() => {
+    const uniqueSessions = new Map<string, Session>();
+    sessions.forEach((session) => uniqueSessions.set(session.id, session));
+
+    const filteredPlannedSessions = plannedSessions.filter((session) => {
+      if (sessionFilter === 'live') return session.status === 'active';
+      if (sessionFilter === 'starting_soon') return session.status === 'scheduled';
+      return session.status === 'active' || session.status === 'scheduled';
+    });
+
+    filteredPlannedSessions.forEach((session) => {
+      if (!uniqueSessions.has(session.id)) {
+        uniqueSessions.set(session.id, session);
+      }
+    });
+
+    return applySessionFilter(
+      Array.from(uniqueSessions.values()).sort(sortSessionsForList),
+      sessionFilter,
+      sessionSettings
+    );
+  }, [plannedSessions, sessionFilter, sessionSettings, sessions]);
+
+  const eligiblePlannedSessionIds = useMemo(() => {
+    return mergedSessions
+      .filter((session) => plannedSessionIds.has(session.id))
+      .map((session) => session.id);
+  }, [mergedSessions, plannedSessionIds]);
+
+  const handleToggleAll = useCallback(() => {
+    const allSelected = eligiblePlannedSessionIds.every((id) => selectedIds.has(id));
+
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(eligiblePlannedSessionIds));
+    }
+  }, [eligiblePlannedSessionIds, selectedIds]);
+
+  useEffect(() => {
+    logger.info('Sessions list filter changed', { filter: sessionFilter });
+  }, [sessionFilter]);
+
+  useEffect(() => {
+    logger.debug('Sessions list filters applied', {
+      filter: sessionFilter,
+      visibleCount: mergedSessions.length,
+      soonWindowHours: sessionSettings.startingSoonWindowHours,
+    });
+  }, [mergedSessions.length, sessionFilter, sessionSettings.startingSoonWindowHours]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+
     const uniqueSessions = new Map<string, Session>();
     sessions.forEach((session) => uniqueSessions.set(session.id, session));
     plannedSessions.forEach((session) => {
@@ -356,22 +459,20 @@ export default function SessionsListScreenV2() {
       }
     });
 
-    return Array.from(uniqueSessions.values()).sort((a, b) => {
-      const aIsActive = a.status === 'active';
-      const bIsActive = b.status === 'active';
-      if (aIsActive !== bIsActive) {
-        return aIsActive ? -1 : 1;
-      }
+    const allSessions = Array.from(uniqueSessions.values());
+    const autoCompletedCount = allSessions.filter((session) => isAutoCompleted(session, sessionSettings)).length;
+    const autoHiddenCompletedCount = allSessions.filter((session) =>
+      isAutoHiddenCompleted(session, sessionSettings)
+    ).length;
 
-      if (a.status === 'scheduled' && b.status === 'scheduled') {
-        const aStart = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Number.MAX_SAFE_INTEGER;
-        const bStart = b.scheduledStart ? new Date(b.scheduledStart).getTime() : Number.MAX_SAFE_INTEGER;
-        return aStart - bStart;
-      }
-
-      return 0;
-    });
-  }, [sessions, plannedSessions]);
+    if (autoCompletedCount > 0 || autoHiddenCompletedCount > 0) {
+      logger.debug('Sessions hidden by local settings', {
+        filter: sessionFilter,
+        autoCompletedCount,
+        autoHiddenCompletedCount,
+      });
+    }
+  }, [plannedSessions, sessionFilter, sessionSettings, sessions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -613,7 +714,8 @@ export default function SessionsListScreenV2() {
     );
   }
 
-  const allPlannedSelected = plannedSessions.length > 0 && plannedSessions.every(s => selectedIds.has(s.id));
+  const allPlannedSelected = eligiblePlannedSessionIds.length > 0 &&
+    eligiblePlannedSessionIds.every((id) => selectedIds.has(id));
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
@@ -634,7 +736,7 @@ export default function SessionsListScreenV2() {
                     <IconButton
                       icon={allPlannedSelected ? 'checkbox-marked' : 'checkbox-blank-outline'}
                       onPress={handleToggleAll}
-                      disabled={isDeleting || plannedSessions.length === 0}
+                      disabled={isDeleting || eligiblePlannedSessionIds.length === 0}
                     />
                     <IconButton
                       icon="delete"
@@ -667,6 +769,24 @@ export default function SessionsListScreenV2() {
           <>
             <View style={[styles.sectionHeader, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
               <ThemedText type="headlineSmall">Sessions</ThemedText>
+            </View>
+            <View style={styles.segmentedWrap}>
+              <SegmentedButtons
+                value={sessionFilter}
+                onValueChange={(value) => {
+                  setSessionFilter(value as SessionListFilter);
+                }}
+                buttons={[
+                  { value: 'all', label: 'All' },
+                  { value: 'starting_soon', label: 'Starting soon' },
+                  { value: 'live', label: 'Live' },
+                ]}
+              />
+              {isSettingsLoading ? (
+                <ThemedText type="labelSmall" lightColor="#666" darkColor="#aaa" style={styles.settingsHint}>
+                  Loading filter settings...
+                </ThemedText>
+              ) : null}
             </View>
 
             {loadError && (
@@ -737,6 +857,14 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+  },
+  segmentedWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 6,
+  },
+  settingsHint: {
+    paddingLeft: 4,
   },
   sectionEmpty: {
     padding: 20,

@@ -28,8 +28,10 @@ export interface Session {
   maxParticipants: number;
   currentParticipants: number;
   scheduledStart?: string;
+  scheduledEnd?: string;
   game: Game;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SessionDetail extends Session {

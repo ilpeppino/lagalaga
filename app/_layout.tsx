@@ -107,6 +107,7 @@ export default function RootLayout() {
                 <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />
                 <Stack.Screen name="account/delete-confirm" options={{ headerShown: true, title: 'Confirm Deletion' }} />
                 <Stack.Screen name="account/delete-done" options={{ headerShown: true, title: 'Deletion Requested' }} />
+                <Stack.Screen name="safety-report" options={{ headerShown: true, title: 'Safety & Report' }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                 <Stack.Screen name="invites" options={{ headerShown: false }} />
                 {ENABLE_COMPETITIVE_DEPTH ? (

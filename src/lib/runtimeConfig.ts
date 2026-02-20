@@ -19,8 +19,12 @@ function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
   return value;
 }
 
-function readOptionalPublicEnv(name: 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'): string | null {
-  const value = process.env.EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL;
+function readOptionalPublicEnv(
+  name: 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL' | 'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
+): string | null {
+  const value = name === 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
+    ? process.env.EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL
+    : process.env.EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL;
   if (!value || !value.trim()) {
     return null;
   }
@@ -57,3 +61,7 @@ export const ENABLE_COMPETITIVE_DEPTH = readOptionalPublicBoolean(
 export const DELETE_ACCOUNT_WEB_URL = readOptionalPublicEnv(
   'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
 ) ?? 'https://ilpeppino.github.io/lagalaga/delete-account.html';
+
+export const CHILD_SAFETY_POLICY_URL = readOptionalPublicEnv(
+  'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
+) ?? 'https://ilpeppino.github.io/lagalaga/child-safety.html';

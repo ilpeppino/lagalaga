@@ -8,15 +8,20 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const { handleError } = useErrorHandler();
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<{
@@ -25,6 +30,17 @@ export default function ProfileScreen() {
     streakDays: number;
   } | null>(null);
   const [achievements, setAchievements] = useState<Array<{ code: string; unlockedAt: string }>>([]);
+
+  const openSafetyReport = () => {
+    router.push('/safety-report');
+  };
+
+  const openOverflow = () => {
+    Alert.alert('Profile options', 'Choose an action', [
+      { text: 'Safety & Report', onPress: openSafetyReport },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   useEffect(() => {
     async function loadStats() {
@@ -48,6 +64,16 @@ export default function ProfileScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
+        <Stack.Screen
+          options={{
+            title: 'Profile',
+            headerRight: () => (
+              <TouchableOpacity onPress={openOverflow} style={styles.headerMenuButton}>
+                <IconSymbol name="ellipsis.circle" size={22} color="#007AFF" />
+              </TouchableOpacity>
+            ),
+          }}
+        />
         <ActivityIndicator size="large" color="#007AFF" />
         <ThemedText type="bodyLarge" style={styles.loadingText}>
           Loading profile...
@@ -61,6 +87,16 @@ export default function ProfileScreen() {
       style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
       contentContainerStyle={styles.content}
     >
+      <Stack.Screen
+        options={{
+          title: 'Profile',
+          headerRight: () => (
+            <TouchableOpacity onPress={openOverflow} style={styles.headerMenuButton}>
+              <IconSymbol name="ellipsis.circle" size={22} color="#007AFF" />
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <ThemedView style={styles.section}>
         <ThemedText type="titleLarge" style={styles.sectionTitle}>
           Statistics
@@ -145,6 +181,9 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
+  },
+  headerMenuButton: {
+    paddingHorizontal: 4,
   },
   section: {
     marginBottom: 24,

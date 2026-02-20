@@ -188,6 +188,17 @@ export default function SessionDetailScreenV2() {
     }
   };
 
+  const handleOpenSafetyReport = () => {
+    if (!session) return;
+    router.push({
+      pathname: '/safety-report',
+      params: {
+        targetType: 'SESSION',
+        targetSessionId: session.id,
+      },
+    } as any);
+  };
+
   const handleOpenResultDialog = () => {
     if (!session) return;
     const joined = session.participants.filter((participant) => participant.state === 'joined');
@@ -562,6 +573,13 @@ export default function SessionDetailScreenV2() {
                     onPress={() => handleShare()}
                   />
                 )}
+                <Button
+                  title="Safety & Report"
+                  variant="outlined"
+                  textColor="#c62828"
+                  style={styles.safetyButton}
+                  onPress={handleOpenSafetyReport}
+                />
               </View>
             </View>
 
@@ -848,6 +866,10 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     borderRadius: 8,
+  },
+  safetyButton: {
+    borderRadius: 8,
+    marginTop: 10,
   },
   hostToolsTitle: {
     marginBottom: 8,

@@ -41,6 +41,15 @@ export interface ApiGetResponse<T> {
   data: T | null;
 }
 
+export type ReportCategory =
+  | 'CSAM'
+  | 'GROOMING_OR_SEXUAL_EXPLOITATION'
+  | 'HARASSMENT_OR_ABUSIVE_BEHAVIOR'
+  | 'IMPERSONATION'
+  | 'OTHER';
+
+export type ReportTargetType = 'USER' | 'SESSION' | 'GENERAL';
+
 function generateCorrelationId(): string {
   // Use crypto.randomUUID if available, otherwise fall back
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -384,6 +393,29 @@ class ApiClient {
     cancelDeletionRequest: async (): Promise<AccountDeletionStatusResponse> => {
       return this.request('/v1/account/deletion-cancel', {
         method: 'POST',
+      });
+    },
+  };
+
+  reports = {
+    create: async (input: {
+      category: ReportCategory;
+      description: string;
+      targetType: ReportTargetType;
+      targetUserId?: string;
+      targetSessionId?: string;
+    }): Promise<{
+      success: boolean;
+      data: {
+        ticketId: string;
+        status: 'OPEN' | 'UNDER_REVIEW' | 'CLOSED' | 'ESCALATED';
+        createdAt: string;
+      };
+      requestId: string;
+    }> => {
+      return this.request('/api/reports', {
+        method: 'POST',
+        body: JSON.stringify(input),
       });
     },
   };

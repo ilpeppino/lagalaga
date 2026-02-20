@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Switch,
+  Alert,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -111,6 +112,17 @@ export default function MeScreen() {
     router.push('/account/delete');
   };
 
+  const openSafetyReport = () => {
+    router.push('/safety-report');
+  };
+
+  const openProfileOverflowMenu = () => {
+    Alert.alert('Profile options', 'Choose an action', [
+      { text: 'Safety & Report', onPress: openSafetyReport },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const formatCountdown = (endDate: string | null): string => {
     if (!endDate) {
       return 'N/A';
@@ -144,7 +156,17 @@ export default function MeScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor }]}>
-        <Stack.Screen options={{ title: 'Me', headerShown: true }} />
+        <Stack.Screen
+          options={{
+            title: 'Me',
+            headerShown: true,
+            headerRight: () => (
+              <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
+                <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
+              </TouchableOpacity>
+            ),
+          }}
+        />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={tintColor} />
         </View>
@@ -155,7 +177,17 @@ export default function MeScreen() {
   if (!data) {
     return (
       <View style={[styles.container, { backgroundColor }]}>
-        <Stack.Screen options={{ title: 'Me', headerShown: true }} />
+        <Stack.Screen
+          options={{
+            title: 'Me',
+            headerShown: true,
+            headerRight: () => (
+              <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
+                <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
+              </TouchableOpacity>
+            ),
+          }}
+        />
         <View style={styles.centered}>
           <Text style={[styles.errorText, { color: textColor }]}>
             Failed to load profile
@@ -176,7 +208,17 @@ export default function MeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <Stack.Screen options={{ title: 'Me', headerShown: true }} />
+      <Stack.Screen
+        options={{
+          title: 'Me',
+          headerShown: true,
+          headerRight: () => (
+            <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
+              <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
       
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {/* Avatar Section */}
@@ -336,6 +378,14 @@ export default function MeScreen() {
             <IconSymbol name="trash.fill" size={20} color="#fff" />
             <Text style={styles.buttonText}>Delete Account</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
+            onPress={openSafetyReport}
+          >
+            <IconSymbol name="exclamationmark.shield.fill" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Safety & Report</Text>
+          </TouchableOpacity>
         </View>
 
         {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (
@@ -432,6 +482,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerMenuButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   errorText: {
     fontSize: 16,

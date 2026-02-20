@@ -471,6 +471,23 @@ UNIQUE (user_id) WHERE status = 'PENDING'  -- one pending request per user
 
 **Purpose**: Lifecycle tracking for GDPR/user-initiated account deletion
 
+#### reports
+```sql
+id                   UUID PRIMARY KEY
+reporter_id          UUID (FK -> app_users.id)
+category             report_category  -- enum: CSAM | GROOMING_OR_SEXUAL_EXPLOITATION | HARASSMENT_OR_ABUSIVE_BEHAVIOR | IMPERSONATION | OTHER
+target_type          TEXT             -- 'USER' | 'SESSION' | 'GENERAL'
+target_user_id       UUID (FK -> app_users.id, nullable)
+target_session_id    UUID (FK -> sessions.id, nullable)
+details              TEXT
+status               report_status    -- enum: OPEN | UNDER_REVIEW | CLOSED | ESCALATED
+created_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+```
+
+**Purpose**: User safety reports. CSAM reports are auto-escalated to `ESCALATED` status.
+**Migration**: `supabase/migrations/20260220154000_create_reports_and_safety_rls.sql`
+
 ### Relationships
 
 - `app_users` 1 → N `sessions` (via `host_id`)
@@ -669,13 +686,52 @@ apiClient.sessions.join(id)
 apiClient.sessions.leave(id)
 ```
 
+### Safety Reporting System
+
+**Implemented**: 2026-02-20
+
+**Purpose**: Allow users to report safety issues (CSAM, grooming, harassment, impersonation, other) against users, sessions, or the general platform.
+
+**Frontend flow** (`app/safety-report.tsx`):
+1. Step 1 – Pick category (CSAM, GROOMING_OR_SEXUAL_EXPLOITATION, etc.)
+2. Step 2 – Describe the target and add report details
+3. Step 3 – Confirmation screen with ticket ID (report UUID)
+
+Supports URL params `targetType`, `targetUserId`, `targetSessionId` for pre-filling context. Entry points:
+- `app/me.tsx` – "Safety & Report" button (no pre-fill)
+- `app/profile.tsx` – "Safety & Report" overflow action (no pre-fill)
+- `app/sessions/[id]-v2.tsx` – Pre-fills `targetType=SESSION` and `targetSessionId`
+
+**Backend service** (`backend/src/services/reporting.service.ts`):
+- Validates target existence (looks up `app_users` / `sessions`)
+- Rate limit: 5 reports per hour per user
+- Duplicate window: 5-minute dedup check
+- CSAM reports auto-set to `ESCALATED` status
+- Structured safety event logging for CSAM
+
+**Database** (`supabase/migrations/20260220154000_create_reports_and_safety_rls.sql`):
+- See `reports` table in Database Schema doc
+
+**API client** (`src/lib/api.ts`):
+```typescript
+apiClient.reports.create({
+  category: 'CSAM' | 'GROOMING_OR_SEXUAL_EXPLOITATION' | 'HARASSMENT_OR_ABUSIVE_BEHAVIOR' | 'IMPERSONATION' | 'OTHER',
+  targetType: 'USER' | 'SESSION' | 'GENERAL',
+  targetUserId?: string,
+  targetSessionId?: string,
+  details?: string,
+})
+```
+
 ### Runtime Configuration
 
 **File**: `src/lib/runtimeConfig.ts`
 
-- `API_URL`: Backend URL from `EXPO_PUBLIC_API_URL` env var
-- Falls back to localhost for development
-- Used by all API clients
+- `API_URL`: Backend URL from `EXPO_PUBLIC_API_URL` env var — falls back to localhost for development
+- `ENABLE_COMPETITIVE_DEPTH`: Feature flag for ranked sessions, leaderboard, match history (`EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH`)
+- `DELETE_ACCOUNT_WEB_URL`: URL for web-based account deletion (`EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL`)
+- `CHILD_SAFETY_POLICY_URL`: URL for child safety policy (`EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL`; defaults to `https://ilpeppino.github.io/lagalaga/child-safety.html`)
+- Used by all API clients and safety-related screens
 
 ## 8. Backend API Structure
 
@@ -692,13 +748,24 @@ apiClient.sessions.leave(id)
 6. `healthCheckPlugin` - `/health` and `/health/detailed` endpoints
 7. `metricsPlugin` - `/metrics` (Prometheus) and `/metrics/json`
 
-**Route Registration:**
+**Route Registration (in order):**
 ```typescript
 fastify.register(authRoutes, { prefix: '/auth' })
+fastify.register(robloxConnectRoutes, { prefix: '/api/auth' })
 fastify.register(sessionsRoutes)      // Legacy v1
 fastify.register(sessionsRoutesV2)    // Current v2
 fastify.register(robloxRoutes)
+fastify.register(meRoutes, { prefix: '/api/me' })
+fastify.register(presenceRoutes)
+fastify.register(friendsRoutes)
+fastify.register(leaderboardRoutes)
+fastify.register(accountRoutes, { prefix: '/v1/account' })
+fastify.register(reportsRoutes)
 ```
+
+**Background Timers (started at boot if features enabled):**
+- Season rollover check (hourly) when `isCompetitiveDepthEnabled()`
+- Account deletion purge cycle (interval set by `ACCOUNT_PURGE_INTERVAL_MINUTES`) when `ACCOUNT_PURGE_ENABLED`
 
 ### Real Endpoints Discovered
 
@@ -723,6 +790,9 @@ fastify.register(robloxRoutes)
 - `POST /api/sessions/:id/result` - Submit match result for ranked session (authenticated)
 - `POST /api/sessions/:id/join` - Join session (authenticated)
 - `POST /api/sessions/:id/decline-invite` - Decline a session invitation (authenticated)
+- `POST /api/sessions/:id/handoff/opened` - Signal participant has opened Roblox (authenticated)
+- `POST /api/sessions/:id/handoff/confirmed` - Signal participant is confirmed in-game (authenticated)
+- `POST /api/sessions/:id/handoff/stuck` - Signal participant is stuck joining (authenticated)
 - `DELETE /api/sessions/:id` - Delete session (host only, authenticated)
 - `POST /api/sessions/bulk-delete` - Bulk delete sessions (authenticated)
 - `GET /api/invites/:code` - Get session by invite code (public)
@@ -736,27 +806,36 @@ fastify.register(robloxRoutes)
 - `POST /sessions/:id/join` - Join session
 - `POST /sessions/:id/leave` - Leave session
 
-#### Friends Routes (`/api/user/friends`)
+#### Friends Routes
 **File**: `backend/src/routes/friends.routes.ts`
 
-- `GET /api/user/friends` - List friends (authenticated, sections: all/lagalaga/requests/roblox_suggestions)
-- `POST /api/user/friends` - Send friend request (authenticated)
-- `POST /api/user/friends/:friendshipId/accept` - Accept friend request (authenticated)
-- `POST /api/user/friends/:friendshipId/reject` - Reject friend request (authenticated)
-- `DELETE /api/user/friends/:friendshipId` - Remove friendship (authenticated)
+Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 
-#### Presence Routes (`/api/presence`)
+- `GET /api/user/friends` - List friends (authenticated, sections: all/lagalaga/requests/roblox_suggestions)
+- `POST /api/user/friends/refresh` - Refresh Roblox friends cache (authenticated)
+- `POST /api/friends/request` - Send friend request (authenticated)
+- `POST /api/friends/accept` - Accept friend request (authenticated)
+- `POST /api/friends/reject` - Reject friend request (authenticated)
+- `DELETE /api/friends/:friendshipId` - Remove friendship (authenticated)
+
+#### Presence Routes
 **File**: `backend/src/routes/presence.routes.ts`
 
-- `GET /api/presence/roblox/users` - Get Roblox presence for users (authenticated)
+- `POST /api/roblox/presence` - Get Roblox presence for up to 50 users by robloxUserIds (authenticated)
+- `GET /api/presence/roblox/users` - Get presence by comma-separated userIds query param (authenticated)
 
 #### Me Routes (`/api/me`)
 **File**: `backend/src/routes/me.routes.ts`
 
 - `GET /api/me` - Get current user profile with Roblox connection status (authenticated)
-- `GET /api/me/roblox/favorites` - Get user's Roblox favorites (authenticated)
-- `POST /api/me/roblox/sync-friends` - Sync Roblox friends to cache (authenticated)
-- `POST /api/me/register-push-token` - Register push notification token (authenticated)
+- `GET /api/me/stats` - Get user stats and achievements (authenticated)
+- `GET /api/me/match-history` - Get user match history (authenticated, feature-flagged by `ENABLE_COMPETITIVE_DEPTH`)
+- `GET /api/me/roblox/favorites` - Get user's Roblox favorites (authenticated, paginated)
+- `GET /api/me/roblox/friends` - Get Roblox friends from cache (authenticated)
+- `POST /api/me/roblox/friends/refresh` - Force refresh Roblox friends cache (authenticated)
+- `GET /api/me/favorite-experiences` - Get favorite experiences with ETag/304 support (authenticated)
+- `POST /api/me/push-tokens` - Register Expo push notification token (authenticated)
+- `DELETE /api/me/push-tokens` - Remove push notification token (authenticated)
 
 #### Roblox Connect Routes (`/api/auth`)
 **File**: `backend/src/routes/roblox-connect.routes.ts`
@@ -779,7 +858,19 @@ fastify.register(robloxRoutes)
 #### Roblox Routes
 **File**: `backend/src/routes/roblox.ts`
 
-- URL normalization and metadata extraction (implementation details in service)
+- `POST /roblox/normalize-link` - Normalize a Roblox game URL
+- `POST /roblox/resolve-experience` - Resolve a Roblox experience from URL
+- `GET /api/roblox/experience-by-place/:placeId` - Get experience metadata by Roblox place ID
+
+#### Reports Routes (`/api/reports`)
+**File**: `backend/src/routes/reports.routes.ts`
+
+- `POST /api/reports` - Create a safety report (authenticated)
+  - Categories: `CSAM`, `GROOMING_OR_SEXUAL_EXPLOITATION`, `HARASSMENT_OR_ABUSIVE_BEHAVIOR`, `IMPERSONATION`, `OTHER`
+  - Target types: `USER`, `SESSION`, `GENERAL`
+  - Rate limited: 5 reports/hour per user
+  - Duplicate window: 5 minutes
+  - CSAM reports auto-escalated and triggers notification stub
 
 #### Health & Metrics
 **Files**: `backend/src/plugins/healthCheck.ts`, `backend/src/plugins/metrics.ts`
@@ -840,9 +931,10 @@ Not present in current codebase.
 
 ### Route Groups
 
-**`app/(tabs)/`** - Tab navigator
-- `_layout.tsx` - Tab bar configuration
-- `index.tsx` - Home tab
+**`app/(tabs)/`** - Tab navigator (3 tabs)
+- `_layout.tsx` - Tab bar configuration; all tabs have a user icon button (top-right → `/me`)
+- `index.tsx` - Home tab (sessions list)
+- `friends.tsx` - Friends tab
 - `explore.tsx` - Explore tab
 
 **`app/auth/`** - Authentication
@@ -852,14 +944,33 @@ Not present in current codebase.
 
 **`app/sessions/`** - Session management
 - `_layout.tsx` - Sessions stack layout
-- `index-v2.tsx` - Active sessions list
-- `create-v2.tsx` - Create session form
-- `[id]-v2.tsx` - Session details (dynamic route)
+- `index-v2.tsx` - Active sessions list (current)
+- `create-v2.tsx` - Create session form (current)
+- `[id]-v2.tsx` - Session details (current; has "Safety & Report" action pre-filled with SESSION target)
+- `handoff.tsx` - Handoff / launch Roblox flow (in-game presence tracking)
 - Legacy files: `index.tsx`, `create.tsx`, `[id].tsx` (v1)
 
-**`app/invite/`** - Invite handling
+**`app/invite/`** - Invite handling (custom deep link)
 - `_layout.tsx` - Invite stack layout
 - `[code].tsx` - Join via invite code (dynamic route)
+
+**`app/invites/`** - Session invite view (distinct from deep-link invite)
+- `_layout.tsx` - Invites stack layout
+- `[sessionId].tsx` - Session invite view for a specific session
+
+**`app/account/`** - Account management
+- `delete.tsx` - Initiate account deletion
+- `delete-confirm.tsx` - Confirm deletion
+- `delete-done.tsx` - Deletion requested confirmation
+
+**`app/leaderboard/`** - Competitive leaderboard
+- `index.tsx` - Leaderboard screen (feature-flagged by `ENABLE_COMPETITIVE_DEPTH`)
+
+**Root-level screens:**
+- `app/me.tsx` - User profile (has "Safety & Report" button → `/safety-report`)
+- `app/profile.tsx` - User stats and achievements (has "Safety & Report" overflow action)
+- `app/safety-report.tsx` - 3-step safety reporting flow (category → target/details → confirmation)
+- `app/match-history.tsx` - Match history (feature-flagged by `ENABLE_COMPETITIVE_DEPTH`)
 
 ### Navigation Patterns
 
@@ -1116,13 +1227,20 @@ Based on the current architecture, the following extensions are feasible:
 - Routes: `POST /v1/account/deletion-request`, `GET /v1/account/deletion-status`, `POST /v1/account/deletion-cancel`
 - Sets `app_users.status = 'PENDING_DELETION'` during grace period
 
-### 10. Production Hardening
+### 10. ✅ Safety Reporting (Implemented)
+- `reports` table with category/status enums
+- Backend service: rate limiting (5/hr), duplicate window (5 min), CSAM auto-escalation
+- `POST /api/reports` endpoint (authenticated)
+- Frontend 3-step flow: `/safety-report` screen
+- Entry points from Me screen, Profile screen, and Session detail screen
+
+### 11. Production Hardening
 - Redis for session state (currently in-memory Map)
 - Token blacklist for logout (currently mitigated by `token_version` on `app_users`)
 - Rate limiting per user
 - Database connection pooling
 
-### 10. Observability
+### 12. Observability
 - Distributed tracing (OpenTelemetry)
 - APM integration (Sentry, Datadog)
 - Custom dashboards for session metrics

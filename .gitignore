@@ -46,3 +46,4 @@ app-example
 /ios
 /android
 backend/.env.backup-20260210-171928
+.aider*

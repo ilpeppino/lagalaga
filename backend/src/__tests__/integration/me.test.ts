@@ -1,8 +1,4 @@
-import Fastify from 'fastify';
-import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { buildMeRoutes } from '../../routes/me.routes.js';
-import { errorHandlerPlugin } from '../../plugins/errorHandler.js';
+import { afterAll, afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { FastifyInstance } from 'fastify';
 
 interface MockDbState {
@@ -66,16 +62,20 @@ function createSupabaseMock(state: MockDbState) {
 }
 
 let activeSupabaseMock: ReturnType<typeof createSupabaseMock> | null = null;
-let getMeData: typeof import('../../services/me.service.js').getMeData;
 
-beforeAll(async () => {
-  jest.resetModules();
-  await jest.unstable_mockModule('../../config/supabase.js', () => ({
-    getSupabase: () => activeSupabaseMock,
-  }));
+jest.unstable_mockModule('../../config/supabase.js', () => ({
+  getSupabase: () => activeSupabaseMock,
+}));
+jest.unstable_mockModule('../../services/achievementService.js', () => ({
+  AchievementService: class {
+    async incrementUserStat() {}
+    async evaluateAndUnlock() {}
+  },
+}));
 
-  ({ getMeData } = await import('../../services/me.service.js'));
-});
+const { buildMeRoutes } = await import('../../routes/me.routes.js');
+const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
+const { getMeData } = await import('../../services/me.service.js');
 
 afterAll(() => {
   activeSupabaseMock = null;
@@ -88,6 +88,7 @@ describe('GET /api/me', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    const { default: Fastify } = await import('fastify');
     app = Fastify();
     (app as any).config = { NODE_ENV: 'test' };
     await app.register(errorHandlerPlugin);
@@ -291,6 +292,7 @@ describe('GET /api/me', () => {
       }),
     } as Response);
 
+    const { default: request } = await import('supertest');
     const response = await request(app.server)
       .get('/api/me')
       .expect(200);

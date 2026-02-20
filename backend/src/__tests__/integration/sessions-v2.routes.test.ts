@@ -1,28 +1,22 @@
-import Fastify from 'fastify';
-import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, afterEach, describe, expect, it, jest } from '@jest/globals';
 import { ConflictError, ErrorCodes, SessionError } from '../../utils/errors.js';
 
 const sessionId = '11111111-1111-1111-1111-111111111111';
 
-let buildSessionsRoutesV2: typeof import('../../routes/sessions-v2.js').buildSessionsRoutesV2;
-let errorHandlerPlugin: typeof import('../../plugins/errorHandler.js').errorHandlerPlugin;
 let activeSupabaseMock: any;
 
-beforeAll(async () => {
-  await jest.unstable_mockModule('../../config/supabase.js', () => ({
-    getSupabase: () => activeSupabaseMock,
-  }));
-  await jest.unstable_mockModule('../../services/achievementService.js', () => ({
-    AchievementService: class {
-      async incrementUserStat() {}
-      async evaluateAndUnlock() {}
-    },
-  }));
+jest.unstable_mockModule('../../config/supabase.js', () => ({
+  getSupabase: () => activeSupabaseMock,
+}));
+jest.unstable_mockModule('../../services/achievementService.js', () => ({
+  AchievementService: class {
+    async incrementUserStat() {}
+    async evaluateAndUnlock() {}
+  },
+}));
 
-  ({ buildSessionsRoutesV2 } = await import('../../routes/sessions-v2.js'));
-  ({ errorHandlerPlugin } = await import('../../plugins/errorHandler.js'));
-});
+const { buildSessionsRoutesV2 } = await import('../../routes/sessions-v2.js');
+const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
 
 afterAll(() => {
   activeSupabaseMock = null;
@@ -41,6 +35,7 @@ async function buildApp({
 } = {}) {
   activeSupabaseMock = supabaseMock;
 
+  const { default: Fastify } = await import('fastify');
   const app = Fastify({ logger: false });
   (app as any).config = { NODE_ENV: 'test' };
 
@@ -59,6 +54,7 @@ describe('sessions v2 routes', () => {
     const getSessionById = jest.fn();
     const app = await buildApp({ sessionService: { getSessionById } });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server).get('/api/sessions/not-a-uuid');
     await app.close();
 
@@ -71,6 +67,7 @@ describe('sessions v2 routes', () => {
     const getSessionById = jest.fn(async (_id: string, _requesterId: string | null) => null);
     const app = await buildApp({ sessionService: { getSessionById } });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server).get(`/api/sessions/${sessionId}`);
     await app.close();
 
@@ -88,6 +85,7 @@ describe('sessions v2 routes', () => {
       },
     });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server)
       .post('/api/sessions/bulk-delete')
       .send({ ids: ['bad-id'] });
@@ -132,6 +130,7 @@ describe('sessions v2 routes', () => {
     };
 
     const app = await buildApp({ supabaseMock });
+    const { default: request } = await import('supertest');
     const res = await request(app.server).get('/api/invites/INV123');
     await app.close();
 
@@ -163,6 +162,7 @@ describe('sessions v2 routes', () => {
     };
 
     const app = await buildApp({ supabaseMock });
+    const { default: request } = await import('supertest');
     const res = await request(app.server).get('/api/invites/MISSING');
     await app.close();
 
@@ -183,6 +183,7 @@ describe('sessions v2 routes', () => {
       },
     });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server)
       .post('/api/sessions')
       .send({
@@ -208,6 +209,7 @@ describe('sessions v2 routes', () => {
       },
     });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server)
       .post('/api/sessions')
       .send({
@@ -236,6 +238,7 @@ describe('sessions v2 routes', () => {
       },
     });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server)
       .post(`/api/sessions/${sessionId}/result`)
       .send({ winnerId: '22222222-2222-2222-2222-222222222222' });
@@ -258,6 +261,7 @@ describe('sessions v2 routes', () => {
       },
     });
 
+    const { default: request } = await import('supertest');
     const res = await request(app.server)
       .post(`/api/sessions/${sessionId}/result`)
       .send({ winnerId: '33333333-3333-3333-3333-333333333333' });

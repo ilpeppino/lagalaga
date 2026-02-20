@@ -1,15 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-let LeaderboardService: typeof import('../leaderboardService.js').LeaderboardService;
 let activeSupabaseMock: any;
 
-beforeAll(async () => {
-  await jest.unstable_mockModule('../../config/supabase.js', () => ({
-    getSupabase: () => activeSupabaseMock,
-  }));
+jest.unstable_mockModule('../../config/supabase.js', () => ({
+  getSupabase: () => activeSupabaseMock,
+}));
 
-  ({ LeaderboardService } = await import('../leaderboardService.js'));
-});
+const { LeaderboardService } = await import('../leaderboardService.js');
 
 describe('LeaderboardService', () => {
   beforeEach(() => {

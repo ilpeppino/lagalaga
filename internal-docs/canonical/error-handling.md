@@ -420,7 +420,7 @@ Error boundaries catch React component errors and provide fallback UI to prevent
 
 ### ErrorBoundary Component
 
-Location: `apps/mobile/src/components/ErrorBoundary.tsx`
+Location: `components/ErrorBoundary.tsx`
 
 ```typescript
 interface ErrorBoundaryProps {
@@ -607,7 +607,7 @@ try {
 
 ### Frontend Retry Logic (api.ts)
 
-The API client in `apps/mobile/src/services/api.ts` implements automatic retry logic:
+The API client in `src/lib/api.ts` implements automatic retry logic:
 
 ```typescript
 // Automatic retry for network errors
@@ -646,7 +646,7 @@ async function fetchWithRetry(
 
 Custom hook for consistent error handling in React components.
 
-Location: `apps/mobile/src/hooks/useErrorHandler.ts`
+Location: `hooks/useErrorHandler.ts`
 
 ```typescript
 interface UseErrorHandlerReturn {
@@ -770,7 +770,7 @@ const handleComment = async (postId: string, text: string) => {
 
 The error presenter maps error codes to user-friendly messages and determines presentation strategy.
 
-Location: `apps/mobile/src/utils/errorPresenter.ts`
+Location: `src/lib/errorPresenter.ts`
 
 ### Presentation Strategies
 
@@ -898,7 +898,7 @@ INT_BACKGROUND_SYNC_FAILED => {
 For specific contexts, override default presentation:
 
 ```typescript
-import { presentError, ErrorPresenter } from '@/utils/errorPresenter';
+import { presentError } from '@/lib/errorPresenter';
 
 const { handleError } = useErrorHandler();
 
@@ -999,5 +999,5 @@ Integration points:
 
 ---
 
-**Last Updated**: 2026-02-08
+**Last Updated**: 2026-02-20
 **Version**: 1.0.0

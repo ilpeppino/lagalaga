@@ -6,16 +6,11 @@ const mockSupabase = {
   from: jest.fn(),
 };
 
-let RobloxEnrichmentService: typeof import('../roblox-enrichment.service.js').RobloxEnrichmentService;
+jest.unstable_mockModule('../../config/supabase.js', () => ({
+  getSupabase: () => mockSupabase,
+}));
 
-beforeAll(async () => {
-  jest.resetModules();
-  await jest.unstable_mockModule('../../config/supabase.js', () => ({
-    getSupabase: () => mockSupabase,
-  }));
-
-  ({ RobloxEnrichmentService } = await import('../roblox-enrichment.service.js'));
-});
+const { RobloxEnrichmentService } = await import('../roblox-enrichment.service.js');
 
 describe('RobloxEnrichmentService', () => {
   let service: InstanceType<typeof RobloxEnrichmentService>;

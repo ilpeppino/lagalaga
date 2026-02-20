@@ -1,16 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 let activeSupabaseMock: any = null;
-let AccountDeletionServiceClass: typeof import('../account-deletion.service.js').AccountDeletionService;
 
-beforeAll(async () => {
-  jest.resetModules();
-  await jest.unstable_mockModule('../../config/supabase.js', () => ({
-    getSupabase: () => activeSupabaseMock,
-  }));
+jest.unstable_mockModule('../../config/supabase.js', () => ({
+  getSupabase: () => activeSupabaseMock,
+}));
 
-  ({ AccountDeletionService: AccountDeletionServiceClass } = await import('../account-deletion.service.js'));
-});
+const { AccountDeletionService: AccountDeletionServiceClass } = await import('../account-deletion.service.js');
 
 function buildSupabaseMock(params: {
   pendingRequest: {

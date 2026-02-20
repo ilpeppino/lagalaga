@@ -2,11 +2,11 @@
 
 This document describes the complete database schema for LagaLaga as deployed on Supabase and replicated for on-premise installations.
 
-> Last updated: 2026-02-18. For the authoritative live schema see `database-schema.md` (generated from Supabase).
+> Last updated: 2026-02-20. For the authoritative live schema see `database-schema.md` (generated from Supabase).
 
 ## Overview
 
-The database consists of 21 tables organized into several functional areas:
+The database consists of 22 tables organized into several functional areas:
 - **User Management**: `app_users`, `user_platforms`
 - **Platform Support**: `platforms`
 - **Gaming Sessions**: `games`, `sessions`, `session_participants`, `session_invites`, `session_invited_roblox`
@@ -15,6 +15,7 @@ The database consists of 21 tables organized into several functional areas:
 - **Notifications**: `user_push_tokens`
 - **Gamification**: `user_stats`, `user_achievements`, `user_rankings`, `match_results`, `seasons`, `season_rankings`
 - **Account Management**: `account_deletion_requests`
+- **Safety**: `reports`
 
 ## Custom Types (Enums)
 
@@ -42,6 +43,21 @@ Participant's current status.
 - `joined` - Active participant
 - `left` - Left the session
 - `kicked` - Removed by host
+
+### report_category
+Category for safety reports.
+- `CSAM` - Child Sexual Abuse Material (auto-escalated)
+- `GROOMING_OR_SEXUAL_EXPLOITATION` - Grooming or sexual exploitation of minors
+- `HARASSMENT_OR_ABUSIVE_BEHAVIOR` - Harassment or abusive behavior
+- `IMPERSONATION` - Impersonating another user
+- `OTHER` - Other safety concern
+
+### report_status
+Lifecycle status of a safety report.
+- `OPEN` - New report, not yet reviewed
+- `UNDER_REVIEW` - Being reviewed by safety team
+- `CLOSED` - Review complete, no action or resolved
+- `ESCALATED` - Escalated (automatic for CSAM)
 
 ## Tables
 
@@ -643,6 +659,51 @@ CREATE TABLE account_deletion_requests (
 
 ---
 
+### reports
+
+User safety reports submitted through the in-app reporting flow.
+
+```sql
+CREATE TABLE reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id UUID NOT NULL,
+  category report_category NOT NULL,
+  target_type TEXT NOT NULL,         -- CHECK: USER | SESSION | GENERAL
+  target_user_id UUID,
+  target_session_id UUID,
+  details TEXT,
+  status report_status NOT NULL DEFAULT 'OPEN',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  FOREIGN KEY (reporter_id) REFERENCES app_users(id),
+  FOREIGN KEY (target_user_id) REFERENCES app_users(id),
+  FOREIGN KEY (target_session_id) REFERENCES sessions(id)
+);
+```
+
+**Indexes:**
+- `reports_pkey` - Primary key on `id`
+- `idx_reports_reporter_id` - Reporter lookups
+- `idx_reports_status` - Status filtering for safety review queue
+- `idx_reports_category` - Category filtering
+- `idx_reports_target_user_id` - Reports against a specific user
+- `idx_reports_target_session_id` - Reports against a specific session
+- `idx_reports_created_at` - Time-based ordering
+
+**RLS Policies:**
+- Authenticated users can INSERT (submit a report)
+- Authenticated users can SELECT their own reports (`reporter_id = auth.uid()`)
+- Service role has full access
+
+**Business logic (enforced in `reporting.service.ts`):**
+- Rate limit: 5 reports per hour per reporter
+- Duplicate dedup: 5-minute window per (reporter, target) pair
+- CSAM reports: automatically set to `ESCALATED` status + stub escalation notification
+- Target existence: reporter_id, target_user_id, target_session_id all validated before insert
+
+---
+
 ## Database Functions
 
 ### list_sessions_optimized
@@ -673,7 +734,7 @@ RETURNS TABLE (...)
 
 ## Migration History
 
-All 18 migrations applied to production (Supabase) as of 2026-02-18:
+All 19 migrations applied to production (Supabase) as of 2026-02-20:
 
 | # | Version | Name |
 |---|---------|------|
@@ -695,6 +756,7 @@ All 18 migrations applied to production (Supabase) as of 2026-02-18:
 | 16 | 20260216144120 | seasons_and_match_history |
 | 17 | 20260217203258 | account_deletion |
 | 18 | 20260217221455 | rls_account_deletion_experience_favorites |
+| 19 | 20260220154000 | create_reports_and_safety_rls |
 
 ---
 

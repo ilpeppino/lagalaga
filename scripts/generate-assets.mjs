@@ -33,6 +33,17 @@ const OUT = {
   splash: path.join(OUT_DIR, "splash.png"),
 };
 
+const ICON_SIZES = [1024, 512, 256, 192, 180, 167, 152, 144, 120, 96, 72, 64, 48];
+const FAVICON_SIZES = [64, 48, 32, 16];
+const ADAPTIVE_ICON_SIZES = [1024, 512, 432, 192];
+const SPLASH_SIZES = [
+  { width: 1284, height: 2778 },
+  { width: 1179, height: 2556 },
+  { width: 1125, height: 2436 },
+  { width: 1242, height: 2208 },
+  { width: 1080, height: 1920 },
+];
+
 function assertPng(buffer, label) {
   const sig = buffer.subarray(0, 8);
   const pngSig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -121,6 +132,47 @@ async function writePng(filePath, buffer, label) {
   await fs.writeFile(filePath, buffer);
 }
 
+function withSizeSuffix(filePath, suffix) {
+  const parsed = path.parse(filePath);
+  return path.join(parsed.dir, `${parsed.name}-${suffix}${parsed.ext}`);
+}
+
+async function writeSquareVariants(sourcePng, baseOutPath, sizes, labelPrefix) {
+  const outputs = {};
+  for (const size of sizes) {
+    const filePath = withSizeSuffix(baseOutPath, String(size));
+    const png = await sharp(sourcePng)
+      .resize(size, size, { fit: "cover", kernel: "lanczos3" })
+      .png()
+      .toBuffer();
+    await writePng(filePath, png, `${labelPrefix}-${size}.png`);
+    outputs[String(size)] = path.relative(repoRoot, filePath);
+  }
+  return outputs;
+}
+
+async function makeSplash(width, height, backgroundColor, logoPng) {
+  const logo = await sharp(logoPng)
+    .resize(Math.round(width * 0.35), Math.round(width * 0.35), {
+      fit: "contain",
+      kernel: "lanczos3",
+    })
+    .png()
+    .toBuffer();
+
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 4,
+      background: backgroundColor,
+    },
+  })
+    .composite([{ input: logo, gravity: "center" }])
+    .png()
+    .toBuffer();
+}
+
 async function main() {
   await fs.mkdir(OUT_DIR, { recursive: true });
 
@@ -135,6 +187,7 @@ async function main() {
     .png()
     .toBuffer();
   await writePng(OUT.icon, iconPng, "icon.png");
+  const iconVariants = await writeSquareVariants(iconPng, OUT.icon, ICON_SIZES, "icon");
 
   // 2) Favicon (48x48) derived from icon for consistency.
   const faviconPng = await sharp(iconPng)
@@ -142,6 +195,7 @@ async function main() {
     .png()
     .toBuffer();
   await writePng(OUT.favicon, faviconPng, "favicon.png");
+  const faviconVariants = await writeSquareVariants(iconPng, OUT.favicon, FAVICON_SIZES, "favicon");
 
   // 3) Adaptive icon background (1024x1024) as a solid color.
   const adaptiveBgPng = await sharp({
@@ -155,6 +209,12 @@ async function main() {
     .png()
     .toBuffer();
   await writePng(OUT.adaptiveBg, adaptiveBgPng, "adaptive-icon-background.png");
+  const adaptiveBgVariants = await writeSquareVariants(
+    adaptiveBgPng,
+    OUT.adaptiveBg,
+    ADAPTIVE_ICON_SIZES,
+    "adaptive-icon-background",
+  );
 
   // 4) Adaptive icon foreground (1024x1024, transparent) with padding for safe zone.
   const fgRaw = resvgRender(svgNoBg, 1024, fontFile);
@@ -169,28 +229,23 @@ async function main() {
     .png()
     .toBuffer();
   await writePng(OUT.adaptiveFg, adaptiveFgPng, "adaptive-icon-foreground.png");
+  const adaptiveFgVariants = await writeSquareVariants(
+    adaptiveFgPng,
+    OUT.adaptiveFg,
+    ADAPTIVE_ICON_SIZES,
+    "adaptive-icon-foreground",
+  );
 
   // 5) Splash (1284x2778) with centered logo and generous padding.
-  const splashLogo = await sharp(fgRaw)
-    .resize(Math.round(1284 * 0.35), Math.round(1284 * 0.35), {
-      fit: "contain",
-      kernel: "lanczos3",
-    })
-    .png()
-    .toBuffer();
-
-  const splashPng = await sharp({
-    create: {
-      width: 1284,
-      height: 2778,
-      channels: 4,
-      background: backgroundColor,
-    },
-  })
-    .composite([{ input: splashLogo, gravity: "center" }])
-    .png()
-    .toBuffer();
+  const splashPng = await makeSplash(1284, 2778, backgroundColor, fgRaw);
   await writePng(OUT.splash, splashPng, "splash.png");
+  const splashVariants = {};
+  for (const { width, height } of SPLASH_SIZES) {
+    const variant = await makeSplash(width, height, backgroundColor, fgRaw);
+    const filePath = withSizeSuffix(OUT.splash, `${width}x${height}`);
+    await writePng(filePath, variant, `splash-${width}x${height}.png`);
+    splashVariants[`${width}x${height}`] = path.relative(repoRoot, filePath);
+  }
 
   // Print backgroundColor for config parity.
   process.stdout.write(
@@ -200,6 +255,13 @@ async function main() {
         backgroundColor,
         fontFile: fontFile ? path.relative(repoRoot, fontFile) : null,
         outputs: Object.fromEntries(Object.entries(OUT).map(([k, v]) => [k, path.relative(repoRoot, v)])),
+        variants: {
+          icon: iconVariants,
+          favicon: faviconVariants,
+          adaptiveIconBackground: adaptiveBgVariants,
+          adaptiveIconForeground: adaptiveFgVariants,
+          splash: splashVariants,
+        },
       },
       null,
       2,

@@ -3,50 +3,208 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LagaLaga Docs</title>
+  <title>LagaLaga Policies & Legal</title>
+  <meta name="description" content="Official LagaLaga legal pages including Terms of Service, Privacy Policy, Child Safety standards (CSAE), and account deletion information." />
+  <link rel="canonical" href="https://ilpeppino.github.io/lagalaga/" />
+  <meta name="theme-color" content="#1B2A67" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "LagaLaga",
+    "url": "https://ilpeppino.github.io/lagalaga/",
+    "publisher": {
+      "@type": "Organization",
+      "name": "LagaLaga"
+    }
+  }
+  </script>
+
   <style>
     :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #475569;
-      --border: #e2e8f0;
-      --accent: #1d4ed8;
+      --brand: #1B2A67;
+      --bg: #F7F1E8;
+      --text: #0E1328;
+      --muted: #4B5563;
+      --card: #FFFFFF;
+      --border: rgba(27,42,103,0.12);
+      --accent: #6D28D9;
     }
+
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
+
     body {
       margin: 0;
-      padding: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: linear-gradient(180deg, #eff6ff 0%, var(--bg) 220px);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 20% 0%, rgba(109,40,217,0.08), transparent 60%),
+        radial-gradient(900px 450px at 90% 10%, rgba(27,42,103,0.10), transparent 55%),
+        var(--bg);
     }
-    main {
-      max-width: 880px;
+
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 980px;
       margin: 0 auto;
-      background: var(--card);
+      padding: 24px 18px 64px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px;
       border: 1px solid var(--border);
-      border-radius: 14px;
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(8px);
+      border-radius: 16px;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--brand);
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+
+    .logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brandtext {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brandtext .title {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .brandtext .subtitle {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .main {
+      margin-top: 20px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
       padding: 28px;
     }
-    h1 { margin: 0 0 8px; }
-    p { margin: 0 0 16px; color: var(--muted); }
-    ul { margin: 0; padding-left: 20px; }
-    li { margin: 8px 0; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      letter-spacing: -0.03em;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      background: var(--card);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(27,42,103,0.08);
+    }
+
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .card p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .footer {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
   </style>
 </head>
+
 <body>
-  <main>
-    <h1>LagaLaga Documentation</h1>
-    <p>Legal pages and project documentation.</p>
-    <ul>
-      <li><a href="./TERMS_OF_SERVICE.html">Terms of Service</a></li>
-      <li><a href="./PRIVACY.html">Privacy Policy</a></li>
-      <li><a href="./features/README.md">Features Overview (Markdown)</a></li>
-      <li><a href="./deployment/DEPLOYMENT.md">Deployment Guide (Markdown)</a></li>
-    </ul>
-  </main>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <img src="./assets/icon-512.png" alt="LagaLaga logo" />
+      </div>
+      <div class="brandtext">
+        <p class="title">LagaLaga</p>
+        <p class="subtitle">Official Policies & Legal Documentation</p>
+      </div>
+    </header>
+
+    <main class="main">
+      <h1>Legal & Compliance Pages</h1>
+      <p>
+        This page provides access to official LagaLaga policies required for app store compliance and user transparency.
+      </p>
+
+      <div class="grid">
+        <a class="card" href="./terms.html">
+          <h2>Terms of Service</h2>
+          <p>Rules and conditions for using the LagaLaga app.</p>
+        </a>
+
+        <a class="card" href="./privacy-policy.html">
+          <h2>Privacy Policy</h2>
+          <p>How we collect, use, and protect your information.</p>
+        </a>
+
+        <a class="card" href="./delete-account.html">
+          <h2>Delete Account</h2>
+          <p>How to permanently delete your account and data.</p>
+        </a>
+
+        <a class="card" href="./child-safety.html">
+          <h2>Child Safety (CSAE)</h2>
+          <p>Our standards against child sexual abuse and exploitation.</p>
+        </a>
+      </div>
+    </main>
+
+    <div class="footer">
+      © LagaLaga. All rights reserved.
+    </div>
+  </div>
 </body>
 </html>

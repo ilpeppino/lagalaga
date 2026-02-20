@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { AnimatedButton as Button } from '@/components/ui/paper';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { apiClient, type ReportCategory, type ReportTargetType } from '@/src/lib/api';
@@ -138,13 +139,18 @@ export default function SafetyReportScreen() {
               );
             })}
 
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: category ? tintColor : '#b8b8be' }]}
+            <Button
+              title="Continue"
+              variant="filled"
+              buttonColor={tintColor}
+              textColor="#fff"
+              style={styles.primaryActionButton}
+              contentStyle={styles.primaryActionButtonContent}
+              labelStyle={styles.primaryActionButtonLabel}
+              enableHaptics
               onPress={() => setStep(2)}
               disabled={!category}
-            >
-              <Text style={styles.buttonText}>Continue</Text>
-            </TouchableOpacity>
+            />
           </View>
         ) : null}
 
@@ -225,13 +231,19 @@ export default function SafetyReportScreen() {
               <TouchableOpacity style={[styles.secondaryButton, { borderColor }]} onPress={() => setStep(1)}>
                 <Text style={[styles.secondaryButtonText, { color: textColor }]}>Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: isDetailsValid ? tintColor : '#b8b8be' }]}
+              <Button
+                title="Submit report"
+                variant="filled"
+                buttonColor={tintColor}
+                textColor="#fff"
+                style={styles.primaryButton}
+                contentStyle={styles.primaryActionButtonContent}
+                labelStyle={styles.primaryActionButtonLabel}
+                enableHaptics
                 onPress={handleSubmit}
                 disabled={!isDetailsValid || isSubmitting}
-              >
-                <Text style={styles.buttonText}>{isSubmitting ? 'Submitting...' : 'Submit report'}</Text>
-              </TouchableOpacity>
+                loading={isSubmitting}
+              />
             </View>
           </View>
         ) : null}
@@ -245,9 +257,17 @@ export default function SafetyReportScreen() {
             <Text style={[styles.ticketLabel, { color: textColor }]}>Reference ID</Text>
             <Text style={[styles.ticketId, { color: textColor }]}>{ticketId}</Text>
 
-            <TouchableOpacity style={[styles.button, { backgroundColor: tintColor }]} onPress={() => router.back()}>
-              <Text style={styles.buttonText}>Done</Text>
-            </TouchableOpacity>
+            <Button
+              title="Done"
+              variant="filled"
+              buttonColor={tintColor}
+              textColor="#fff"
+              style={styles.primaryActionButton}
+              contentStyle={styles.primaryActionButtonContent}
+              labelStyle={styles.primaryActionButtonLabel}
+              enableHaptics
+              onPress={() => router.back()}
+            />
           </View>
         ) : null}
       </ScrollView>
@@ -297,14 +317,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
-  button: {
-    minHeight: 48,
+  primaryActionButton: {
     borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 12,
   },
-  buttonText: {
+  primaryActionButtonContent: {
+    minHeight: 48,
+  },
+  primaryActionButtonLabel: {
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
@@ -370,10 +390,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     flex: 2,
-    minHeight: 46,
     borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   confirmationText: {
     fontSize: 14,

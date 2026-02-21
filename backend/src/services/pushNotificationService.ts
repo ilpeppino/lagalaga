@@ -12,14 +12,16 @@ interface ExpoPushMessage {
   body: string;
   data?: Record<string, string>;
   sound?: 'default' | null;
+  priority?: 'default' | 'normal' | 'high';
+  channelId?: string;
 }
 
 export class PushNotificationService {
-  async getUserPushTokens(userId: string): Promise<string[]> {
+  async getUserPushTokens(userId: string): Promise<Array<{ expo_push_token: string; platform: string | null }>> {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('user_push_tokens')
-      .select('expo_push_token')
+      .select('expo_push_token, platform')
       .eq('user_id', userId);
 
     if (error) {
@@ -27,7 +29,7 @@ export class PushNotificationService {
       return [];
     }
 
-    return (data ?? []).map((row) => row.expo_push_token);
+    return (data ?? []).map((row) => ({ expo_push_token: row.expo_push_token, platform: row.platform ?? null }));
   }
 
   async sendSessionInviteNotification(
@@ -36,8 +38,19 @@ export class PushNotificationService {
     sessionTitle: string,
     hostDisplayName?: string
   ): Promise<void> {
-    const tokens = await this.getUserPushTokens(userId);
-    if (tokens.length === 0) {
+    const tokenRows = await this.getUserPushTokens(userId);
+    logger.info(
+      {
+        userId,
+        sessionId,
+        tokensFoundCount: tokenRows.length,
+        tokensPlatforms: tokenRows.map((r) => r.platform ?? 'unknown'),
+        truncatedTokens: tokenRows.map((r) => r.expo_push_token.slice(-6)),
+      },
+      'push_invite: dispatching'
+    );
+
+    if (tokenRows.length === 0) {
       logger.info({ userId, sessionId }, 'No push tokens for user, skipping notification');
       return;
     }
@@ -46,8 +59,8 @@ export class PushNotificationService {
       ? `${hostDisplayName} invited you to "${sessionTitle}"`
       : `You've been invited to "${sessionTitle}"`;
 
-    const messages: ExpoPushMessage[] = tokens.map((token) => ({
-      to: token,
+    const messages: ExpoPushMessage[] = tokenRows.map((row) => ({
+      to: row.expo_push_token,
       title: 'Session Invite',
       body,
       data: {
@@ -55,6 +68,8 @@ export class PushNotificationService {
         sessionId,
       },
       sound: 'default',
+      priority: 'high',
+      channelId: 'default',
     }));
 
     await this.sendPushBatch(messages);
@@ -86,13 +101,19 @@ export class PushNotificationService {
 
         const result = await response.body.json() as { data?: Array<{ status?: string; message?: string; details?: unknown }> } | null;
         const tickets = Array.isArray(result?.data) ? result.data : [];
-        for (const ticket of tickets) {
-          if (ticket?.status === 'error') {
-            logger.warn(
-              { message: ticket.message, details: ticket.details },
-              'Push ticket error'
-            );
-          }
+        const successCount = tickets.filter((t) => t?.status === 'ok').length;
+        const errorTickets = tickets.filter((t) => t?.status === 'error');
+        logger.info(
+          { batchSize: batch.length, successCount, errorCount: errorTickets.length },
+          'push_batch: expo response summary'
+        );
+        for (let ti = 0; ti < errorTickets.length; ti++) {
+          const ticket = errorTickets[ti];
+          const tokenSuffix = batch[ti]?.to?.slice(-6) ?? 'unknown';
+          logger.warn(
+            { tokenSuffix, message: ticket.message, details: ticket.details },
+            'push_batch: ticket error'
+          );
         }
       } catch (err) {
         logger.error(

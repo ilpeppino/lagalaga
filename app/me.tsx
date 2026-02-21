@@ -18,7 +18,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { getCachedPushToken } from '@/src/features/notifications/registerPushToken';
+import * as Notifications from 'expo-notifications';
+import { getCachedPushToken, getLastRegistrationTime } from '@/src/features/notifications/registerPushToken';
 
 interface MeData {
   appUser: {
@@ -64,6 +65,20 @@ export default function MeScreen() {
   const [proViewEnabled, setProViewEnabled] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [debugPushToken, setDebugPushToken] = useState<string | null>(null);
+  const [debugPermissionStatus, setDebugPermissionStatus] = useState<string>('unknown');
+  const [debugLastRegistered, setDebugLastRegistered] = useState<number | null>(null);
+  const [debugLastPushReceivedAt, setDebugLastPushReceivedAt] = useState<number | null>(null);
+
+  // Track last invite push received while on this screen
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      const type = notification.request.content.data?.type;
+      if (type === 'session_invite') {
+        setDebugLastPushReceivedAt(Date.now());
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const fetchMeData = useCallback(async () => {
     try {
@@ -77,6 +92,9 @@ export default function MeScreen() {
       const json: MeResponse = await response.json();
       setData(json.data);
       setDebugPushToken(getCachedPushToken());
+      setDebugLastRegistered(getLastRegistrationTime());
+      const { status } = await Notifications.getPermissionsAsync();
+      setDebugPermissionStatus(status);
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load profile' });
     } finally {
@@ -411,10 +429,26 @@ export default function MeScreen() {
             <Text style={[styles.label, { color: textColor }]}>Platform:</Text>
             <Text style={[styles.value, { color: textColor }]}>{Platform.OS}</Text>
           </View>
-          <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
+          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
+            <Text style={[styles.label, { color: textColor }]}>Permission:</Text>
+            <Text style={[styles.value, { color: debugPermissionStatus === 'granted' ? '#2e7d32' : '#c62828' }]}>{debugPermissionStatus}</Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
             <Text style={[styles.label, { color: textColor }]}>Token:</Text>
             <Text style={[styles.value, { color: secondaryTextColor }]} numberOfLines={1} ellipsizeMode="middle">
               {debugPushToken ? `…${debugPushToken.slice(-24)}` : 'Not registered'}
+            </Text>
+          </View>
+          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
+            <Text style={[styles.label, { color: textColor }]}>Registered:</Text>
+            <Text style={[styles.value, { color: secondaryTextColor }]}>
+              {debugLastRegistered ? new Date(debugLastRegistered).toLocaleTimeString() : 'Not yet'}
+            </Text>
+          </View>
+          <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
+            <Text style={[styles.label, { color: textColor }]}>Last push received:</Text>
+            <Text style={[styles.value, { color: secondaryTextColor }]}>
+              {debugLastPushReceivedAt ? new Date(debugLastPushReceivedAt).toLocaleTimeString() : 'None this session'}
             </Text>
           </View>
         </View>

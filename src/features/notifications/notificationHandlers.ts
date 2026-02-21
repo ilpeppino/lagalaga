@@ -12,7 +12,7 @@ export function configureNotificationHandler(): void {
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: Platform.OS === 'android',
+      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
       shouldShowBanner: true,

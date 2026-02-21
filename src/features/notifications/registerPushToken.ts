@@ -7,6 +7,7 @@ import { monitoring } from '@/src/lib/monitoring';
 import { apiClient } from '@/src/lib/api';
 
 let cachedToken: string | null = null;
+let lastRegistrationTime: number | null = null;
 
 function isExpectedPushSetupError(message: string): boolean {
   const normalized = message.toLowerCase();
@@ -67,6 +68,7 @@ export async function registerPushToken(): Promise<string | null> {
     monitoring.addBreadcrumb({ category: 'push', message: 'Push token registered with backend', level: 'info', data: { platform: Platform.OS } });
 
     cachedToken = token;
+    lastRegistrationTime = Date.now();
     logger.info('Push token registered', { platform: Platform.OS });
     return token;
   } catch (err) {
@@ -89,6 +91,10 @@ export async function registerPushToken(): Promise<string | null> {
 
 export function getCachedPushToken(): string | null {
   return cachedToken;
+}
+
+export function getLastRegistrationTime(): number | null {
+  return lastRegistrationTime;
 }
 
 export async function unregisterPushToken(): Promise<void> {

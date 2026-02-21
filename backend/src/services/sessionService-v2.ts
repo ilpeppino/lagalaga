@@ -389,6 +389,11 @@ export class SessionServiceV2 {
           );
         }
 
+        logger.info(
+          { inviterUserId: input.hostUserId, inviteeUserId: appUser.id, sessionId: sessionData.id },
+          'push_invite: queuing notification'
+        );
+
         void pushService
           .sendSessionInviteNotification(
             appUser.id,
@@ -398,11 +403,12 @@ export class SessionServiceV2 {
           .catch((err) => {
             logger.warn(
               {
-                userId: appUser.id,
+                inviterUserId: input.hostUserId,
+                inviteeUserId: appUser.id,
                 sessionId: sessionData.id,
                 error: err instanceof Error ? err.message : String(err),
               },
-              'Push notification send failed'
+              'push_invite: send failed'
             );
           });
       }

@@ -240,6 +240,11 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
           throw new ValidationError('Invalid Expo push token format');
         }
 
+        request.log.info(
+          { userId: request.user.userId, platform: platform ?? null, tokenSuffix: expoPushToken.slice(-20) },
+          'push_token_register: upserting'
+        );
+
         const supabase = getSupabase();
         const { error } = await supabase
           .from('user_push_tokens')
@@ -255,11 +260,20 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
           );
 
         if (error) {
+          request.log.error(
+            { userId: request.user.userId, platform: platform ?? null, dbError: error.message },
+            'push_token_register: upsert failed'
+          );
           throw new AppError(
             ErrorCodes.INTERNAL_ERROR,
             `Failed to upsert push token: ${error.message}`
           );
         }
+
+        request.log.info(
+          { userId: request.user.userId, platform: platform ?? null },
+          'push_token_register: success'
+        );
 
         return reply.status(204).send();
       }

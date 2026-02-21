@@ -9,6 +9,7 @@ import {
   Image,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -17,6 +18,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { getCachedPushToken } from '@/src/features/notifications/registerPushToken';
 
 interface MeData {
   appUser: {
@@ -61,6 +63,7 @@ export default function MeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [proViewEnabled, setProViewEnabled] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [debugPushToken, setDebugPushToken] = useState<string | null>(null);
 
   const fetchMeData = useCallback(async () => {
     try {
@@ -73,6 +76,7 @@ export default function MeScreen() {
 
       const json: MeResponse = await response.json();
       setData(json.data);
+      setDebugPushToken(getCachedPushToken());
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load profile' });
     } finally {
@@ -398,6 +402,21 @@ export default function MeScreen() {
             <IconSymbol name="exclamationmark.shield.fill" size={20} color="#fff" />
             <Text style={styles.buttonText}>Safety & Report</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Push Notifications Debug */}
+        <View style={[styles.card, { backgroundColor: cardColor }]}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>Push Notifications</Text>
+          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
+            <Text style={[styles.label, { color: textColor }]}>Platform:</Text>
+            <Text style={[styles.value, { color: textColor }]}>{Platform.OS}</Text>
+          </View>
+          <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
+            <Text style={[styles.label, { color: textColor }]}>Token:</Text>
+            <Text style={[styles.value, { color: secondaryTextColor }]} numberOfLines={1} ellipsizeMode="middle">
+              {debugPushToken ? `…${debugPushToken.slice(-24)}` : 'Not registered'}
+            </Text>
+          </View>
         </View>
 
         {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (

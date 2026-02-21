@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Linking, Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -40,6 +40,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadUser();
   }, []);
+
+  // Re-register push token when app returns to foreground (covers Android background→active transitions)
+  useEffect(() => {
+    if (!user) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void registerPushToken();
+      }
+    });
+    return () => subscription.remove();
+  }, [user]);
 
   const loadUser = async () => {
     try {

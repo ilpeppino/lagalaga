@@ -20,6 +20,15 @@ export function configureNotificationHandler(): void {
     }),
   });
 
+  if (Platform.OS === 'android') {
+    void Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF6B00',
+    });
+  }
+
   notificationHandlerConfigured = true;
 }
 

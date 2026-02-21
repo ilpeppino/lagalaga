@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { logger } from '@/src/lib/logger';
+import { monitoring } from '@/src/lib/monitoring';
 import { apiClient } from '@/src/lib/api';
 
 let cachedToken: string | null = null;
@@ -30,12 +31,15 @@ export async function registerPushToken(): Promise<string | null> {
   }
 
   try {
+    monitoring.addBreadcrumb({ category: 'push', message: 'Requesting push permission', level: 'info' });
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
+
+    monitoring.addBreadcrumb({ category: 'push', message: `Push permission result: ${finalStatus}`, level: 'info', data: { status: finalStatus } });
 
     if (finalStatus !== 'granted') {
       logger.warn('Push notification permission denied');
@@ -53,10 +57,14 @@ export async function registerPushToken(): Promise<string | null> {
     const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
     const token = tokenResponse.data;
 
+    monitoring.addBreadcrumb({ category: 'push', message: 'Push token obtained', level: 'info', data: { tokenSuffix: token.slice(-20), platform: Platform.OS } });
+
     await apiClient.me.registerPushToken({
       expoPushToken: token,
       platform: Platform.OS as 'ios' | 'android',
     });
+
+    monitoring.addBreadcrumb({ category: 'push', message: 'Push token registered with backend', level: 'info', data: { platform: Platform.OS } });
 
     cachedToken = token;
     logger.info('Push token registered', { platform: Platform.OS });
@@ -77,6 +85,10 @@ export async function registerPushToken(): Promise<string | null> {
     });
     return null;
   }
+}
+
+export function getCachedPushToken(): string | null {
+  return cachedToken;
 }
 
 export async function unregisterPushToken(): Promise<void> {

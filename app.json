@@ -18,6 +18,7 @@
       "backgroundColor": "#1A2A6C"
     },
     "ios": {
+      "buildNumber": "10",
       "supportsTablet": true,
       "infoPlist": {
         "LSApplicationQueriesSchemes": [

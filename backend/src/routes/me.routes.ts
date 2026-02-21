@@ -174,7 +174,11 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
       }
     );
 
-    fastify.get(
+    fastify.get<{
+      Querystring: {
+        force?: boolean | string;
+      };
+    }>(
       '/favorite-experiences',
       {
         preHandler: authPreHandler,
@@ -185,10 +189,14 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
           ? request.headers['if-none-match'].join(',')
           : request.headers['if-none-match'];
 
+        const forceParam = request.query.force;
+        const forceRefresh = forceParam === true || forceParam === 'true' || forceParam === '1';
+
         const result = await service.getFavoriteExperiences(
           request.user.userId,
           request.user.robloxUserId,
-          ifNoneMatchHeader
+          ifNoneMatchHeader,
+          { forceRefresh }
         );
 
         if (result.kind === 'not_modified') {

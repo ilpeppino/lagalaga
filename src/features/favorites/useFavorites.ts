@@ -7,12 +7,13 @@ export function useFavorites(userId: string | null | undefined): {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  forceRefresh: () => Promise<void>;
 } {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const runRefresh = useCallback(async (force: boolean) => {
     if (!userId) {
       return;
     }
@@ -20,7 +21,7 @@ export function useFavorites(userId: string | null | undefined): {
     setLoading(true);
     setError(null);
     try {
-      const result = await refreshFavorites(userId);
+      const result = await refreshFavorites(userId, { force });
       setFavorites(result.favorites);
     } catch {
       setError('Couldn\'t load favorites. Tap to retry.');
@@ -28,6 +29,9 @@ export function useFavorites(userId: string | null | undefined): {
       setLoading(false);
     }
   }, [userId]);
+
+  const refresh = useCallback(async () => runRefresh(false), [runRefresh]);
+  const forceRefresh = useCallback(async () => runRefresh(true), [runRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,5 +95,6 @@ export function useFavorites(userId: string | null | undefined): {
     loading,
     error,
     refresh,
+    forceRefresh,
   };
 }

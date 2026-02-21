@@ -14,7 +14,8 @@ interface FavoriteExperiencesApiResponse {
 }
 
 export async function refreshFavorites(
-  userId: string
+  userId: string,
+  options: { force?: boolean } = {}
 ): Promise<{ favorites: Favorite[]; etag: string; fetchedAt: string; source: 'network' | 'not_modified' }> {
   if (!userId) {
     return {
@@ -27,11 +28,12 @@ export async function refreshFavorites(
 
   const cached = await loadCachedFavorites(userId);
   const headers: Record<string, string> = {};
-  if (cached?.etag) {
+  if (!options.force && cached?.etag) {
     headers['If-None-Match'] = cached.etag;
   }
 
-  const response = await apiGet<FavoriteExperiencesApiResponse>('/api/me/favorite-experiences', { headers });
+  const endpoint = options.force ? '/api/me/favorite-experiences?force=1' : '/api/me/favorite-experiences';
+  const response = await apiGet<FavoriteExperiencesApiResponse>(endpoint, { headers });
   if (response.status === 304) {
     return {
       favorites: cached?.favorites ?? [],

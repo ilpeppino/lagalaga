@@ -31,6 +31,10 @@ export type FavoriteExperiencesResult =
   | { kind: 'not_modified'; etag: string }
   | { kind: 'ok'; payload: FavoriteExperiencesResponse };
 
+interface GetFavoriteExperiencesOptions {
+  forceRefresh?: boolean;
+}
+
 interface ServiceDeps {
   supabase?: SupabaseClient;
   robloxFavoritesService?: RobloxFavoritesService;
@@ -50,8 +54,13 @@ export class FavoriteExperiencesService {
   async getFavoriteExperiences(
     userId: string,
     robloxUserId: string,
-    ifNoneMatchHeader?: string
+    ifNoneMatchHeader?: string,
+    options: GetFavoriteExperiencesOptions = {}
   ): Promise<FavoriteExperiencesResult> {
+    if (options.forceRefresh) {
+      return this.fetchAndPersistFavorites(userId, robloxUserId);
+    }
+
     const cachedRow = await this.readCacheRow(userId);
     const ifNoneMatch = parseIfNoneMatch(ifNoneMatchHeader);
 
@@ -83,17 +92,22 @@ export class FavoriteExperiencesService {
       };
     }
 
+    return this.fetchAndPersistFavorites(userId, robloxUserId);
+  }
+
+  private async fetchAndPersistFavorites(userId: string, robloxUserId: string): Promise<FavoriteExperiencesResult> {
     const favorites = await this.fetchRobloxFavoriteExperiences(robloxUserId);
     const etag = createFavoritesEtag(favorites);
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + SERVER_CACHE_TTL_MS);
+    const cachedAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + SERVER_CACHE_TTL_MS).toISOString();
 
     await this.upsertCacheRow({
       user_id: userId,
       favorites_json: favorites,
       etag,
-      cached_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
+      cached_at: cachedAt,
+      expires_at: expiresAt,
     });
 
     return {
@@ -101,7 +115,7 @@ export class FavoriteExperiencesService {
       payload: {
         favorites,
         etag,
-        fetchedAt: now.toISOString(),
+        fetchedAt: cachedAt,
       },
     };
   }

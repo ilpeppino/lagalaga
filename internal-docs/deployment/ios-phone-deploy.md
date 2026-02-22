@@ -81,6 +81,7 @@ If iPhone OAuth opens an Expo dev page instead of returning directly to the app,
 ```sh
 rm -rf ios/build
 rm -rf ~/Library/Developer/Xcode/DerivedData/lagalaga-*
+npx expo prebuild --platform ios
 npx expo run:ios --device --configuration Release
 ```
 

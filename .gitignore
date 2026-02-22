@@ -47,4 +47,6 @@ app-example
 /android
 backend/.env.backup-20260210-171928
 .aider*
-lagalaga-19985-firebase-adminsdk-fbsvc-b95d462d1e.json
+*firebase-adminsdk*.json
+*service-account*.json
+google-services.json

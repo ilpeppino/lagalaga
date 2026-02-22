@@ -240,12 +240,38 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
           throw new ValidationError('Invalid Expo push token format');
         }
 
+        const supabase = getSupabase();
+        const { data: existingToken, error: existingTokenError } = await supabase
+          .from('user_push_tokens')
+          .select('user_id')
+          .eq('user_id', request.user.userId)
+          .eq('expo_push_token', expoPushToken)
+          .maybeSingle();
+
+        if (existingTokenError) {
+          request.log.warn(
+            {
+              userId: request.user.userId,
+              platform: platform ?? null,
+              deviceIdPresent: Boolean(deviceId),
+              tokenSuffix: expoPushToken.slice(-6),
+              dbError: existingTokenError.message,
+            },
+            'push_token_register: precheck failed, proceeding with upsert'
+          );
+        }
+
         request.log.info(
-          { userId: request.user.userId, platform: platform ?? null, tokenSuffix: expoPushToken.slice(-20) },
+          {
+            userId: request.user.userId,
+            platform: platform ?? null,
+            deviceIdPresent: Boolean(deviceId),
+            tokenSuffix: expoPushToken.slice(-6),
+            upsertAction: existingToken ? 'update' : 'insert',
+          },
           'push_token_register: upserting'
         );
 
-        const supabase = getSupabase();
         const { error } = await supabase
           .from('user_push_tokens')
           .upsert(
@@ -261,7 +287,13 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
 
         if (error) {
           request.log.error(
-            { userId: request.user.userId, platform: platform ?? null, dbError: error.message },
+            {
+              userId: request.user.userId,
+              platform: platform ?? null,
+              deviceIdPresent: Boolean(deviceId),
+              tokenSuffix: expoPushToken.slice(-6),
+              dbError: error.message,
+            },
             'push_token_register: upsert failed'
           );
           throw new AppError(
@@ -271,7 +303,13 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         }
 
         request.log.info(
-          { userId: request.user.userId, platform: platform ?? null },
+          {
+            userId: request.user.userId,
+            platform: platform ?? null,
+            deviceIdPresent: Boolean(deviceId),
+            tokenSuffix: expoPushToken.slice(-6),
+            upsertAction: existingToken ? 'update' : 'insert',
+          },
           'push_token_register: success'
         );
 

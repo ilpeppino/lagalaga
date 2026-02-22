@@ -29,6 +29,7 @@ const config: ExpoConfig = {
     backgroundColor: "#1A2A6C",
   },
   ios: {
+    buildNumber: "10",
     supportsTablet: true,
     bundleIdentifier: iosBundleIdentifier,
     infoPlist: {
@@ -37,6 +38,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
+    googleServicesFile: "./lagalaga-sa-fb.json",
     adaptiveIcon: {
       backgroundColor: "#1A2A6C",
       foregroundImage: "./assets/generated/adaptive-icon-foreground.png",

@@ -270,7 +270,7 @@ eas credentials
 
 #### Add google-services.json
 
-The project already has `"googleServicesFile": "lagalaga-sa-fb.json"` configured in `app.json`.
+The project keeps `googleServicesFile` in `app.config.ts` (and legacy `app.json`), pointing to `./lagalaga-sa-fb.json`.
 
 Ensure this file exists in the project root:
 
@@ -297,6 +297,12 @@ eas credentials --platform android
 # Should show:
 # ✓ FCM V1 API Key: xxxxx
 ```
+
+Android push setup checklist:
+- `Constants.expoConfig?.extra?.eas?.projectId` resolves at runtime (or fallback `Constants.easConfig?.projectId`)
+- `app.config.ts` includes `android.googleServicesFile: "./lagalaga-sa-fb.json"`
+- `eas credentials --platform android` shows an FCM V1 API key configured
+- Native app rebuilt after credential/config changes (`eas build --platform android` or `expo run:android`)
 
 ### Build Production Releases
 
@@ -887,4 +893,3 @@ eas submit --platform android
 | Date | Author | Changes |
 |------|--------|---------|
 | 2026-02-17 | Claude Code | Initial runbook creation |
-

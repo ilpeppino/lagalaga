@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        void registerPushToken();
+        void registerPushToken({ reason: 'app_state_active' });
       }
     });
     return () => subscription.remove();
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       setUser(userData);
       void warmFavorites(me.id);
-      void registerPushToken();
+      void registerPushToken({ force: true, reason: 'post_login' });
     } catch (error) {
       logger.error('Failed to load user', {
         error: error instanceof Error ? error.message : String(error),

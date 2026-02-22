@@ -3,7 +3,7 @@ import type { ExpoConfig } from "expo/config";
 const variant = process.env.APP_VARIANT ?? "prod";
 const isDevVariant = variant === "dev";
 
-const appName = isDevVariant ? "Lagalaga Dev" : "lagalaga";
+const appName = isDevVariant ? "Lagalaga Dev" : "Lagalaga";
 const appScheme = isDevVariant ? "lagalaga-dev" : "lagalaga";
 const androidPackage = isDevVariant
   ? "com.ilpeppino.lagalaga.dev"
@@ -38,7 +38,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    googleServicesFile: "./lagalaga-sa-fb.json",
+    googleServicesFile: "./google-services.json",
     adaptiveIcon: {
       backgroundColor: "#1A2A6C",
       foregroundImage: "./assets/generated/adaptive-icon-foreground.png",
@@ -115,7 +115,7 @@ const config: ExpoConfig = {
     typedRoutes: true,
     reactCompiler: true,
   },
-  autolinking: isDevVariant ? undefined : { exclude: ["expo-dev-client"] },
+  ...(isDevVariant ? {} : { autolinking: { exclude: ["expo-dev-client"] } }),
   extra: {
     router: {},
     eas: {

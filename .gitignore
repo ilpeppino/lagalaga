@@ -49,4 +49,6 @@ backend/.env.backup-20260210-171928
 .aider*
 *firebase-adminsdk*.json
 *service-account*.json
+# Firebase / Google services
 google-services.json
+GoogleService-Info.plist

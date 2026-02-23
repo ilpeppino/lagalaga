@@ -6,12 +6,14 @@ export function useFavorites(userId: string | null | undefined): {
   favorites: Favorite[];
   loading: boolean;
   error: string | null;
+  syncedAt: string | null;
   refresh: () => Promise<void>;
   forceRefresh: () => Promise<void>;
 } {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
 
   const runRefresh = useCallback(async (force: boolean) => {
     if (!userId) {
@@ -23,6 +25,7 @@ export function useFavorites(userId: string | null | undefined): {
     try {
       const result = await refreshFavorites(userId, { force });
       setFavorites(result.favorites);
+      setSyncedAt(result.fetchedAt);
     } catch {
       setError('Couldn\'t load favorites. Tap to retry.');
     } finally {
@@ -51,6 +54,7 @@ export function useFavorites(userId: string | null | undefined): {
         return;
       }
       setFavorites(payload.favorites);
+      setSyncedAt(payload.cachedAt);
     });
 
     void loadCachedFavorites(userId)
@@ -59,6 +63,7 @@ export function useFavorites(userId: string | null | undefined): {
           return;
         }
         setFavorites(payload.favorites);
+        setSyncedAt(payload.cachedAt);
       })
       .catch(() => {
         // Ignore cache read errors and continue to network refresh.
@@ -94,6 +99,7 @@ export function useFavorites(userId: string | null | undefined): {
     favorites,
     loading,
     error,
+    syncedAt,
     refresh,
     forceRefresh,
   };

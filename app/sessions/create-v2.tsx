@@ -40,6 +40,7 @@ import type { Favorite } from '@/src/features/favorites/cache';
 import { warmFavorites } from '@/src/features/favorites/service';
 import { useFavorites } from '@/src/features/favorites/useFavorites';
 import { FriendPickerTwoRowHorizontal } from '@/components/FriendPickerTwoRowHorizontal';
+import { SyncedAtBadge } from '@/components/SyncedAtBadge';
 import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
 
 const visibilityOptions: { value: SessionVisibility; label: string }[] = [
@@ -47,13 +48,6 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'friends', label: 'Friends Only' },
   { value: 'invite_only', label: 'Invite Only' },
 ];
-
-function formatSyncedAgo(fetchedAt: string): string {
-  const diffMin = Math.floor((Date.now() - new Date(fetchedAt).getTime()) / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin === 1) return '1 min ago';
-  return `${diffMin} min ago`;
-}
 
 function getFavoriteDisplayName(favorite: Favorite): string {
   const name = favorite.name?.trim();
@@ -506,32 +500,14 @@ export default function CreateSessionScreenV2() {
 
       {/* Friend Picker */}
       <View style={styles.field}>
-        <View style={styles.inviteSectionHeader}>
-          <ThemedText type="titleMedium">Invite Friends</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh friends list"
-            style={styles.friendsRefreshButton}
-            onPress={() => { void handleRefreshFriends(); }}
-            disabled={isRefreshingFriends || isCreating || isLoadingFriends}
-          >
-            {isRefreshingFriends ? (
-              <ActivityIndicator size="small" color="#007AFF" />
-            ) : (
-              <MaterialIcons name="refresh" size={18} color="#007AFF" />
-            )}
-          </Pressable>
-        </View>
-        {friendsSyncedAt != null && (
-          <ThemedText type="bodySmall" lightColor="#888" darkColor="#777" style={styles.syncedLabel}>
-            Synced {formatSyncedAgo(friendsSyncedAt)}{friendsIsStale ? ' (stale)' : ''}
-          </ThemedText>
-        )}
-        {isRefreshingFriends && (
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.refreshingLabel}>
-            Refreshing friends...
-          </ThemedText>
-        )}
+        <SyncedAtBadge
+          label="Invite Friends"
+          syncedAt={friendsSyncedAt}
+          isStale={friendsIsStale}
+          isRefreshing={isRefreshingFriends}
+          onRefresh={() => { void handleRefreshFriends(); }}
+          disabled={isRefreshingFriends || isCreating || isLoadingFriends}
+        />
         <TextInput
           style={styles.searchInput}
           value={friendSearch}
@@ -783,25 +759,6 @@ const styles = StyleSheet.create({
   },
   visibilityPicker: {
     marginTop: 4,
-  },
-  inviteSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  friendsRefreshButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  syncedLabel: {
-    marginBottom: 6,
-  },
-  refreshingLabel: {
-    marginBottom: 6,
   },
   emptyFriendsContainer: {
     paddingVertical: 16,

@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "628236T86Q.com.ilpeppino.lagalaga",
+          "628236T86Q.com.ilpeppino.lagalaga.dev"
+        ],
+        "components": [
+          { "/": "/lagalaga/invite*" }
+        ]
+      }
+    ]
+  }
+}

@@ -9,6 +9,7 @@ import {
   Image,
   Switch,
   Alert,
+  Linking,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -17,6 +18,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+
+const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
+const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
 
 interface MeData {
   appUser: {
@@ -465,6 +469,36 @@ export default function MeScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        <View style={[styles.card, { backgroundColor: cardColor }]}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>
+            Legal
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.listRowButton, { borderColor: rowBorderColor }]}
+            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+            accessibilityRole="link"
+            accessibilityLabel="Open Privacy Policy"
+          >
+            <Text style={[styles.listRowButtonText, { color: textColor }]}>Privacy Policy</Text>
+            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.listRowButton, { borderColor: rowBorderColor, marginTop: 8 }]}
+            onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)}
+            accessibilityRole="link"
+            accessibilityLabel="Open Terms of Service"
+          >
+            <Text style={[styles.listRowButtonText, { color: textColor }]}>Terms of Service</Text>
+            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
+          </TouchableOpacity>
+
+          <Text style={[styles.disclaimerText, { color: secondaryTextColor }]}>
+            Lagalaga is not affiliated with, endorsed by, or sponsored by Roblox Corporation.
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -629,5 +663,11 @@ const styles = StyleSheet.create({
   listRowButtonText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+    textAlign: 'center',
   },
 });

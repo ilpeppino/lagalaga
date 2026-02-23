@@ -13,7 +13,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 export default function HomeScreen() {
   const router = useRouter();
   const [isCreating, setIsCreating] = useState(false);
-  const handleError = useErrorHandler();
+  const { handleError } = useErrorHandler();
 
   const handleQuickPlay = async () => {
     setIsCreating(true);
@@ -21,7 +21,7 @@ export default function HomeScreen() {
       const session = await sessionsAPIStoreV2.createQuickSession();
       router.push(`/sessions/${session.session.id}-v2`);
     } catch (error) {
-      handleError(error, 'Failed to start quick play');
+      handleError(error, { fallbackMessage: 'Failed to start quick play' });
     } finally {
       setIsCreating(false);
     }

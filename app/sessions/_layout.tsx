@@ -81,8 +81,6 @@ export default function SessionsLayout() {
               </ThemedText>
             </TouchableOpacity>
           ),
-          headerLeftContainerStyle: styles.headerSideContainer,
-          headerRightContainerStyle: styles.headerSideContainer,
         }}
       />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
@@ -93,13 +91,11 @@ export default function SessionsLayout() {
 }
 
 const styles = StyleSheet.create({
-  headerSideContainer: {
-    paddingHorizontal: 12,
-  },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     maxWidth: 220,
+    paddingHorizontal: 12,
   },
   profileButton: {
     marginRight: 10,
@@ -115,5 +111,6 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     paddingVertical: 4,
+    paddingHorizontal: 12,
   },
 });

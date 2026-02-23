@@ -125,7 +125,7 @@ describe('GET /api/me/roblox/friends', () => {
         appUsersRobloxUserId: null,
         cacheRow: null,
       }) as any,
-      fetchFn: jest.fn<typeof fetch>(),
+      fetchFn: jest.fn() as unknown as typeof fetch,
     });
 
     const app = await buildTestApp(service);
@@ -152,7 +152,7 @@ describe('GET /api/me/roblox/friends', () => {
           ],
         },
       }) as any,
-      fetchFn: jest.fn<typeof fetch>(),
+      fetchFn: jest.fn() as unknown as typeof fetch,
     });
 
     const app = await buildTestApp(service);
@@ -197,7 +197,7 @@ describe('GET /api/me/roblox/friends', () => {
           friends_json: [],
         },
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
     });
 
     const app = await buildTestApp(service);

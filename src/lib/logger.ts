@@ -29,6 +29,8 @@ const SENSITIVE_KEYS = new Set([
   'password', 'token', 'accesstoken', 'access_token',
   'refreshtoken', 'refresh_token', 'secret', 'authorization',
   'codeverifier', 'code_verifier', 'codechallenge', 'code_challenge',
+  'cookie', 'apikey', 'api_key', 'privatekey', 'private_key',
+  'sessionid', 'session_id',
 ]);
 
 function isSensitiveKey(key: string): boolean {

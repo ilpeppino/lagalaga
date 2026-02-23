@@ -92,7 +92,7 @@ describe('resolveRobloxShareUrl', () => {
 
     const result = await resolveRobloxShareUrl(
       'https://www.roblox.com/share?code=XYZ&type=ExperienceDetails&stamp=abc',
-      { fetchFn: fetchMock }
+      { fetchFn: fetchMock as unknown as typeof fetch }
     );
 
     expect(result.placeId).toBe(606849621);
@@ -128,7 +128,7 @@ describe('resolveRobloxShareUrl', () => {
 
     const result = await resolveRobloxShareUrl(
       'https://www.roblox.com/share-links?code=XYZ&type=ExperienceDetails',
-      { fetchFn: fetchMock }
+      { fetchFn: fetchMock as unknown as typeof fetch }
     );
 
     expect(result.placeId).toBe(606849621);
@@ -173,7 +173,7 @@ describe('resolveRobloxShareUrl', () => {
 
     const result = await resolveRobloxShareUrl(
       'https://www.roblox.com/share-links?code=XYZ&type=ExperienceDetails',
-      { fetchFn: fetchMock }
+      { fetchFn: fetchMock as unknown as typeof fetch }
     );
 
     expect(result.placeId).toBe(920587237);
@@ -194,7 +194,7 @@ describe('resolveRobloxShareUrl', () => {
       );
 
     const result = await resolveRobloxShareUrl('https://www.roblox.com/games/4924922222/Brookhaven', {
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
     });
 
     expect(result.placeId).toBe(4924922222);
@@ -221,7 +221,7 @@ describe('resolveRobloxShareUrl', () => {
 
     await expect(
       resolveRobloxShareUrl('https://www.roblox.com/share-links?code=INVALID&type=ExperienceDetails', {
-        fetchFn: fetchMock,
+        fetchFn: fetchMock as unknown as typeof fetch,
       })
     ).rejects.toThrow('Could not extract placeId');
   });
@@ -244,7 +244,7 @@ describe('resolveRobloxShareUrl', () => {
 
     await expect(
       resolveRobloxShareUrl('https://www.roblox.com/share?code=XYZ&type=ExperienceDetails', {
-        fetchFn: fetchMock,
+        fetchFn: fetchMock as unknown as typeof fetch,
       })
     ).rejects.toThrow('Unexpected redirect host');
   });

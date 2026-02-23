@@ -110,6 +110,15 @@ export default function SignInScreen() {
           >
             Requires a 13+ Roblox account.
           </ThemedText>
+
+          <ThemedText
+            type="bodyMedium"
+            lightColor="#9a9aa1"
+            darkColor="#6b6b72"
+            style={styles.disclaimer}
+          >
+            Lagalaga is not affiliated with, endorsed by, or sponsored by Roblox Corporation.
+          </ThemedText>
         </View>
       </View>
     </View>
@@ -166,5 +175,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     marginTop: 2,
+  },
+  disclaimer: {
+    textAlign: "center",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 16,
   },
 });

@@ -112,7 +112,7 @@ describe('RobloxFriendsCacheService', () => {
     const fetchMock = jest.fn<typeof fetch>();
     const service = new RobloxFriendsCacheService({
       supabase: client as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
     });
 
     const result = await service.getFriendsForUser('user-1');
@@ -166,7 +166,7 @@ describe('RobloxFriendsCacheService', () => {
 
     const service = new RobloxFriendsCacheService({
       supabase: client as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
     });
 
     const result = await service.getFriendsForUser('user-1');
@@ -202,7 +202,7 @@ describe('RobloxFriendsCacheService', () => {
 
     const service = new RobloxFriendsCacheService({
       supabase: client as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
     });
 
     const result = await service.getFriendsForUser('user-1');

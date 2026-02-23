@@ -99,7 +99,7 @@ describe('RobloxFavoritesService', () => {
 
     const service = new RobloxFavoritesService({
       supabase: supabase as any,
-      fetchFn: jest.fn<typeof fetch>(),
+      fetchFn: jest.fn() as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -120,7 +120,7 @@ describe('RobloxFavoritesService', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -148,7 +148,7 @@ describe('RobloxFavoritesService', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -183,7 +183,7 @@ describe('RobloxFavoritesService', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -217,7 +217,7 @@ describe('RobloxFavoritesService', () => {
           }],
         ]),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame } as any,
     });
 
@@ -249,7 +249,7 @@ describe('RobloxFavoritesService', () => {
         appUsersRobloxUserId: '456789',
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 

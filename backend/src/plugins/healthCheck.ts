@@ -51,8 +51,17 @@ export async function healthCheckPlugin(fastify: FastifyInstance) {
   });
 }
 
+const DB_CHECK_TTL_MS = 10_000;
+let dbCheckCache: { result: HealthCheckResult; expiresAt: number } | null = null;
+
 async function checkDatabase(): Promise<HealthCheckResult> {
-  const start = Date.now();
+  const now = Date.now();
+  if (dbCheckCache && now < dbCheckCache.expiresAt) {
+    return dbCheckCache.result;
+  }
+
+  const start = now;
+  let result: HealthCheckResult;
   try {
     const supabase = getSupabase();
     // Simple query to check database connectivity
@@ -60,27 +69,30 @@ async function checkDatabase(): Promise<HealthCheckResult> {
     const latencyMs = Date.now() - start;
 
     if (error) {
-      return {
+      result = {
         name: 'database',
         status: 'unhealthy',
         latencyMs,
         message: error.message,
       };
+    } else {
+      result = {
+        name: 'database',
+        status: latencyMs > 2000 ? 'degraded' : 'healthy',
+        latencyMs,
+      };
     }
-
-    return {
-      name: 'database',
-      status: latencyMs > 2000 ? 'degraded' : 'healthy',
-      latencyMs,
-    };
   } catch (err) {
-    return {
+    result = {
       name: 'database',
       status: 'unhealthy',
       latencyMs: Date.now() - start,
       message: err instanceof Error ? err.message : 'Database check failed',
     };
   }
+
+  dbCheckCache = { result, expiresAt: Date.now() + DB_CHECK_TTL_MS };
+  return result;
 }
 
 function checkMemory(): HealthCheckResult {

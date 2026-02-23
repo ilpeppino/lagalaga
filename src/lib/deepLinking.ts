@@ -8,6 +8,7 @@
  */
 
 import * as Linking from 'expo-linking';
+import { logger } from './logger';
 
 export const DeepLinkScheme = 'lagalaga';
 
@@ -35,12 +36,14 @@ export function parseDeepLink(url: string): {
   try {
     const parsed = Linking.parse(url);
 
-    return {
-      route: parsed.path || '',
-      params: parsed.queryParams || {},
-    };
+    const raw = parsed.queryParams ?? {};
+    const params: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'string') params[k] = v;
+    }
+    return { route: parsed.path || '', params };
   } catch (error) {
-    console.error('Failed to parse deep link:', error);
+    logger.error('Failed to parse deep link', { error: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }
@@ -100,7 +103,7 @@ export async function getInitialURL(): Promise<string | null> {
   try {
     return await Linking.getInitialURL();
   } catch (error) {
-    console.error('Failed to get initial URL:', error);
+    logger.error('Failed to get initial URL', { error: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }

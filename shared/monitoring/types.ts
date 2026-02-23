@@ -3,7 +3,7 @@
  * Implementations can wrap Sentry, DataDog, or a simple console logger.
  */
 
-export type BreadcrumbCategory = 'navigation' | 'http' | 'user' | 'error' | 'info';
+export type BreadcrumbCategory = 'navigation' | 'http' | 'user' | 'error' | 'info' | 'push';
 
 export interface Breadcrumb {
   category: BreadcrumbCategory;

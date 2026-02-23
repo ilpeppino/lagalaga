@@ -141,7 +141,7 @@ describe('GET /api/me/roblox/favorites', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame } as any,
     });
 
@@ -169,7 +169,7 @@ describe('GET /api/me/roblox/favorites', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: jest.fn<typeof fetch>(),
+      fetchFn: jest.fn() as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -192,7 +192,7 @@ describe('GET /api/me/roblox/favorites', () => {
         appUsersRobloxUserId: null,
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 
@@ -230,7 +230,7 @@ describe('GET /api/me/roblox/favorites', () => {
           }],
         ]),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame } as any,
     });
 
@@ -263,7 +263,7 @@ describe('GET /api/me/roblox/favorites', () => {
         appUsersRobloxUserId: '999',
         gamesByPlaceId: new Map(),
       }) as any,
-      fetchFn: fetchMock,
+      fetchFn: fetchMock as unknown as typeof fetch,
       enrichmentService: { enrichGame: jest.fn() } as any,
     });
 

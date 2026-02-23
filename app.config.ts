@@ -32,9 +32,48 @@ const config: ExpoConfig = {
     buildNumber: "10",
     supportsTablet: true,
     bundleIdentifier: iosBundleIdentifier,
+    associatedDomains: ["applinks:ilpeppino.github.io"],
     infoPlist: {
       LSApplicationQueriesSchemes: ["roblox"],
       ITSAppUsesNonExemptEncryption: false,
+    },
+    privacyManifests: {
+      NSPrivacyTracking: false,
+      NSPrivacyTrackingDomains: [],
+      NSPrivacyCollectedDataTypes: [],
+      NSPrivacyAccessedAPITypes: [
+        {
+          // File timestamps — used by expo-sqlite, expo-file-system, and react-native
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+          NSPrivacyAccessedAPITypeReasons: [
+            "C617.1", // Access timestamps of files created by the app
+            "0A2A.1", // Sync/integrity checks on app-created files
+            "3B52.1", // Timestamps accessed by third-party SDKs
+          ],
+        },
+        {
+          // NSUserDefaults — used by AsyncStorage and expo-secure-store
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+          NSPrivacyAccessedAPITypeReasons: [
+            "CA92.1", // Read/write app's own user defaults for settings and preferences
+          ],
+        },
+        {
+          // System boot time — used by react-native performance APIs and expo-constants
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPITypeReasons: [
+            "35F9.1", // Measure elapsed time for performance monitoring
+          ],
+        },
+        {
+          // Disk space — used by expo-device and expo-file-system
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+          NSPrivacyAccessedAPITypeReasons: [
+            "E174.1", // Check available space before writing app data
+            "85F4.1", // Needed for normal app operation (writing files)
+          ],
+        },
+      ],
     },
   },
   android: {

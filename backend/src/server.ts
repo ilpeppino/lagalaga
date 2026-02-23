@@ -7,6 +7,7 @@ import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthCheckPlugin } from './plugins/healthCheck.js';
 import { metricsPlugin } from './plugins/metrics.js';
+import { rateLimitPlugin } from './plugins/rate-limit.js';
 import { requestLoggingPlugin } from './middleware/logging.middleware.js';
 import { authRoutes } from './routes/auth.js';
 import { robloxConnectRoutes } from './routes/roblox-connect.routes.js';
@@ -60,6 +61,7 @@ export async function buildServer() {
   await fastify.register(requestLoggingPlugin);
   await fastify.register(corsPlugin);
   await fastify.register(authPlugin);
+  await fastify.register(rateLimitPlugin);
   await fastify.register(errorHandlerPlugin);
   await fastify.register(healthCheckPlugin);
   await fastify.register(metricsPlugin);

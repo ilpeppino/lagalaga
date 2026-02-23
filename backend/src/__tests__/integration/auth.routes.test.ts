@@ -60,6 +60,7 @@ jest.unstable_mockModule('../../utils/crypto.js', () => ({
 
 const { authRoutes } = await import('../../routes/auth.js');
 const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
+const { rateLimitPlugin } = await import('../../plugins/rate-limit.js');
 
 function buildConfig() {
   return {
@@ -85,6 +86,7 @@ describe('auth routes', () => {
 
     app = Fastify({ logger: false });
     (app as any).config = buildConfig();
+    await app.register(rateLimitPlugin);
     await app.register(errorHandlerPlugin);
     await app.register(authRoutes, { prefix: '/auth' });
     await app.ready();
@@ -240,5 +242,21 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('AUTH_002');
     expect(mockGetUserById).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/roblox/start returns 429 after per-route threshold is exceeded', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      const okResponse = await request(app.server)
+        .post('/auth/roblox/start')
+        .send({ codeChallenge: `valid-code-challenge-${i}` });
+      expect(okResponse.status).toBe(200);
+    }
+
+    const limitedResponse = await request(app.server)
+      .post('/auth/roblox/start')
+      .send({ codeChallenge: 'valid-code-challenge-6' });
+
+    expect(limitedResponse.status).toBe(429);
+    expect(limitedResponse.body?.error?.code).toBe('RATE_001');
   });
 });

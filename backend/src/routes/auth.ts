@@ -26,6 +26,12 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post<{
     Body: { codeChallenge: string };
   }>('/roblox/start', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
     schema: {
       body: {
         type: 'object',
@@ -59,6 +65,12 @@ export async function authRoutes(fastify: FastifyInstance) {
       codeVerifier: string;
     };
   }>('/roblox/callback', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
     schema: {
       body: {
         type: 'object',
@@ -151,6 +163,12 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post<{
     Body: { refreshToken: string };
   }>('/refresh', {
+    config: {
+      rateLimit: {
+        max: 20,
+        timeWindow: '15 minutes',
+      },
+    },
     schema: {
       body: {
         type: 'object',

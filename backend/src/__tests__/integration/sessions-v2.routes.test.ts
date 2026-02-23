@@ -17,6 +17,7 @@ jest.unstable_mockModule('../../services/achievementService.js', () => ({
 
 const { buildSessionsRoutesV2 } = await import('../../routes/sessions-v2.js');
 const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
+const { rateLimitPlugin } = await import('../../plugins/rate-limit.js');
 
 afterAll(() => {
   activeSupabaseMock = null;
@@ -39,6 +40,7 @@ async function buildApp({
   const app = Fastify({ logger: false });
   (app as any).config = { NODE_ENV: 'test' };
 
+  await app.register(rateLimitPlugin);
   await app.register(errorHandlerPlugin);
   await app.register(buildSessionsRoutesV2({ sessionService, rankingService, authPreHandler }));
   await app.ready();
@@ -168,6 +170,54 @@ describe('sessions v2 routes', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error?.code ?? res.body.code).toBe('NOT_FOUND_001');
+  });
+
+  it('returns 429 on invite endpoint after per-route threshold is exceeded', async () => {
+    const supabaseMock = {
+      from: jest.fn((table: string) => {
+        if (table !== 'session_invites') {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              single: async () => ({
+                data: {
+                  session_id: sessionId,
+                  session: {
+                    id: sessionId,
+                    title: 'Invite Session',
+                    max_participants: 6,
+                    game: {
+                      place_id: 606849621,
+                      game_name: 'Jailbreak',
+                      canonical_web_url: 'https://www.roblox.com/games/606849621',
+                    },
+                    session_participants: [{ count: 3 }],
+                  },
+                },
+                error: null,
+              }),
+            })),
+          })),
+        };
+      }),
+    };
+
+    const app = await buildApp({ supabaseMock });
+    const { default: request } = await import('supertest');
+
+    for (let i = 0; i < 10; i += 1) {
+      const okResponse = await request(app.server).get('/api/invites/INV123');
+      expect(okResponse.status).toBe(200);
+    }
+
+    const limitedResponse = await request(app.server).get('/api/invites/INV123');
+    await app.close();
+
+    expect(limitedResponse.status).toBe(429);
+    expect(limitedResponse.body?.error?.code).toBe('RATE_001');
   });
 
   it('sets ranked flag on ranked session creation', async () => {

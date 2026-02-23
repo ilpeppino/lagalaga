@@ -569,6 +569,12 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
   }>(
     '/api/invites/:code',
     {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         params: {
           type: 'object',

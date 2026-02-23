@@ -73,6 +73,21 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
         );
       }
 
+      // Handle Fastify rate-limit errors
+      if (error.statusCode === 429) {
+        logError(error, { requestId }, 'Rate limit exceeded');
+
+        return reply.status(429).send(
+          buildErrorResponse(
+            ErrorCodes.RATE_LIMIT_EXCEEDED,
+            'Rate limit exceeded. Please try again later.',
+            429,
+            'warning',
+            requestId,
+          )
+        );
+      }
+
       // Handle Fastify validation errors
       if ((error as FastifyError).validation) {
         logError(

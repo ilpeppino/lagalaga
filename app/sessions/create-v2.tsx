@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiClient } from '@/src/lib/api';
 import {
   View,
   StyleSheet,
@@ -46,6 +47,13 @@ const visibilityOptions: { value: SessionVisibility; label: string }[] = [
   { value: 'friends', label: 'Friends Only' },
   { value: 'invite_only', label: 'Invite Only' },
 ];
+
+function formatSyncedAgo(fetchedAt: string): string {
+  const diffMin = Math.floor((Date.now() - new Date(fetchedAt).getTime()) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin === 1) return '1 min ago';
+  return `${diffMin} min ago`;
+}
 
 function getFavoriteDisplayName(favorite: Favorite): string {
   const name = favorite.name?.trim();
@@ -84,7 +92,10 @@ export default function CreateSessionScreenV2() {
   // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [isRefreshingFriends, setIsRefreshingFriends] = useState(false);
   const [friendsError, setFriendsError] = useState<string | null>(null);
+  const [friendsSyncedAt, setFriendsSyncedAt] = useState<string | null>(null);
+  const [friendsIsStale, setFriendsIsStale] = useState(false);
   const [robloxNotConnected, setRobloxNotConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
@@ -95,6 +106,7 @@ export default function CreateSessionScreenV2() {
   const [presenceMap, setPresenceMap] = useState<Map<number, RobloxFriendPresence>>(new Map());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasInitialFriendsLoadRef = useRef(false);
 
   useEffect(() => {
     if (!user?.id) {
@@ -104,32 +116,47 @@ export default function CreateSessionScreenV2() {
     void warmFavorites(user.id);
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) {
-      return;
-    }
-
-    const loadFriends = async () => {
-      try {
-        setIsLoadingFriends(true);
-        setFriendsError(null);
-        setRobloxNotConnected(false);
-        const response = await sessionsAPIStoreV2.listMyRobloxFriends();
-        setFriends(response.friends);
-      } catch (err) {
-        if (err instanceof ApiError && err.code === 'ROBLOX_NOT_CONNECTED') {
-          setRobloxNotConnected(true);
-          setFriends([]);
-          return;
-        }
-        setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
-      } finally {
-        setIsLoadingFriends(false);
+  const loadFriends = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setIsLoadingFriends(true);
+      setFriendsError(null);
+      setRobloxNotConnected(false);
+      const response = await sessionsAPIStoreV2.listMyRobloxFriends();
+      setFriends(response.friends);
+      setFriendsSyncedAt(response.fetchedAt);
+      setFriendsIsStale(new Date(response.expiresAt) < new Date());
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'ROBLOX_NOT_CONNECTED') {
+        setRobloxNotConnected(true);
+        setFriends([]);
+        return;
       }
-    };
-
-    void loadFriends();
+      setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
+    } finally {
+      setIsLoadingFriends(false);
+    }
   }, [user?.id, getErrorMessage]);
+
+  useEffect(() => {
+    void loadFriends();
+  }, [loadFriends]);
+
+  const handleRefreshFriends = useCallback(async () => {
+    setIsRefreshingFriends(true);
+    setFriendsError(null);
+    try {
+      await apiClient.friends.refresh();
+      const response = await sessionsAPIStoreV2.listMyRobloxFriends();
+      setFriends(response.friends);
+      setFriendsSyncedAt(response.fetchedAt);
+      setFriendsIsStale(new Date(response.expiresAt) < new Date());
+    } catch (err) {
+      setFriendsError(getErrorMessage(err, 'Failed to refresh friends'));
+    } finally {
+      setIsRefreshingFriends(false);
+    }
+  }, [getErrorMessage]);
 
   const fetchPresence = useCallback(async (friendIds: number[]) => {
     if (friendIds.length === 0) return;
@@ -140,6 +167,17 @@ export default function CreateSessionScreenV2() {
       // Presence is best-effort; ignore errors
     }
   }, []);
+
+  // Re-fetch friends list on focus (skip first focus — initial load handles it)
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasInitialFriendsLoadRef.current) {
+        hasInitialFriendsLoadRef.current = true;
+        return;
+      }
+      void loadFriends();
+    }, [loadFriends])
+  );
 
   // Refresh presence on screen focus
   useFocusEffect(
@@ -468,9 +506,32 @@ export default function CreateSessionScreenV2() {
 
       {/* Friend Picker */}
       <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Invite Friends
-        </ThemedText>
+        <View style={styles.inviteSectionHeader}>
+          <ThemedText type="titleMedium">Invite Friends</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh friends list"
+            style={styles.friendsRefreshButton}
+            onPress={() => { void handleRefreshFriends(); }}
+            disabled={isRefreshingFriends || isCreating || isLoadingFriends}
+          >
+            {isRefreshingFriends ? (
+              <ActivityIndicator size="small" color="#007AFF" />
+            ) : (
+              <MaterialIcons name="refresh" size={18} color="#007AFF" />
+            )}
+          </Pressable>
+        </View>
+        {friendsSyncedAt != null && (
+          <ThemedText type="bodySmall" lightColor="#888" darkColor="#777" style={styles.syncedLabel}>
+            Synced {formatSyncedAgo(friendsSyncedAt)}{friendsIsStale ? ' (stale)' : ''}
+          </ThemedText>
+        )}
+        {isRefreshingFriends && (
+          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.refreshingLabel}>
+            Refreshing friends...
+          </ThemedText>
+        )}
         <TextInput
           style={styles.searchInput}
           value={friendSearch}
@@ -510,31 +571,30 @@ export default function CreateSessionScreenV2() {
             <Button
               title="Retry"
               variant="text"
-              onPress={() => {
-                setFriendsError(null);
-                setIsLoadingFriends(true);
-                sessionsAPIStoreV2
-                  .listMyRobloxFriends()
-                  .then((response) => {
-                    setFriends(response.friends);
-                  })
-                  .catch((err) => {
-                    setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
-                  })
-                  .finally(() => setIsLoadingFriends(false));
-              }}
+              onPress={() => { void loadFriends(); }}
             />
           </View>
         ) : null}
 
-        {!isLoadingFriends && !robloxNotConnected && !friendsError && (
+        {!isLoadingFriends && !robloxNotConnected && !friendsError && friends.length === 0 ? (
+          <View style={styles.emptyFriendsContainer}>
+            <ThemedText type="bodyMedium" lightColor="#444" darkColor="#bbb">
+              No friends yet.
+            </ThemedText>
+            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
+              Add friends from the Friends tab.
+            </ThemedText>
+          </View>
+        ) : null}
+
+        {!isLoadingFriends && !robloxNotConnected && !friendsError && friends.length > 0 && (
           <FriendPickerTwoRowHorizontal
             friends={filteredFriends}
             selectedIds={selectedFriendIds}
             onToggle={(friendId) => {
               setSelectedFriendIds((current) => toggleFriendSelection(current, friendId));
             }}
-            disabled={isCreating}
+            disabled={isCreating || isRefreshingFriends}
           />
         )}
       </View>
@@ -723,6 +783,30 @@ const styles = StyleSheet.create({
   },
   visibilityPicker: {
     marginTop: 4,
+  },
+  inviteSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  friendsRefreshButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncedLabel: {
+    marginBottom: 6,
+  },
+  refreshingLabel: {
+    marginBottom: 6,
+  },
+  emptyFriendsContainer: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 4,
   },
   searchInput: {
     borderRadius: 8,

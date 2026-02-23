@@ -84,15 +84,22 @@ export default function SessionDetailScreenV2() {
 
   const handleShare = useCallback(async (inviteLink?: string) => {
     const link = inviteLink || session?.inviteLink;
-    if (!link || !session) return;
+    if (!link) return;
+
+    const gameName = session?.game.gameName || 'Roblox';
+    const sessionTitle = session?.title?.trim() || 'my session';
+    const message = session
+      ? `Join my ${gameName} session: "${sessionTitle}"\n\n${link}`
+      : `Join my ${gameName} session:\n\n${link}`;
 
     try {
       await Share.share({
-        message: `Join my ${session.game.gameName || 'Roblox'} session: "${session.title}"\n\n${link}`,
-        title: `Join ${session.title}`,
+        message,
+        title: session ? `Join ${sessionTitle}` : 'Join my session',
       });
     } catch (error) {
       logger.warn('Failed to share', { error: (error as Error).message });
+      Alert.alert('Share unavailable', 'Unable to open the share sheet right now. Please try again.');
     }
   }, [session]);
 

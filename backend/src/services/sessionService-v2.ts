@@ -7,6 +7,7 @@ import { logger } from '../lib/logger.js';
 import { sanitize } from '../lib/sanitizer.js';
 import { request } from 'undici';
 import { metrics } from '../plugins/metrics.js';
+import { randomInt } from 'node:crypto';
 
 const INVITE_LINK_BASE = 'https://ilpeppino.github.io/lagalaga/invite/';
 
@@ -52,15 +53,17 @@ export interface SessionWithInvite {
   inviteLink: string;
 }
 
+const INVITE_CODE_LENGTH = 12;
+
 /**
- * Generate a random 9-character alphanumeric invite code
- * Excludes ambiguous characters (0, O, I, l)
+ * Generate a cryptographically secure invite code.
+ * Excludes ambiguous characters (0, O, I, l).
  */
-function generateInviteCode(): string {
+export function generateInviteCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 9; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
+    code += chars[randomInt(0, chars.length)];
   }
   return code;
 }
@@ -1208,6 +1211,14 @@ export class SessionServiceV2 {
         .single();
 
       if (inviteError || !invite) {
+        logger.warn(
+          sanitize({
+            sessionId,
+            userId,
+            inviteCode,
+          }),
+          'Invalid invite code attempted'
+        );
         throw new SessionError(ErrorCodes.FORBIDDEN, 'Invalid invite code', 400);
       }
 

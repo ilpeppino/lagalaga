@@ -22,7 +22,7 @@ jest.unstable_mockModule('../pushNotificationService.js', () => ({
   },
 }));
 
-const { SessionServiceV2 } = await import('../sessionService-v2.js');
+const { SessionServiceV2, generateInviteCode } = await import('../sessionService-v2.js');
 
 describe('SessionServiceV2 handoff column helpers', () => {
   let service: InstanceType<typeof SessionServiceV2>;
@@ -91,5 +91,22 @@ describe('SessionServiceV2 share link helpers', () => {
 
     const placeId = await (service as any).resolveShareLinkPlaceId('https://www.roblox.com/share-links?code=abc&type=ExperienceDetails');
     expect(placeId).toBe(98765);
+  });
+});
+
+describe('generateInviteCode', () => {
+  it('generates a 12-character code with allowed characters only', () => {
+    const code = generateInviteCode();
+    expect(code).toHaveLength(12);
+    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/);
+  });
+
+  it('produces unique values across a large sample', () => {
+    const sampleSize = 1000;
+    const codes = new Set<string>();
+    for (let i = 0; i < sampleSize; i += 1) {
+      codes.add(generateInviteCode());
+    }
+    expect(codes.size).toBe(sampleSize);
   });
 });

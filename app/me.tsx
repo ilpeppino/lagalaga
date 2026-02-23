@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   Image,
   Switch,
   Alert,
-  Platform,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -18,15 +17,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
-import * as Notifications from 'expo-notifications';
-import {
-  getCachedPushToken,
-  getLastRegistrationTime,
-  getPushRegistrationDiagnostics,
-  registerPushToken,
-  subscribePushRegistrationDiagnostics,
-  type PushRegistrationDiagnostics,
-} from '@/src/features/notifications/registerPushToken';
 
 interface MeData {
   appUser: {
@@ -71,66 +61,24 @@ export default function MeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [proViewEnabled, setProViewEnabled] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
-  const [debugPushToken, setDebugPushToken] = useState<string | null>(null);
-  const [debugLastRegistered, setDebugLastRegistered] = useState<number | null>(null);
-  const [debugLastPushReceivedAt, setDebugLastPushReceivedAt] = useState<number | null>(null);
-  const [debugRegistering, setDebugRegistering] = useState(false);
-  const [pushDiagnostics, setPushDiagnostics] = useState<PushRegistrationDiagnostics>(
-    getPushRegistrationDiagnostics()
-  );
-
-  // Track last invite push received while on this screen
-  useEffect(() => {
-    const sub = Notifications.addNotificationReceivedListener((notification) => {
-      const type = notification.request.content.data?.type;
-      if (type === 'session_invite') {
-        setDebugLastPushReceivedAt(Date.now());
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribePushRegistrationDiagnostics((nextState) => {
-      setPushDiagnostics(nextState);
-    });
-    return unsubscribe;
-  }, []);
 
   const fetchMeData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.getRaw('/api/me');
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch user data');
       }
 
       const json: MeResponse = await response.json();
       setData(json.data);
-      setDebugPushToken(getCachedPushToken());
-      setDebugLastRegistered(getLastRegistrationTime());
-      setPushDiagnostics(getPushRegistrationDiagnostics());
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load profile' });
     } finally {
       setLoading(false);
     }
   }, [handleError]);
-
-  const handleRetryPushRegistration = async () => {
-    try {
-      setDebugRegistering(true);
-      await registerPushToken({ force: true, reason: 'manual_retry_from_me_screen' });
-      setDebugPushToken(getCachedPushToken());
-      setDebugLastRegistered(getLastRegistrationTime());
-      setPushDiagnostics(getPushRegistrationDiagnostics());
-    } catch (error) {
-      handleError(error, { fallbackMessage: 'Push token registration retry failed' });
-    } finally {
-      setDebugRegistering(false);
-    }
-  };
 
   const handleRefreshAvatar = async () => {
     try {
@@ -452,91 +400,6 @@ export default function MeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Push Notifications Debug */}
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.sectionTitle, { color: textColor }]}>Push Notifications</Text>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Platform:</Text>
-            <Text style={[styles.value, { color: textColor }]}>{Platform.OS}</Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Permission:</Text>
-            <Text style={[styles.value, { color: pushDiagnostics.permissionStatus === 'granted' ? '#2e7d32' : '#c62828' }]}>{pushDiagnostics.permissionStatus}</Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Token:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]} numberOfLines={1} ellipsizeMode="middle">
-              {debugPushToken ? `…${debugPushToken.slice(-24)}` : pushDiagnostics.expoPushTokenMasked}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>ProjectId:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]}>{pushDiagnostics.projectIdMasked}</Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Token retrieval:</Text>
-            <Text style={[styles.value, { color: pushDiagnostics.tokenRetrievalStatus === 'success' ? '#2e7d32' : '#c62828' }]}>
-              {pushDiagnostics.tokenRetrievalStatus}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Channel:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]}>{pushDiagnostics.channelStatus}</Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Registered:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]}>
-              {debugLastRegistered ? new Date(debugLastRegistered).toLocaleTimeString() : 'Not yet'}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Last attempt:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]}>
-              {pushDiagnostics.lastRegisterAttemptAt ? new Date(pushDiagnostics.lastRegisterAttemptAt).toLocaleTimeString() : 'Not yet'}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Last result:</Text>
-            <Text style={[styles.value, { color: pushDiagnostics.lastRegisterResult === 'success' ? '#2e7d32' : '#c62828' }]}>
-              {pushDiagnostics.lastRegisterResult}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor, alignItems: 'flex-start' }]}>
-            <Text style={[styles.label, { color: textColor }]}>Last error:</Text>
-            <Text style={[styles.value, styles.debugMultilineValue, { color: pushDiagnostics.lastRegisterError ? '#c62828' : secondaryTextColor }]}>
-              {pushDiagnostics.lastRegisterError ?? 'None'}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: rowBorderColor, alignItems: 'flex-start' }]}>
-            <Text style={[styles.label, { color: textColor }]}>Backend:</Text>
-            <Text style={[styles.value, styles.debugMultilineValue, { color: secondaryTextColor }]}>
-              {pushDiagnostics.lastBackendResponse}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
-            <Text style={[styles.label, { color: textColor }]}>Last push received:</Text>
-            <Text style={[styles.value, { color: secondaryTextColor }]}>
-              {debugLastPushReceivedAt ? new Date(debugLastPushReceivedAt).toLocaleTimeString() : 'None this session'}
-            </Text>
-          </View>
-          {__DEV__ ? (
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-              onPress={handleRetryPushRegistration}
-              disabled={debugRegistering}
-            >
-              {debugRegistering ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <IconSymbol name="arrow.clockwise.circle" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>Retry registration</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
         {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (
           <View style={[styles.card, { backgroundColor: cardColor }]}>
             <View style={styles.cardHeader}>
@@ -700,9 +563,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
     marginLeft: 16,
-  },
-  debugMultilineValue: {
-    textAlign: 'left',
   },
   badge: {
     paddingHorizontal: 10,

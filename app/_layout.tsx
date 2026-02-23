@@ -111,6 +111,7 @@ export default function RootLayout() {
                 <Stack.Screen name="safety-report" options={{ headerShown: true, title: 'Safety & Report' }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                 <Stack.Screen name="invites" options={{ headerShown: false }} />
+                <Stack.Screen name="invite" options={{ headerShown: false }} />
                 {ENABLE_COMPETITIVE_DEPTH ? (
                   <Stack.Screen
                     name="match-history"

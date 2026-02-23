@@ -71,6 +71,16 @@ export default function SessionHandoffScreen() {
     () => session?.game.thumbnailUrl || fallbackThumbnail,
     [session?.game.thumbnailUrl, fallbackThumbnail]
   );
+  const joinSteps = useMemo(
+    () => [
+      'Open Roblox',
+      'Join host via Friends - Join or Party invite',
+      "Return here and tap I'm in",
+    ].filter((step) => step.trim().length > 0),
+    []
+  );
+  const instructionsBackgroundColor = colorScheme === 'dark' ? '#1c1c1e' : '#f5f7ff';
+  const instructionsTitleColor = colorScheme === 'dark' ? '#f2f2f7' : '#111111';
 
   const handleOpenRoblox = useCallback(async () => {
     if (!session) return;
@@ -163,12 +173,14 @@ export default function SessionHandoffScreen() {
         </View>
       </View>
 
-      <View style={styles.instructions}>
-        <ThemedText type="titleMedium">How to join</ThemedText>
-        <ThemedText type="bodyLarge" style={styles.step}>1. Open Roblox</ThemedText>
-        <ThemedText type="bodyLarge" style={styles.step}>2. Join host via Friends - Join or Party invite</ThemedText>
-        <ThemedText type="bodyLarge" style={styles.step}>3. Return here and tap I&apos;m in</ThemedText>
-      </View>
+      {joinSteps.length > 0 ? (
+        <View style={[styles.instructions, { backgroundColor: instructionsBackgroundColor }]}>
+          <ThemedText type="titleMedium" lightColor={instructionsTitleColor} darkColor={instructionsTitleColor}>How to join</ThemedText>
+          {joinSteps.map((step, index) => (
+            <ThemedText key={step} type="bodyLarge" style={styles.step}>{index + 1}. {step}</ThemedText>
+          ))}
+        </View>
+      ) : null}
 
       <Button
         title="Open Roblox"
@@ -233,7 +245,7 @@ const styles = StyleSheet.create({
   hostTextWrap: { flex: 1 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#ddd' },
   avatarFallback: { backgroundColor: '#ddd' },
-  instructions: { borderRadius: 10, backgroundColor: '#f5f7ff', padding: 12, gap: 6 },
+  instructions: { borderRadius: 10, padding: 12, gap: 6 },
   step: { lineHeight: 22 },
   button: { marginTop: 4 },
 });

@@ -1,8 +1,9 @@
 import { Redirect } from "expo-router";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useEffect, useState } from "react";
 import { tokenStorage } from "@/src/lib/tokenStorage";
+import { LagaLoadingSpinner } from "@/components/ui/LagaLoadingSpinner";
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -18,7 +19,7 @@ export default function Index() {
   if (loading || hasToken === null) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <LagaLoadingSpinner size={56} label="Loading..." />
       </View>
     );
   }

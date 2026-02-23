@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Image,
   Switch,
   Alert,
@@ -21,6 +20,8 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { refreshFavorites } from '@/src/features/favorites/service';
 import { refreshFriends } from '@/src/features/friends/service';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
+import { ActivityIndicator } from 'react-native-paper';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -203,7 +204,7 @@ export default function MeScreen() {
           }}
         />
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={tintColor} />
+          <LagaLoadingSpinner size={56} label="Loading profile..." />
         </View>
       </View>
     );

@@ -1,14 +1,14 @@
 import { useCallback, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../../src/lib/api';
 import { tokenStorage } from '../../src/lib/tokenStorage';
 import { logger } from '@/src/lib/logger';
-import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 // Module-level guard prevents duplicate processing across StrictMode remounts.
 const processedCallbackKeys = new Set<string>();
@@ -113,10 +113,7 @@ export default function RobloxCallback() {
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-      <ActivityIndicator size="large" />
-      <ThemedText type="bodyLarge" style={styles.text}>
-        Completing sign in...
-      </ThemedText>
+      <LagaLoadingSpinner size={56} label="Completing sign in..." />
     </View>
   );
 }
@@ -126,8 +123,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  text: {
-    marginTop: 16,
   },
 });

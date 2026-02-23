@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function RobloxDeepLinkCompatScreen() {
   const router = useRouter();
@@ -21,10 +21,7 @@ export default function RobloxDeepLinkCompatScreen() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" />
-      <ThemedText type="bodyLarge" style={styles.text}>
-        Redirecting...
-      </ThemedText>
+      <LagaLoadingSpinner size={56} label="Redirecting..." />
     </View>
   );
 }
@@ -34,8 +31,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  text: {
-    marginTop: 12,
   },
 });

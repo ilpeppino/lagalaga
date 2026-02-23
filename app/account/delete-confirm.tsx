@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Switch,
@@ -17,6 +16,7 @@ import { apiClient } from '@/src/lib/api';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { isApiError } from '@/src/lib/errors';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function DeleteAccountConfirmScreen() {
   const router = useRouter();
@@ -86,7 +86,7 @@ export default function DeleteAccountConfirmScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: palette.background }]}> 
         <Stack.Screen options={{ title: 'Confirm Deletion' }} />
-        <ActivityIndicator size="large" color={palette.tint} />
+        <LagaLoadingSpinner size={56} label="Loading..." />
       </View>
     );
   }

@@ -7,6 +7,7 @@ import { SyncedAtBadge } from '@/components/SyncedAtBadge';
 import { apiClient } from '@/src/lib/api';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { useFriends } from '@/src/features/friends/useFriends';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 interface FriendsPayload {
   lagalaFriends?: {
@@ -82,6 +83,14 @@ export default function FriendsTabScreen() {
     }
   }, [load]);
 
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <LagaLoadingSpinner size={56} label="Loading friends..." />
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -90,10 +99,7 @@ export default function FriendsTabScreen() {
     >
       <ThemedText type="title">Friends</ThemedText>
 
-      {loading ? (
-        <ThemedText>Loading friends...</ThemedText>
-      ) : (
-        <>
+      <>
           <ThemedView style={styles.section}>
             <ThemedText type="subtitle">Requests</ThemedText>
             <ThemedText>Incoming: {data?.requests?.incoming?.length ?? 0}</ThemedText>
@@ -137,8 +143,7 @@ export default function FriendsTabScreen() {
               </>
             )}
           </ThemedView>
-        </>
-      )}
+      </>
     </ScrollView>
   );
 }
@@ -150,6 +155,12 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     gap: 16,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   section: {
     padding: 12,

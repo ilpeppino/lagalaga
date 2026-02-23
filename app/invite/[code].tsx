@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   Image,
 } from 'react-native';
@@ -22,6 +21,7 @@ import { isApiError } from '@/src/lib/errors';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Button } from '@/components/ui/paper';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 type InviteState = 'loading' | 'preview' | 'joining' | 'error' | 'login_required';
 
@@ -125,10 +125,7 @@ export default function InviteScreen() {
   if (state === 'loading') {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.loadingText}>
-          Loading invite...
-        </ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading invite..." />
       </View>
     );
   }
@@ -163,10 +160,7 @@ export default function InviteScreen() {
   if (state === 'joining') {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999" style={styles.loadingText}>
-          Joining session...
-        </ThemedText>
+        <LagaLoadingSpinner size={56} label="Joining session..." />
       </View>
     );
   }

@@ -7,7 +7,6 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Alert,
   TouchableOpacity,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
@@ -74,10 +74,7 @@ export default function ProfileScreen() {
             ),
           }}
         />
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText type="bodyLarge" style={styles.loadingText}>
-          Loading profile...
-        </ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading profile..." />
       </View>
     );
   }

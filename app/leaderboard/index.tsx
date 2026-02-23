@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View, RefreshControl } from 'react-native';
-import { ActivityIndicator, Card } from 'react-native-paper';
+import { Card } from 'react-native-paper';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { LeaderboardEntry } from '@/src/features/sessions/types-v2';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function LeaderboardScreen() {
   const colorScheme = useColorScheme();
@@ -41,7 +42,7 @@ export default function LeaderboardScreen() {
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-        <ActivityIndicator size="large" color="#FF6B00" />
+        <LagaLoadingSpinner size={56} label="Loading leaderboard..." />
       </View>
     );
   }

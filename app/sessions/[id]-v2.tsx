@@ -7,7 +7,6 @@ import {
   View,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   Share,
   Image,
@@ -26,6 +25,7 @@ import { logger } from '@/src/lib/logger';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AnimatedButton as Button } from '@/components/ui/paper';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { Dialog, Portal, RadioButton } from 'react-native-paper';
 import type { RobloxPresencePayload } from '@/src/features/sessions/apiStore-v2';
@@ -274,10 +274,7 @@ export default function SessionDetailScreenV2() {
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText type="bodyLarge" style={styles.loadingText}>
-          Loading session...
-        </ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading session..." />
       </View>
     );
   }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Image, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
+import { View, StyleSheet, Image, ScrollView, Alert, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { logger } from '@/src/lib/logger';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function SessionHandoffScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -142,8 +143,7 @@ export default function SessionHandoffScreen() {
   if (loading || !session) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText type="bodyLarge" style={styles.loadingText}>Loading handoff...</ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading handoff..." />
       </View>
     );
   }

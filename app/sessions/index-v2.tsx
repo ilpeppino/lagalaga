@@ -28,6 +28,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Card } from '@/components/ui/paper';
 import { ActivityIndicator, FAB, IconButton, SegmentedButtons } from 'react-native-paper';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { getSessionLiveBadge, sessionUiColors } from '@/src/ui/sessionStatusUi';
@@ -701,15 +702,7 @@ export default function SessionsListScreenV2() {
   if (isLoading && mergedSessions.length === 0) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText
-          type="bodyLarge"
-          lightColor="#666"
-          darkColor="#aaa"
-          style={styles.loadingText}
-        >
-          Loading sessions...
-        </ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading sessions..." />
       </View>
     );
   }

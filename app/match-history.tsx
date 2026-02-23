@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { Card } from 'react-native-paper';
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +7,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { MatchHistoryEntry } from '@/src/features/sessions/types-v2';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function MatchHistoryScreen() {
   const colorScheme = useColorScheme();
@@ -55,7 +56,7 @@ export default function MatchHistoryScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
         <Stack.Screen options={{ title: 'Match History' }} />
-        <ActivityIndicator size="large" color="#FF6B00" />
+        <LagaLoadingSpinner size={56} label="Loading match history..." />
       </View>
     );
   }

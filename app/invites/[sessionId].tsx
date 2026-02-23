@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/paper';
@@ -8,6 +8,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 type InviteState = 'loading' | 'ready' | 'accepting' | 'declining' | 'error';
 
@@ -85,8 +86,7 @@ export default function SessionInviteScreen() {
   if (state === 'loading') {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <ThemedText style={styles.loadingText}>Loading invite...</ThemedText>
+        <LagaLoadingSpinner size={56} label="Loading invite..." />
       </View>
     );
   }

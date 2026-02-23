@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -10,6 +10,7 @@ import {
   loadSessionSettings,
   saveSessionSettings,
 } from '@/src/lib/sessionSettings';
+import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 const MIN_HOURS = 0;
 const MAX_HOURS = 48;
@@ -95,7 +96,7 @@ export default function SettingsScreen() {
 
       {isLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <LagaLoadingSpinner size={56} label="Loading settings..." />
         </View>
       ) : (
         <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>

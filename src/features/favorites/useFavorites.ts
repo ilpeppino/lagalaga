@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Favorite, loadCachedFavorites, subscribeCachedFavorites } from './cache';
 import { refreshFavorites } from './service';
 
+const FAVORITES_STALE_MS = 15 * 60 * 1000;
+
 export function useFavorites(userId: string | null | undefined): {
   favorites: Favorite[];
   loading: boolean;
   error: string | null;
   syncedAt: string | null;
+  isStale: boolean;
   refresh: () => Promise<void>;
   forceRefresh: () => Promise<void>;
 } {
@@ -14,6 +17,7 @@ export function useFavorites(userId: string | null | undefined): {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const isStale = syncedAt == null || Date.now() - new Date(syncedAt).getTime() > FAVORITES_STALE_MS;
 
   const runRefresh = useCallback(async (force: boolean) => {
     if (!userId) {
@@ -100,6 +104,7 @@ export function useFavorites(userId: string | null | undefined): {
     loading,
     error,
     syncedAt,
+    isStale,
     refresh,
     forceRefresh,
   };

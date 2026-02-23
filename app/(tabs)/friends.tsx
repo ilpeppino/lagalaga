@@ -3,6 +3,7 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from '
 import { useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { SyncedAtBadge } from '@/components/SyncedAtBadge';
 import { apiClient } from '@/src/lib/api';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { useFriends } from '@/src/features/friends/useFriends';
@@ -33,6 +34,7 @@ export default function FriendsTabScreen() {
     syncedAt,
     isStale,
     robloxNotConnected,
+    isRefreshing: isRefreshingFriends,
     refresh,
   } = useFriends(user?.id);
   const [data, setData] = useState<FriendsPayload | null>(null);
@@ -99,7 +101,14 @@ export default function FriendsTabScreen() {
           </ThemedView>
 
           <ThemedView style={styles.section}>
-            <ThemedText type="subtitle">LagaLaga Friends</ThemedText>
+            <SyncedAtBadge
+              label="LagaLaga Friends"
+              syncedAt={syncedAt}
+              isStale={isStale}
+              isRefreshing={refreshing || isRefreshingFriends}
+              onRefresh={() => { void onRefresh(); }}
+              disabled={loading || refreshing || isRefreshingFriends}
+            />
             {(data?.lagalaFriends ?? []).length === 0 ? (
               <ThemedText>No friends yet.</ThemedText>
             ) : (
@@ -117,10 +126,6 @@ export default function FriendsTabScreen() {
               <ThemedText>Connect Roblox to sync friends.</ThemedText>
             ) : (
               <>
-                <ThemedText>
-                  Last synced: {syncedAt ?? 'never'}{isStale ? ' (stale)' : ''}
-                </ThemedText>
-
                 {(data?.robloxSuggestions?.onApp ?? []).slice(0, 20).map((user) => (
                   <View key={user.userId} style={styles.row}>
                     <ThemedText style={styles.rowText}>{displayName(user.robloxDisplayName, user.robloxUsername)}</ThemedText>

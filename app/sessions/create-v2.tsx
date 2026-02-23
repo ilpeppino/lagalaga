@@ -66,6 +66,8 @@ export default function CreateSessionScreenV2() {
     favorites,
     loading: isLoadingFavorites,
     error: favoritesError,
+    syncedAt: favoritesSyncedAt,
+    isStale: favoritesIsStale,
     refresh: refreshFavorites,
     forceRefresh: forceRefreshFavorites,
   } = useFavorites(user?.id);
@@ -316,68 +318,58 @@ export default function CreateSessionScreenV2() {
       >
       {/* Game */}
       <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Game *
-        </ThemedText>
+        <SyncedAtBadge
+          label="Game *"
+          syncedAt={favoritesSyncedAt}
+          isStale={favoritesIsStale}
+          isRefreshing={isLoadingFavorites}
+          onRefresh={handleForceFavoritesRefresh}
+          disabled={isLoadingFavorites || isCreating}
+        />
         {gameInputMode === 'favorites' ? (
           <>
-            <View style={styles.favoritesPickerRow}>
-              <View style={styles.favoritesPickerMenu}>
-                <Menu
-                  visible={favoritesMenuVisible}
-                  onDismiss={() => setFavoritesMenuVisible(false)}
-                  anchor={(
-                    <Button
-                      title={
-                        selectedFavorite
-                          ? getFavoriteDisplayName(selectedFavorite)
-                          : 'Select from your Roblox favorites'
-                      }
-                      variant="outlined"
-                      style={styles.dropdownButton}
-                      contentStyle={styles.dropdownButtonContent}
-                      labelStyle={styles.dropdownButtonLabel}
-                      onPress={() => setFavoritesMenuVisible(true)}
-                    />
-                  )}
-                >
-                  {favorites.map((favorite) => (
-                    <Menu.Item
-                      key={favorite.id}
-                      title={getFavoriteDisplayName(favorite)}
-                      onPress={() => handleSelectFavorite(favorite)}
-                    />
-                  ))}
-                  {favorites.length === 0 && isLoadingFavorites && (
-                    <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
-                  )}
-                  {favorites.length === 0 && !!favoritesError && (
-                    <Menu.Item
-                      title="Couldn't load favorites. Tap to retry"
-                      onPress={() => {
-                        void refreshFavorites();
-                        setFavoritesMenuVisible(false);
-                      }}
-                    />
-                  )}
-                  {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
-                    <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
-                  )}
-                </Menu>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Refresh Roblox favorites"
-                accessibilityHint="Force refresh from Roblox"
-                style={styles.favoritesRefreshButton}
-                onPress={handleForceFavoritesRefresh}
-              >
-                {isLoadingFavorites ? (
-                  <ActivityIndicator size="small" color="#007AFF" />
-                ) : (
-                  <MaterialIcons name="refresh" size={18} color="#007AFF" />
+            <View style={styles.favoritesPickerMenu}>
+              <Menu
+                visible={favoritesMenuVisible}
+                onDismiss={() => setFavoritesMenuVisible(false)}
+                anchor={(
+                  <Button
+                    title={
+                      selectedFavorite
+                        ? getFavoriteDisplayName(selectedFavorite)
+                        : 'Select from your Roblox favorites'
+                    }
+                    variant="outlined"
+                    style={styles.dropdownButton}
+                    contentStyle={styles.dropdownButtonContent}
+                    labelStyle={styles.dropdownButtonLabel}
+                    onPress={() => setFavoritesMenuVisible(true)}
+                  />
                 )}
-              </Pressable>
+              >
+                {favorites.map((favorite) => (
+                  <Menu.Item
+                    key={favorite.id}
+                    title={getFavoriteDisplayName(favorite)}
+                    onPress={() => handleSelectFavorite(favorite)}
+                  />
+                ))}
+                {favorites.length === 0 && isLoadingFavorites && (
+                  <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
+                )}
+                {favorites.length === 0 && !!favoritesError && (
+                  <Menu.Item
+                    title="Couldn't load favorites. Tap to retry"
+                    onPress={() => {
+                      void refreshFavorites();
+                      setFavoritesMenuVisible(false);
+                    }}
+                  />
+                )}
+                {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
+                  <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
+                )}
+              </Menu>
             </View>
             <Button
               title="Paste a link instead"
@@ -693,22 +685,8 @@ const styles = StyleSheet.create({
   dropdownButton: {
     borderRadius: 8,
   },
-  favoritesPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   favoritesPickerMenu: {
     flex: 1,
-  },
-  favoritesRefreshButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   dropdownButtonContent: {
     minHeight: 52,

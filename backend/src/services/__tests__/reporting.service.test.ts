@@ -183,6 +183,7 @@ describe('ReportingService.createReport', () => {
 
     const service = new ReportingService({
       safetyAlertWebhookUrl: 'https://example.test/safety-webhook',
+      safetyWebhookToken: 'test-safety-token',
       fetchImpl,
     });
 
@@ -202,6 +203,7 @@ describe('ReportingService.createReport', () => {
         method: 'POST',
         headers: expect.objectContaining({
           'content-type': 'application/json',
+          'x-safety-token': 'test-safety-token',
         }),
       })
     );

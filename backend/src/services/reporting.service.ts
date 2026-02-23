@@ -50,6 +50,7 @@ interface ServiceOptions {
   maxReportsPerHour?: number;
   duplicateWindowMinutes?: number;
   safetyAlertWebhookUrl?: string | null;
+  safetyWebhookToken?: string | null;
   escalateGrooming?: boolean;
   fetchImpl?: typeof fetch;
 }
@@ -58,6 +59,7 @@ export class ReportingService {
   private readonly maxReportsPerHour: number;
   private readonly duplicateWindowMinutes: number;
   private readonly safetyAlertWebhookUrl: string | null;
+  private readonly safetyWebhookToken: string;
   private readonly escalateGrooming: boolean;
   private readonly fetchImpl: typeof fetch;
 
@@ -65,6 +67,7 @@ export class ReportingService {
     this.maxReportsPerHour = options.maxReportsPerHour ?? 5;
     this.duplicateWindowMinutes = options.duplicateWindowMinutes ?? 5;
     this.safetyAlertWebhookUrl = options.safetyAlertWebhookUrl ?? process.env.SAFETY_ALERT_WEBHOOK_URL ?? null;
+    this.safetyWebhookToken = options.safetyWebhookToken ?? process.env.SAFETY_WEBHOOK_TOKEN ?? '';
     this.escalateGrooming = options.escalateGrooming ?? process.env.SAFETY_ESCALATE_GROOMING === 'true';
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
@@ -269,6 +272,7 @@ export class ReportingService {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
+          'x-safety-token': this.safetyWebhookToken,
         },
         body: JSON.stringify({
           event: 'safety_report_escalated',

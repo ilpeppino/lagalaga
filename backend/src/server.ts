@@ -20,6 +20,7 @@ import { friendsRoutes } from './routes/friends.routes.js';
 import { leaderboardRoutes } from './routes/leaderboard.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
 import { reportsRoutes } from './routes/reports.routes.js';
+import { safetyEscalationWebhookRoutes } from './routes/safety-escalation-webhook.routes.js';
 import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
 import { SeasonService } from './services/seasonService.js';
 import { AccountDeletionService } from './services/account-deletion.service.js';
@@ -78,6 +79,7 @@ export async function buildServer() {
   await fastify.register(leaderboardRoutes);
   await fastify.register(accountRoutes, { prefix: '/v1/account' });
   await fastify.register(reportsRoutes);
+  await fastify.register(safetyEscalationWebhookRoutes);
 
   if (isCompetitiveDepthEnabled(fastify)) {
     const seasonService = new SeasonService();

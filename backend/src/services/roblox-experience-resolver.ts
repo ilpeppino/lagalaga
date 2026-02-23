@@ -1,4 +1,5 @@
 import { getSupabase } from '../config/supabase.js';
+import { ROBLOX_EXPERIENCE_CACHE_TTL_MS } from '../config/cache.js';
 import { logger, logWithCorrelation } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
@@ -35,7 +36,6 @@ interface ResolveShareOptions {
 }
 
 const RESOLVE_TIMEOUT_MS = 4000;
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class RobloxExperienceResolverService {
   async resolveExperienceFromUrl(url: string, correlationId?: string): Promise<ResolveExperienceResult> {
@@ -194,7 +194,7 @@ export class RobloxExperienceResolverService {
       return false;
     }
 
-    return Date.now() - updatedAtMs <= CACHE_TTL_MS;
+    return Date.now() - updatedAtMs <= ROBLOX_EXPERIENCE_CACHE_TTL_MS;
   }
 
   private toResponse(row: CacheRow): ResolveExperienceResult {

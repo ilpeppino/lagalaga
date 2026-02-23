@@ -13,6 +13,7 @@
  */
 
 import { getSupabase } from '../config/supabase.js';
+import { GAMES_THUMBNAIL_CACHE_TTL_MS } from '../config/cache.js';
 import { AppError, ErrorCodes, ExternalServiceError } from '../utils/errors.js';
 import { logger } from '../lib/logger.js';
 import { withRetry } from '../lib/errorRecovery.js';
@@ -131,7 +132,7 @@ export class RobloxEnrichmentService {
 
     const { data, error } = await supabase
       .from('games')
-      .select('place_id, game_name, thumbnail_url')
+      .select('place_id, game_name, thumbnail_url, thumbnail_cached_at')
       .eq('place_id', placeId)
       .single();
 
@@ -143,8 +144,13 @@ export class RobloxEnrichmentService {
       return null;
     }
 
-    // Only use cache if we have both name and thumbnail
-    if (data && data.game_name && data.thumbnail_url) {
+    // Only use cache if we have both name and thumbnail and thumbnail cache is fresh.
+    const thumbnailCachedAt = data?.thumbnail_cached_at ? Date.parse(String(data.thumbnail_cached_at)) : Number.NaN;
+    const thumbnailIsFresh =
+      Number.isFinite(thumbnailCachedAt) &&
+      Date.now() - thumbnailCachedAt <= GAMES_THUMBNAIL_CACHE_TTL_MS;
+
+    if (data && data.game_name && data.thumbnail_url && thumbnailIsFresh) {
       return {
         placeId: data.place_id,
         universeId: 0, // We don't store universeId, return placeholder
@@ -351,10 +357,11 @@ export class RobloxEnrichmentService {
     thumbnailUrl: string | null
   ): Promise<void> {
     const supabase = getSupabase();
+    const nowIso = new Date().toISOString();
 
     const payload: Record<string, unknown> = {
       place_id: placeId,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
 
     if (gameName) {
@@ -363,6 +370,7 @@ export class RobloxEnrichmentService {
 
     if (thumbnailUrl) {
       payload.thumbnail_url = thumbnailUrl;
+      payload.thumbnail_cached_at = nowIso;
     }
 
     const { error } = await supabase

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getSupabase } from '../config/supabase.js';
+import { AVATAR_CACHE_TTL_MS } from '../config/cache.js';
 import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { RankingService, type SkillTier } from './rankingService.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
@@ -21,6 +22,14 @@ interface UserPlatformRow {
   platform_display_name: string | null;
   platform_avatar_url: string | null;
   verified_at: string | null;
+}
+
+interface AppUserRow {
+  id: string;
+  roblox_username: string | null;
+  roblox_display_name: string | null;
+  avatar_headshot_url: string | null;
+  avatar_cached_at: string | null;
 }
 
 interface MeDataResponse {
@@ -97,24 +106,33 @@ async function fetchRobloxHeadshot(robloxUserId: string): Promise<string | null>
 }
 
 /**
- * Update platform_avatar_url in user_platforms table
+ * Update app_users avatar cache columns.
  */
-async function updatePlatformAvatarUrl(
+async function updateAppUserAvatarCache(
   userId: string,
   avatarUrl: string
 ): Promise<void> {
   const supabase = getSupabase();
 
   await supabase
-    .from('user_platforms')
+    .from('app_users')
     .update({
-      platform_avatar_url: avatarUrl,
+      avatar_headshot_url: avatarUrl,
+      avatar_cached_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('user_id', userId)
-    .eq('platform_id', 'roblox');
+    .eq('id', userId);
 
   // Silently ignore errors - caching is best-effort
+}
+
+function isAvatarCacheFresh(cachedAt: string | null): boolean {
+  if (!cachedAt) {
+    return false;
+  }
+
+  const ageMs = Date.now() - new Date(cachedAt).getTime();
+  return ageMs >= 0 && ageMs < AVATAR_CACHE_TTL_MS;
 }
 
 /**
@@ -129,9 +147,9 @@ export async function getMeData(
   // Fetch app_users row
   const { data: appUser, error: appUserError } = await supabase
     .from('app_users')
-    .select('id, roblox_username, roblox_display_name')
+    .select('id, roblox_username, roblox_display_name, avatar_headshot_url, avatar_cached_at')
     .eq('id', userId)
-    .maybeSingle();
+    .maybeSingle<AppUserRow>();
 
   if (appUserError) {
     throw new AppError(
@@ -261,14 +279,17 @@ export async function getMeData(
   }
 
   // User is connected - fetch avatar headshot
-  let avatarHeadshotUrl: string | null = platformData.platform_avatar_url;
+  let avatarHeadshotUrl: string | null = appUser.avatar_headshot_url ?? platformData.platform_avatar_url;
 
-  // Fetch fresh headshot from Roblox API
-  const freshHeadshot = await fetchRobloxHeadshot(platformData.platform_user_id);
-  if (freshHeadshot) {
-    avatarHeadshotUrl = freshHeadshot;
-    // Update cache asynchronously (best-effort)
-    void updatePlatformAvatarUrl(userId, freshHeadshot);
+  // Refresh avatar only if app_users cache is stale or missing.
+  const shouldFetchAvatar = !isAvatarCacheFresh(appUser.avatar_cached_at) || !appUser.avatar_headshot_url;
+  if (shouldFetchAvatar) {
+    const freshHeadshot = await fetchRobloxHeadshot(platformData.platform_user_id);
+    if (freshHeadshot) {
+      avatarHeadshotUrl = freshHeadshot;
+      // Update cache asynchronously (best-effort)
+      void updateAppUserAvatarCache(userId, freshHeadshot);
+    }
   }
 
   return {

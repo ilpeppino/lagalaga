@@ -4,8 +4,10 @@ import type { FastifyInstance } from 'fastify';
 interface MockDbState {
   appUser: {
     id: string;
-    roblox_username: string;
+    roblox_username: string | null;
     roblox_display_name: string | null;
+    avatar_headshot_url: string | null;
+    avatar_cached_at: string | null;
   } | null;
   userPlatform: {
     user_id: string;
@@ -29,6 +31,11 @@ function createSupabaseMock(state: MockDbState) {
                 data: state.appUser,
                 error: null,
               }),
+            })),
+          })),
+          update: jest.fn(() => ({
+            eq: jest.fn(async () => ({
+              error: null,
             })),
           })),
         };
@@ -128,6 +135,8 @@ describe('GET /api/me', () => {
         id: 'test-user-id',
         roblox_username: 'TestUser',
         roblox_display_name: 'Test Display Name',
+        avatar_headshot_url: null,
+        avatar_cached_at: null,
       },
       userPlatform: {
         user_id: 'test-user-id',
@@ -184,6 +193,8 @@ describe('GET /api/me', () => {
         id: 'test-user-id',
         roblox_username: 'TestUser',
         roblox_display_name: null,
+        avatar_headshot_url: null,
+        avatar_cached_at: null,
       },
       userPlatform: null,
     };
@@ -219,6 +230,8 @@ describe('GET /api/me', () => {
         id: 'test-user-id',
         roblox_username: 'TestUser',
         roblox_display_name: 'Test Display Name',
+        avatar_headshot_url: 'https://cached-avatar-url.com/cached.png',
+        avatar_cached_at: null,
       },
       userPlatform: {
         user_id: 'test-user-id',
@@ -262,6 +275,8 @@ describe('GET /api/me', () => {
         id: 'test-user-id',
         roblox_username: 'TestUser',
         roblox_display_name: 'Test Display Name',
+        avatar_headshot_url: null,
+        avatar_cached_at: null,
       },
       userPlatform: {
         user_id: 'test-user-id',
@@ -300,5 +315,48 @@ describe('GET /api/me', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data.appUser.id).toBe('test-user-id');
     expect(response.body.data.roblox.connected).toBe(true);
+  });
+
+  it('should return cached avatar and skip Roblox fetch when cache is fresh', async () => {
+    const mockDbState: MockDbState = {
+      appUser: {
+        id: 'test-user-id',
+        roblox_username: 'TestUser',
+        roblox_display_name: 'Test Display Name',
+        avatar_headshot_url: 'https://cached-avatar-url.com/fresh-cache.png',
+        avatar_cached_at: new Date(Date.now() - (5 * 60 * 1000)).toISOString(),
+      },
+      userPlatform: {
+        user_id: 'test-user-id',
+        platform_id: 'roblox',
+        platform_user_id: '123456789',
+        platform_username: 'TestUser',
+        platform_display_name: 'Test Display Name',
+        platform_avatar_url: 'https://cached-avatar-url.com/legacy.png',
+        verified_at: '2024-01-01T00:00:00.000Z',
+      },
+    };
+
+    activeSupabaseMock = createSupabaseMock(mockDbState);
+
+    const result = await getMeData('test-user-id', app);
+
+    expect(result).toEqual({
+      appUser: {
+        id: 'test-user-id',
+        email: null,
+        displayName: 'Test Display Name',
+      },
+      roblox: {
+        connected: true,
+        robloxUserId: '123456789',
+        username: 'TestUser',
+        displayName: 'Test Display Name',
+        avatarHeadshotUrl: 'https://cached-avatar-url.com/fresh-cache.png',
+        verifiedAt: '2024-01-01T00:00:00.000Z',
+      },
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

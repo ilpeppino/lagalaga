@@ -18,6 +18,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useAuth } from '@/src/features/auth/useAuth';
+import { refreshFavorites } from '@/src/features/favorites/service';
+import { refreshFriends } from '@/src/features/friends/service';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -59,6 +62,7 @@ export default function MeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const { handleError } = useErrorHandler();
+  const { user } = useAuth();
   
   const [data, setData] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,20 +88,43 @@ export default function MeScreen() {
     }
   }, [handleError]);
 
-  const handleRefreshAvatar = async () => {
+  const handleSyncRobloxData = async () => {
+    if (!user?.id) {
+      handleError(new Error('User session not available'), { fallbackMessage: 'Failed to sync Roblox data' });
+      return;
+    }
+
     try {
       setRefreshing(true);
-      // Re-fetch the /api/me endpoint, which will fetch a fresh avatar
-      const response = await apiClient.getRaw('/api/me');
-      
-      if (!response.ok) {
-        throw new Error('Failed to refresh avatar');
+      const failedActions: string[] = [];
+
+      try {
+        await refreshFriends(user.id, { force: true });
+      } catch {
+        failedActions.push('friends');
       }
 
+      try {
+        await refreshFavorites(user.id, { force: true });
+      } catch {
+        failedActions.push('favorites');
+      }
+
+      // Re-fetch profile data (avatar may refresh if stale per backend TTL policy).
+      const response = await apiClient.getRaw('/api/me');
+      if (!response.ok) {
+        throw new Error('Failed to refresh profile');
+      }
       const json: MeResponse = await response.json();
       setData(json.data);
+
+      if (failedActions.length > 0) {
+        Alert.alert('Sync completed with issues', `Couldn't refresh: ${failedActions.join(', ')}.`);
+      } else {
+        Alert.alert('Sync complete', 'Roblox friends, favorites, and profile data are up to date.');
+      }
     } catch (error) {
-      handleError(error, { fallbackMessage: 'Failed to refresh avatar' });
+      handleError(error, { fallbackMessage: 'Failed to sync Roblox data' });
     } finally {
       setRefreshing(false);
     }
@@ -337,10 +364,10 @@ export default function MeScreen() {
                 </View>
               ) : null}
 
-              {/* Refresh Avatar Button */}
+              {/* Sync Roblox Data Button */}
               <TouchableOpacity
                 style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-                onPress={handleRefreshAvatar}
+                onPress={handleSyncRobloxData}
                 disabled={refreshing}
               >
                 {refreshing ? (
@@ -348,7 +375,7 @@ export default function MeScreen() {
                 ) : (
                   <>
                     <IconSymbol name="arrow.clockwise" size={20} color="#fff" />
-                    <Text style={styles.buttonText}>Refresh Roblox data</Text>
+                    <Text style={styles.buttonText}>Sync Roblox data</Text>
                   </>
                 )}
               </TouchableOpacity>

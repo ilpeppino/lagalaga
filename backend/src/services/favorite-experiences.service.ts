@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../config/supabase.js';
+import { FAVORITES_CACHE_TTL_MS } from '../config/cache.js';
 import { logger } from '../lib/logger.js';
 import { RobloxFavoritesService } from './roblox-favorites.service.js';
-
-const SERVER_CACHE_TTL_MS = 15 * 60 * 1000;
 
 export interface FavoriteExperience {
   id: string;
@@ -100,7 +99,7 @@ export class FavoriteExperiencesService {
     const etag = createFavoritesEtag(favorites);
     const now = new Date();
     const cachedAt = now.toISOString();
-    const expiresAt = new Date(now.getTime() + SERVER_CACHE_TTL_MS).toISOString();
+    const expiresAt = new Date(now.getTime() + FAVORITES_CACHE_TTL_MS).toISOString();
 
     await this.upsertCacheRow({
       user_id: userId,
@@ -153,7 +152,7 @@ export class FavoriteExperiencesService {
     const normalizedFavorites = normalizeFavorites(favorites);
     const nextEtag = createFavoritesEtag(normalizedFavorites);
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + SERVER_CACHE_TTL_MS);
+    const expiresAt = new Date(now.getTime() + FAVORITES_CACHE_TTL_MS);
 
     if (nextEtag === existingRow.etag) {
       await this.updateCacheTimestamps(userId, now.toISOString(), expiresAt.toISOString());

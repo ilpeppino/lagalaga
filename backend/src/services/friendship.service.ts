@@ -1,6 +1,7 @@
 import { getSupabase } from '../config/supabase.js';
 import { logger } from '../lib/logger.js';
 import { metrics } from '../plugins/metrics.js';
+import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { RobloxFriendsService } from './roblox-friends.service.js';
 
@@ -149,7 +150,7 @@ export class FriendshipService {
     const cache = cacheRows ?? [];
     const syncedAt = cache[0]?.synced_at ?? null;
     const isStale = syncedAt
-      ? (Date.now() - new Date(syncedAt).getTime()) > 60 * 60 * 1000
+      ? (Date.now() - new Date(syncedAt).getTime()) > ROBLOX_FRIENDS_CACHE_TTL_MS
       : true;
     if (syncedAt) {
       const ageSeconds = Math.floor((Date.now() - new Date(syncedAt).getTime()) / 1000);

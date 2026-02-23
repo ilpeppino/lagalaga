@@ -24,7 +24,7 @@ These migrations were executed on Supabase in this exact order:
 1. **app_users table**: Created in migration #2 (complete_rls_policies), NOT in the core schema
 2. **thumbnail_url**: Already included in core schema (migration #1), migration #4 is idempotent
 3. **FK Migration**: Migrations #8 and #10 migrate foreign keys from `auth.users` to `app_users`
-4. **roblox_experience_cache**: NOT in any Supabase migration (see local-only files below)
+4. **roblox_experience_cache**: tracked via `20260223174000_track_roblox_experience_cache.sql` (legacy `007` superseded)
 
 ## Local Files NOT Executed on Supabase
 
@@ -35,11 +35,11 @@ These files exist locally but were NEVER executed on Supabase:
 - `005_add_performance_indexes_rollback.sql` - Rollback file
 - `006_optimize_session_listing.sql` - Session listing optimization (not applied)
 - `006_optimize_session_listing_rollback.sql` - Rollback file
-- `007_add_roblox_experience_cache.sql` - **Table exists in DB but not via migration!**
+- `007_add_roblox_experience_cache.sql` - **Superseded by `20260223174000_track_roblox_experience_cache.sql`**
 - `009_verify_friends_schema.sql` - Verification script (not a migration)
 - `verify_rls.sql` - Verification script (not a migration)
 
-⚠️ **CRITICAL**: The `roblox_experience_cache` table exists in your Supabase database but is NOT in the migration history. It was likely created manually or via a migration that was deleted. You'll need to include `007_add_roblox_experience_cache.sql` in your on-prem setup.
+✅ **Resolved**: `roblox_experience_cache` is now tracked via `20260223174000_track_roblox_experience_cache.sql`. Keep `007_add_roblox_experience_cache.sql` only as legacy reference.
 
 ## Recommended Migration Order for On-Prem
 

@@ -37,7 +37,6 @@ describe('RobloxPresenceService', () => {
       connectionService: {
         getAccessToken: jest.fn(async () => ({ unavailable: true, reason: 'ROBLOX_NOT_CONNECTED' })),
       } as any,
-      requestFn: jest.fn() as any,
     });
 
     const result = await service.getPresenceForUsers('viewer-1', ['user-1']);
@@ -53,7 +52,6 @@ describe('RobloxPresenceService', () => {
       connectionService: {
         getAccessToken: jest.fn(async () => ({ unavailable: true, reason: 'ROBLOX_TOKEN_EXPIRED' })),
       } as any,
-      requestFn: jest.fn() as any,
     });
 
     const result = await service.getPresenceForUsers('viewer-1', ['user-1']);
@@ -62,9 +60,10 @@ describe('RobloxPresenceService', () => {
   });
 
   it('throws ROBLOX_UPSTREAM_FAILED when upstream presence request fails', async () => {
-    const requestFn = jest.fn(async () => ({
-      statusCode: 503,
-      body: { json: async () => ({}) },
+    const fetchFn = jest.fn(async () => ({
+      status: 503,
+      headers: { get: (_key: string) => null },
+      json: async () => ({}),
     }));
 
     const service = new RobloxPresenceService({
@@ -72,31 +71,29 @@ describe('RobloxPresenceService', () => {
       connectionService: {
         getAccessToken: jest.fn(async () => ({ token: 'token-123' })),
       } as any,
-      requestFn: requestFn as any,
-      cacheTtlMs: 1,
+      fetchFn: fetchFn as any,
     });
 
     await expect(service.getPresenceForUsers('viewer-1', ['user-1'])).rejects.toMatchObject({
-      code: 'ROBLOX_UPSTREAM_FAILED',
+      code: 'INT_003',
       statusCode: 502,
     });
   });
 
   it('returns mapped statuses on success', async () => {
-    const requestFn = jest.fn(async () => ({
-      statusCode: 200,
-      body: {
-        json: async () => ({
-          userPresences: [
-            {
-              userId: 101,
-              userPresenceType: 2,
-              placeId: 606849621,
-              lastOnline: '2026-02-14T00:00:00.000Z',
-            },
-          ],
-        }),
-      },
+    const fetchFn = jest.fn(async () => ({
+      status: 200,
+      headers: { get: (_key: string) => null },
+      json: async () => ({
+        userPresences: [
+          {
+            userId: 101,
+            userPresenceType: 2,
+            placeId: 606849621,
+            lastOnline: '2026-02-14T00:00:00.000Z',
+          },
+        ],
+      }),
     }));
 
     const service = new RobloxPresenceService({
@@ -104,8 +101,7 @@ describe('RobloxPresenceService', () => {
       connectionService: {
         getAccessToken: jest.fn(async () => ({ token: 'token-123' })),
       } as any,
-      requestFn: requestFn as any,
-      cacheTtlMs: 1,
+      fetchFn: fetchFn as any,
     });
 
     const result = await service.getPresenceForUsers('viewer-1', ['user-1']);

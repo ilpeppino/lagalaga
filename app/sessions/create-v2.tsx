@@ -12,7 +12,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiClient } from '@/src/lib/api';
 import {
   View,
   StyleSheet,
@@ -35,10 +34,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AnimatedButton as Button, TextInput } from '@/components/ui/paper';
 import { Menu, SegmentedButtons, Switch } from 'react-native-paper';
 import { useAuth } from '@/src/features/auth/useAuth';
-import { ApiError } from '@/src/lib/errors';
 import type { Favorite } from '@/src/features/favorites/cache';
 import { warmFavorites } from '@/src/features/favorites/service';
 import { useFavorites } from '@/src/features/favorites/useFavorites';
+import { useFriends } from '@/src/features/friends/useFriends';
 import { FriendPickerTwoRowHorizontal } from '@/components/FriendPickerTwoRowHorizontal';
 import { SyncedAtBadge } from '@/components/SyncedAtBadge';
 import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
@@ -70,6 +69,17 @@ export default function CreateSessionScreenV2() {
     refresh: refreshFavorites,
     forceRefresh: forceRefreshFavorites,
   } = useFavorites(user?.id);
+  const {
+    friends,
+    isLoading: isLoadingFriends,
+    isRefreshing: isRefreshingFriends,
+    error: friendsError,
+    syncedAt: friendsSyncedAt,
+    isStale: friendsIsStale,
+    robloxNotConnected,
+    refresh: refreshFriends,
+    reload: reloadFriends,
+  } = useFriends(user?.id);
 
   // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
@@ -78,19 +88,12 @@ export default function CreateSessionScreenV2() {
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [isRanked, setIsRanked] = useState(false);
-  const [friends, setFriends] = useState<RobloxFriend[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
   const [scheduledStart, setScheduledStart] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // UI state
   const [isCreating, setIsCreating] = useState(false);
-  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
-  const [isRefreshingFriends, setIsRefreshingFriends] = useState(false);
-  const [friendsError, setFriendsError] = useState<string | null>(null);
-  const [friendsSyncedAt, setFriendsSyncedAt] = useState<string | null>(null);
-  const [friendsIsStale, setFriendsIsStale] = useState(false);
-  const [robloxNotConnected, setRobloxNotConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
@@ -110,48 +113,6 @@ export default function CreateSessionScreenV2() {
     void warmFavorites(user.id);
   }, [user?.id]);
 
-  const loadFriends = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      setIsLoadingFriends(true);
-      setFriendsError(null);
-      setRobloxNotConnected(false);
-      const response = await sessionsAPIStoreV2.listMyRobloxFriends();
-      setFriends(response.friends);
-      setFriendsSyncedAt(response.fetchedAt);
-      setFriendsIsStale(new Date(response.expiresAt) < new Date());
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'ROBLOX_NOT_CONNECTED') {
-        setRobloxNotConnected(true);
-        setFriends([]);
-        return;
-      }
-      setFriendsError(getErrorMessage(err, 'Failed to load Roblox friends'));
-    } finally {
-      setIsLoadingFriends(false);
-    }
-  }, [user?.id, getErrorMessage]);
-
-  useEffect(() => {
-    void loadFriends();
-  }, [loadFriends]);
-
-  const handleRefreshFriends = useCallback(async () => {
-    setIsRefreshingFriends(true);
-    setFriendsError(null);
-    try {
-      await apiClient.friends.refresh();
-      const response = await sessionsAPIStoreV2.listMyRobloxFriends();
-      setFriends(response.friends);
-      setFriendsSyncedAt(response.fetchedAt);
-      setFriendsIsStale(new Date(response.expiresAt) < new Date());
-    } catch (err) {
-      setFriendsError(getErrorMessage(err, 'Failed to refresh friends'));
-    } finally {
-      setIsRefreshingFriends(false);
-    }
-  }, [getErrorMessage]);
-
   const fetchPresence = useCallback(async (friendIds: number[]) => {
     if (friendIds.length === 0) return;
     try {
@@ -169,8 +130,8 @@ export default function CreateSessionScreenV2() {
         hasInitialFriendsLoadRef.current = true;
         return;
       }
-      void loadFriends();
-    }, [loadFriends])
+      void reloadFriends();
+    }, [reloadFriends])
   );
 
   // Refresh presence on screen focus
@@ -505,7 +466,7 @@ export default function CreateSessionScreenV2() {
           syncedAt={friendsSyncedAt}
           isStale={friendsIsStale}
           isRefreshing={isRefreshingFriends}
-          onRefresh={() => { void handleRefreshFriends(); }}
+          onRefresh={() => { void refreshFriends(); }}
           disabled={isRefreshingFriends || isCreating || isLoadingFriends}
         />
         <TextInput
@@ -547,7 +508,7 @@ export default function CreateSessionScreenV2() {
             <Button
               title="Retry"
               variant="text"
-              onPress={() => { void loadFriends(); }}
+              onPress={() => { void reloadFriends(); }}
             />
           </View>
         ) : null}

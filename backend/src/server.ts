@@ -23,6 +23,7 @@ import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
 import { SeasonService } from './services/seasonService.js';
 import { AccountDeletionService } from './services/account-deletion.service.js';
 import { SessionLifecycleService } from './services/session-lifecycle.service.js';
+import { CacheCleanupService } from './services/cache-cleanup.service.js';
 import { monitoring } from './lib/monitoring.js';
 import { fileURLToPath } from 'node:url';
 
@@ -158,6 +159,39 @@ export async function buildServer() {
 
     fastify.addHook('onClose', async () => {
       clearInterval(lifecycleTimer);
+    });
+  }
+
+  if (fastify.config.CACHE_CLEANUP_ENABLED && fastify.config.NODE_ENV !== 'test') {
+    const cacheCleanupService = new CacheCleanupService();
+    const intervalMs = Math.max(1, fastify.config.CACHE_CLEANUP_INTERVAL_HOURS) * 60 * 60 * 1000;
+
+    const runCacheCleanup = async () => {
+      try {
+        const result = await cacheCleanupService.processCleanup();
+        if (
+          result.deletedExperienceCacheCount > 0 ||
+          result.deletedFriendsCacheCount > 0 ||
+          result.deletedFavoritesCacheCount > 0 ||
+          result.deletedGamesCount > 0
+        ) {
+          fastify.log.info(result, 'Cache cleanup cycle finished');
+        }
+      } catch (error) {
+        fastify.log.error(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Cache cleanup cycle failed'
+        );
+      }
+    };
+
+    const cacheCleanupTimer = setInterval(() => {
+      void runCacheCleanup();
+    }, intervalMs);
+    void runCacheCleanup();
+
+    fastify.addHook('onClose', async () => {
+      clearInterval(cacheCleanupTimer);
     });
   }
 

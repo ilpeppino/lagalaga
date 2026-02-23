@@ -123,6 +123,7 @@ describe('RobloxEnrichmentService', () => {
                 place_id: placeId,
                 game_name: cachedName,
                 thumbnail_url: cachedThumbnail,
+                thumbnail_cached_at: new Date().toISOString(),
               },
               error: null,
             })),
@@ -156,6 +157,7 @@ describe('RobloxEnrichmentService', () => {
                 place_id: placeId,
                 game_name: 'Incomplete',
                 thumbnail_url: null,
+                thumbnail_cached_at: null,
               },
               error: null,
             })),
@@ -194,6 +196,47 @@ describe('RobloxEnrichmentService', () => {
   });
 
   describe('enrichGame - error handling', () => {
+    it('refreshes stale cached thumbnail data even when name + thumbnail exist', async () => {
+      const placeId = 606849621;
+      const universeId = 245683;
+
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            single: jest.fn(() => Promise.resolve({
+              data: {
+                place_id: placeId,
+                game_name: 'Old Name',
+                thumbnail_url: 'https://old.thumbnail/url.png',
+                thumbnail_cached_at: new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString(),
+              },
+              error: null,
+            })),
+          }),
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ universeId }),
+      } as Response);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [{ id: universeId, name: 'Fresh Name' }] }),
+      } as Response);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{ targetId: placeId, state: 'Completed', imageUrl: 'https://fresh.thumbnail/url.png' }],
+        }),
+      } as Response);
+      mockUpsertSuccess();
+
+      await service.enrichGame(placeId);
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
     it('should throw error for invalid placeId', async () => {
       await expect(service.enrichGame(0)).rejects.toThrow('Invalid placeId');
       await expect(service.enrichGame(-1)).rejects.toThrow('Invalid placeId');

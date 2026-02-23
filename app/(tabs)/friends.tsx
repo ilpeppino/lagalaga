@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { apiClient } from '@/src/lib/api';
+import { useAuth } from '@/src/features/auth/useAuth';
+import { useFriends } from '@/src/features/friends/useFriends';
 
 interface FriendsPayload {
-  lagalaFriends?: Array<{
+  lagalaFriends?: {
     userId: string;
     robloxDisplayName?: string | null;
     robloxUsername?: string | null;
     friendshipId: string;
-  }>;
+  }[];
   requests?: {
-    incoming?: Array<{ friendshipId: string; fromUser: { robloxDisplayName?: string | null; robloxUsername?: string | null } }>;
-    outgoing?: Array<{ friendshipId: string; toUser: { robloxDisplayName?: string | null; robloxUsername?: string | null } }>;
+    incoming?: { friendshipId: string; fromUser: { robloxDisplayName?: string | null; robloxUsername?: string | null } }[];
+    outgoing?: { friendshipId: string; toUser: { robloxDisplayName?: string | null; robloxUsername?: string | null } }[];
   };
   robloxSuggestions?: {
-    onApp?: Array<{ userId: string; robloxDisplayName?: string | null; robloxUsername?: string | null }>;
-    syncedAt?: string | null;
-    isStale?: boolean;
+    onApp?: { userId: string; robloxDisplayName?: string | null; robloxUsername?: string | null }[];
   };
 }
 
@@ -27,6 +28,13 @@ function displayName(display?: string | null, username?: string | null): string 
 }
 
 export default function FriendsTabScreen() {
+  const { user } = useAuth();
+  const {
+    syncedAt,
+    isStale,
+    robloxNotConnected,
+    refresh,
+  } = useFriends(user?.id);
   const [data, setData] = useState<FriendsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -35,7 +43,7 @@ export default function FriendsTabScreen() {
     try {
       const response = await apiClient.friends.list('all');
       setData(response.data ?? response);
-    } catch (error) {
+    } catch {
       Alert.alert('Friends', 'Failed to load friends right now.');
     } finally {
       setLoading(false);
@@ -47,15 +55,21 @@ export default function FriendsTabScreen() {
     void load();
   }, [load]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await apiClient.friends.refresh();
+      await refresh();
     } catch {
       // Keep existing list if refresh fails.
     }
     await load();
-  }, [load]);
+  }, [load, refresh]);
 
   const sendFriendRequest = useCallback(async (targetUserId: string) => {
     try {
@@ -99,18 +113,24 @@ export default function FriendsTabScreen() {
 
           <ThemedView style={styles.section}>
             <ThemedText type="subtitle">Roblox Suggestions</ThemedText>
-            <ThemedText>
-              Last synced: {data?.robloxSuggestions?.syncedAt ?? 'never'}{data?.robloxSuggestions?.isStale ? ' (stale)' : ''}
-            </ThemedText>
+            {robloxNotConnected ? (
+              <ThemedText>Connect Roblox to sync friends.</ThemedText>
+            ) : (
+              <>
+                <ThemedText>
+                  Last synced: {syncedAt ?? 'never'}{isStale ? ' (stale)' : ''}
+                </ThemedText>
 
-            {(data?.robloxSuggestions?.onApp ?? []).slice(0, 20).map((user) => (
-              <View key={user.userId} style={styles.row}>
-                <ThemedText style={styles.rowText}>{displayName(user.robloxDisplayName, user.robloxUsername)}</ThemedText>
-                <Pressable style={styles.button} onPress={() => void sendFriendRequest(user.userId)}>
-                  <ThemedText style={styles.buttonText}>Add</ThemedText>
-                </Pressable>
-              </View>
-            ))}
+                {(data?.robloxSuggestions?.onApp ?? []).slice(0, 20).map((user) => (
+                  <View key={user.userId} style={styles.row}>
+                    <ThemedText style={styles.rowText}>{displayName(user.robloxDisplayName, user.robloxUsername)}</ThemedText>
+                    <Pressable style={styles.button} onPress={() => void sendFriendRequest(user.userId)}>
+                      <ThemedText style={styles.buttonText}>Add</ThemedText>
+                    </Pressable>
+                  </View>
+                ))}
+              </>
+            )}
           </ThemedView>
         </>
       )}

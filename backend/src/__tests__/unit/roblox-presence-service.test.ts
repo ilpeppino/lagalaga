@@ -148,6 +148,28 @@ describe('RobloxPresenceService.getPresenceByRobloxIds', () => {
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
+
+  it('returns cached presence at 29 seconds (TTL 30 seconds)', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-02-23T00:00:00.000Z'));
+
+    try {
+      const fetchFn = makeFetchFn(200, { userPresences: [makePresence(111)] });
+      const svc = new RobloxPresenceService({
+        connectionService: makeTokenService('token-abc'),
+        fetchFn,
+        friendPresenceCache: cache,
+      });
+
+      await svc.getPresenceByRobloxIds('user-1', [111]);
+      jest.advanceTimersByTime(29_000);
+      await svc.getPresenceByRobloxIds('user-1', [111]);
+
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 describe('TtlCache', () => {

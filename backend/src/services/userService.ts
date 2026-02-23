@@ -1,4 +1,5 @@
 import { getSupabase } from '../config/supabase.js';
+import { AVATAR_CACHE_TTL_MS } from '../config/cache.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { RobloxThumbnailService } from './robloxThumbnail.js';
 
@@ -26,7 +27,6 @@ export interface UpsertUserInput {
 
 export class UserService {
   private thumbnailService: RobloxThumbnailService;
-  private readonly AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor() {
     this.thumbnailService = new RobloxThumbnailService();
@@ -126,7 +126,7 @@ export class UserService {
 
     // Check if cache is fresh
     const now = new Date();
-    const isCacheFresh = cachedAt && (now.getTime() - cachedAt.getTime() < this.AVATAR_CACHE_TTL_MS);
+    const isCacheFresh = cachedAt && (now.getTime() - cachedAt.getTime() < AVATAR_CACHE_TTL_MS);
 
     if (isCacheFresh && cachedUrl) {
       return cachedUrl;

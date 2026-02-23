@@ -102,6 +102,14 @@ export const envSchema = {
       type: 'number',
       default: 200,
     },
+    CACHE_CLEANUP_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
+    CACHE_CLEANUP_INTERVAL_HOURS: {
+      type: 'number',
+      default: 6,
+    },
   },
 };
 
@@ -132,6 +140,8 @@ declare module 'fastify' {
       SESSION_AUTO_COMPLETE_AFTER_HOURS: number;
       SESSION_COMPLETED_RETENTION_HOURS: number;
       SESSION_LIFECYCLE_BATCH_SIZE: number;
+      CACHE_CLEANUP_ENABLED: boolean;
+      CACHE_CLEANUP_INTERVAL_HOURS: number;
     };
   }
 }

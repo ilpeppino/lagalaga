@@ -1,0 +1,7 @@
+export const ROBLOX_EXPERIENCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const ROBLOX_FRIENDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const FAVORITES_CACHE_TTL_MS = 15 * 60 * 1000;
+export const AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export const GAMES_THUMBNAIL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const GAMES_CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

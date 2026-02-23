@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../config/supabase.js';
+import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
 import { fetchWithTimeoutAndRetry } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
 const ROBLOX_PLATFORM_ID = 'roblox';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ROBLOX_BATCH_SIZE = 50;
 
 interface ServiceDeps {
@@ -69,7 +69,7 @@ export class RobloxFriendsCacheService {
     try {
       const refreshedFriends = await this.fetchRobloxFriends(robloxUserId);
       const fetchedAt = new Date();
-      const expiresAt = new Date(fetchedAt.getTime() + CACHE_TTL_MS);
+      const expiresAt = new Date(fetchedAt.getTime() + ROBLOX_FRIENDS_CACHE_TTL_MS);
 
       await this.upsertCache(userId, robloxUserId, refreshedFriends, fetchedAt, expiresAt);
 

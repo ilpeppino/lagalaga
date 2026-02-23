@@ -581,7 +581,7 @@ LagaLaga implements a **hybrid friends system** that combines native app friends
 - Enables "invite Roblox friends" feature
 
 **Friend Discovery Flow**:
-1. User syncs Roblox friends via `POST /api/me/roblox/sync-friends`
+1. User syncs Roblox friends via `POST /api/me/roblox/friends/refresh` (or `POST /api/user/friends/refresh`)
 2. Backend fetches friends list from Roblox API using stored OAuth tokens
 3. Cache is updated with Roblox friend data
 4. Frontend displays Roblox friends who aren't yet LagaLaga friends as suggestions
@@ -610,9 +610,9 @@ Session participants have a `handoff_state` field tracking their journey from RS
 ## 8. Push Notifications
 
 **Registration**:
-- Mobile clients register push tokens via `POST /api/me/register-push-token`
-- Tokens stored in database (implementation varies by push provider)
-- Associated with user for targeted notifications
+- Mobile clients register Expo push tokens via `POST /api/me/push-tokens` (body: `expoPushToken`, `deviceId?`, `platform?`)
+- Remove token via `DELETE /api/me/push-tokens`
+- Tokens stored in `user_push_tokens` table, associated with user for targeted notifications
 
 **Use Cases**:
 - Session start reminders
@@ -766,6 +766,7 @@ fastify.register(reportsRoutes)
 **Background Timers (started at boot if features enabled):**
 - Season rollover check (hourly) when `isCompetitiveDepthEnabled()`
 - Account deletion purge cycle (interval set by `ACCOUNT_PURGE_INTERVAL_MINUTES`) when `ACCOUNT_PURGE_ENABLED`
+- Session lifecycle cycle (interval set by `SESSION_LIFECYCLE_INTERVAL_MINUTES`) when `SESSION_LIFECYCLE_ENABLED` — auto-completes sessions after `SESSION_AUTO_COMPLETE_AFTER_HOURS` and clears completed sessions after `SESSION_COMPLETED_RETENTION_HOURS`
 
 ### Real Endpoints Discovered
 
@@ -846,7 +847,7 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 #### Leaderboard Routes
 **File**: `backend/src/routes/leaderboard.routes.ts`
 
-- `GET /api/leaderboard` - Get leaderboard (query: `type=weekly|all_time`); feature-flagged by `competitive_depth`
+- `GET /api/leaderboard` - Get leaderboard (query: `type=weekly` (default) or `type=all_time`); feature-flagged by `ENABLE_COMPETITIVE_DEPTH`
 
 #### Account Routes (`/v1/account`)
 **File**: `backend/src/routes/account.routes.ts`
@@ -933,7 +934,7 @@ Not present in current codebase.
 
 **`app/(tabs)/`** - Tab navigator (3 tabs)
 - `_layout.tsx` - Tab bar configuration; all tabs have a user icon button (top-right → `/me`)
-- `index.tsx` - Home tab (sessions list)
+- `index.tsx` - Home tab (welcome screen with Quick Play button)
 - `friends.tsx` - Friends tab
 - `explore.tsx` - Explore tab
 
@@ -1002,6 +1003,13 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 # Roblox OAuth (client-side, not actually used - backend handles OAuth)
 EXPO_PUBLIC_ROBLOX_CLIENT_ID=your-client-id
 EXPO_PUBLIC_ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
+
+# Feature Flags
+EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH=false   # Show leaderboard, match history, ratings
+
+# Account & Safety
+EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL=https://...  # Fallback web page for account deletion
+EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL=https://ilpeppino.github.io/lagalaga/child-safety.html
 ```
 
 **File**: `.env.example`
@@ -1028,12 +1036,28 @@ ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
 
 # JWT
 JWT_SECRET=your-super-secret-jwt-key-min-32-chars
-JWT_EXPIRY=15m
+JWT_EXPIRY=15m                    # Default: 15m
 REFRESH_TOKEN_SECRET=different-secret-for-refresh
-REFRESH_TOKEN_EXPIRY=7d
+REFRESH_TOKEN_EXPIRY=7d           # Default: 7d
 
 # CORS
 CORS_ORIGIN=*
+
+# Feature Flags
+FEATURE_FRIENDS_ENABLED=true      # Enable friends system (default: true)
+ENABLE_COMPETITIVE_DEPTH=false    # Enable ranked sessions, leaderboard, match history (default: false)
+
+# Account Deletion
+ACCOUNT_DELETION_GRACE_DAYS=7    # Grace period before purge (default: 7)
+ACCOUNT_PURGE_ENABLED=true        # Enable automated purge job (default: true)
+ACCOUNT_PURGE_INTERVAL_MINUTES=60 # Purge job interval (default: 60)
+
+# Session Lifecycle
+SESSION_LIFECYCLE_ENABLED=true              # Enable auto-complete job (default: true)
+SESSION_LIFECYCLE_INTERVAL_MINUTES=15       # Job interval (default: 15)
+SESSION_AUTO_COMPLETE_AFTER_HOURS=2         # Hours until active session auto-completes (default: 2)
+SESSION_COMPLETED_RETENTION_HOURS=2         # Hours to keep completed sessions visible (default: 2)
+SESSION_LIFECYCLE_BATCH_SIZE=200            # Sessions processed per run (default: 200)
 ```
 
 **File**: `backend/.env.example`
@@ -1048,11 +1072,17 @@ CORS_ORIGIN=*
 **File**: `shared/errors/codes.ts`
 
 Standardized error codes shared between frontend and backend:
-- `AUTH_*` - Authentication errors
-- `SESSION_*` - Session-related errors
-- `NOT_FOUND_*` - Resource not found
-- `VALIDATION_*` - Input validation
-- `INT_*` - Internal errors
+- `AUTH_001–007` - Authentication errors
+- `SESSION_001–006` - Session-related errors
+- `FRIEND_001–010` - Friend request and social errors
+- `VAL_001–003` - Input validation errors
+- `NOT_FOUND_001–003` - Resource not found
+- `NET_001–003` - Network errors
+- `RATE_001` - Rate limit exceeded
+- `INT_001–003` - Internal errors
+- `CONFLICT_001` - Conflict errors
+
+See `shared/errors/codes.ts` for the full list.
 
 ### Backend Error Handling
 
@@ -1183,7 +1213,7 @@ Based on the current architecture, the following extensions are feasible:
 - Would require passing user JWT to Supabase instead of service-role
 
 ### 3. ✅ Push Notifications (Implemented)
-- Push token registration via `POST /api/me/register-push-token`
+- Push token registration via `POST /api/me/push-tokens`
 - Database support for storing tokens
 - Ready for session reminders and friend notifications
 

@@ -514,7 +514,7 @@ The frontend monitoring service provides client-side error tracking and user beh
 
 ### ConsoleMonitoringProvider
 
-**Location:** `mobile/src/services/monitoring/console-provider.ts`
+**Location:** `src/services/monitoring/console-provider.ts`
 
 ```typescript
 import { MonitoringProvider, ErrorContext, UserContext, Breadcrumb } from '@/shared/monitoring/types';
@@ -574,7 +574,7 @@ export class ConsoleMonitoringProvider implements MonitoringProvider {
 #### Navigation Tracking
 
 ```typescript
-// mobile/src/services/monitoring/navigation-tracker.ts
+// src/services/monitoring/navigation-tracker.ts
 import { monitoring } from '@/shared/monitoring';
 
 export function trackNavigation(from: string, to: string, params?: any): void {
@@ -607,7 +607,7 @@ navigation.addListener('state', (event) => {
 #### HTTP Request Tracking
 
 ```typescript
-// mobile/src/services/monitoring/http-tracker.ts
+// src/services/monitoring/http-tracker.ts
 import { monitoring } from '@/shared/monitoring';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 
@@ -670,7 +670,7 @@ axios.interceptors.response.use(
 #### User Context Management
 
 ```typescript
-// mobile/src/services/monitoring/user-context.ts
+// src/services/monitoring/user-context.ts
 import { monitoring } from '@/shared/monitoring';
 
 export function updateUserContext(user: User | null): void {
@@ -901,7 +901,7 @@ initializeMonitoring();
 ```
 
 ```typescript
-// mobile/src/App.tsx
+// app/_layout.tsx (or src/App.tsx)
 import { monitoring } from '@/shared/monitoring';
 import { SentryMonitoringProvider } from '@/shared/monitoring/sentry-provider';
 import { ConsoleMonitoringProvider } from '@/services/monitoring/console-provider';

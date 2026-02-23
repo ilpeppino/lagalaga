@@ -62,6 +62,6 @@ Component: FriendsTabScreen (type: React Function Component)
 - Pull-to-refresh (calls refresh then reloads)
 
 ## API Calls
-- `apiClient.friends.getList('all')` — load all friends data
+- `apiClient.friends.list('all')` — load all friends data
 - `apiClient.friends.refresh()` — force refresh Roblox friends cache on pull-to-refresh
 - `apiClient.friends.sendRequest(targetUserId)` — send a friend request from suggestion

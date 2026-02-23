@@ -350,6 +350,7 @@ CREATE TABLE friendships (
   FOREIGN KEY (user_id) REFERENCES app_users(id),
   FOREIGN KEY (friend_id) REFERENCES app_users(id),
   FOREIGN KEY (initiated_by) REFERENCES app_users(id),
+  CONSTRAINT chk_friendships_canonical_order CHECK (user_id < friend_id),  -- canonical pair ordering
   CONSTRAINT chk_friendships_status CHECK (status IN ('pending', 'accepted', 'blocked')),
   CONSTRAINT uq_friendships_user_friend UNIQUE (user_id, friend_id)
 );

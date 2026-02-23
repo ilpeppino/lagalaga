@@ -49,12 +49,26 @@ Component: MeScreen (type: React Function Component)
 │ type: ThemedView                                         │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
+│  │ "Settings" button                                 │  │
+│  │ (gearshape.fill) → /settings                      │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
 │  │ "Delete Account" button                           │  │
 │  │ (red/danger, trash.fill) → /account/delete        │  │
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ "Safety & Report" button                          │  │
 │  │ (exclamationmark.shield.fill) → /safety-report    │  │
+│  └────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────┤
+│ Push Notifications Debug Panel (DEV only)                │
+│ shown when: __DEV__ or development build                 │
+│ type: ThemedView                                         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Permission status, push token, projectId, channel │  │
+│  │ Registration history, last error, last push       │  │
+│  │ "Retry registration" button (dev builds only)     │  │
 │  └────────────────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────┤
 │ Competitive Profile Card (conditional)                   │
@@ -79,9 +93,11 @@ Component: MeScreen (type: React Function Component)
 - Circular avatar (Roblox headshot or placeholder icon)
 - "Safety & Report" (overflow menu + Account card button)
 - "Connect Roblox" / "Refresh Roblox data"
+- "Settings" link (Account card) → `/settings`
 - "Delete Account" (danger, red)
 - "Pro View" toggle switch
 - "View Match History" button
+- Push Notifications debug panel (DEV builds only)
 
 ## Data Source
 - `useFocusEffect` re-fetches `GET /api/me` on every screen focus

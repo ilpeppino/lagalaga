@@ -2,6 +2,7 @@ import { apiClient } from '@/src/lib/api';
 import { ApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
+import { ErrorCodes } from '../../../shared/errors/codes';
 import {
   FriendsCachePayload,
   loadCachedFriends,
@@ -36,7 +37,15 @@ export async function refreshFriends(
 
   try {
     if (options.force) {
-      await apiClient.friends.refresh();
+      try {
+        await apiClient.friends.refresh();
+      } catch (error) {
+        // Friends refresh endpoint is rate-limited (5 minutes). If we hit that
+        // window, continue and read the latest cached/server-side snapshot.
+        if (!(error instanceof ApiError && error.code === ErrorCodes.FRIEND_RATE_LIMITED)) {
+          throw error;
+        }
+      }
     }
 
     const response = await sessionsAPIStoreV2.listMyRobloxFriends();

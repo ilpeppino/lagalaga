@@ -168,4 +168,109 @@ describe('ReportingService.createReport', () => {
     });
     expect(notifySpy).toHaveBeenCalledWith('rep-9', 'CSAM');
   });
+
+  it('sends safety webhook for CSAM when configured', async () => {
+    const insertResult = {
+      data: { id: 'rep-webhook', status: 'ESCALATED', created_at: '2026-02-20T00:00:00Z' },
+      error: null,
+    };
+    activeSupabase = buildSupabase({ insertResult });
+    const fetchImpl = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '',
+    })) as any;
+
+    const service = new ReportingService({
+      safetyAlertWebhookUrl: 'https://example.test/safety-webhook',
+      fetchImpl,
+    });
+
+    await service.createReport({
+      reporterId: 'user-1',
+      category: 'CSAM',
+      description: 'urgent safety report',
+      targetType: 'USER',
+      targetUserId: 'target-user',
+      requestId: 'req-5',
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://example.test/safety-webhook',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'content-type': 'application/json',
+        }),
+      })
+    );
+  });
+
+  it('does not fail report creation when safety webhook delivery fails', async () => {
+    const insertResult = {
+      data: { id: 'rep-webhook-fail', status: 'ESCALATED', created_at: '2026-02-20T00:00:00Z' },
+      error: null,
+    };
+    activeSupabase = buildSupabase({ insertResult });
+    const fetchImpl = jest.fn(async () => {
+      throw new Error('network down');
+    }) as any;
+
+    const service = new ReportingService({
+      safetyAlertWebhookUrl: 'https://example.test/safety-webhook',
+      fetchImpl,
+    });
+
+    const result = await service.createReport({
+      reporterId: 'user-1',
+      category: 'CSAM',
+      description: 'urgent safety report',
+      targetType: 'USER',
+      targetUserId: 'target-user',
+      requestId: 'req-6',
+    });
+
+    expect(result.ticketId).toBe('rep-webhook-fail');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety_notification_failed',
+        reportId: 'rep-webhook-fail',
+        category: 'CSAM',
+      }),
+      'Safety escalation webhook failed'
+    );
+  });
+
+  it('escalates grooming reports when configured', async () => {
+    const insertResult = {
+      data: { id: 'rep-grooming', status: 'ESCALATED', created_at: '2026-02-20T00:00:00Z' },
+      error: null,
+    };
+    activeSupabase = buildSupabase({ insertResult });
+    const fetchImpl = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '',
+    })) as any;
+
+    const service = new ReportingService({
+      safetyAlertWebhookUrl: 'https://example.test/safety-webhook',
+      escalateGrooming: true,
+      fetchImpl,
+    });
+
+    const result = await service.createReport({
+      reporterId: 'user-1',
+      category: 'GROOMING_OR_SEXUAL_EXPLOITATION',
+      description: 'serious grooming concern',
+      targetType: 'USER',
+      targetUserId: 'target-user',
+      requestId: 'req-7',
+    });
+
+    expect(result.status).toBe('ESCALATED');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

@@ -49,15 +49,24 @@ interface RecentReportRow {
 interface ServiceOptions {
   maxReportsPerHour?: number;
   duplicateWindowMinutes?: number;
+  safetyAlertWebhookUrl?: string | null;
+  escalateGrooming?: boolean;
+  fetchImpl?: typeof fetch;
 }
 
 export class ReportingService {
   private readonly maxReportsPerHour: number;
   private readonly duplicateWindowMinutes: number;
+  private readonly safetyAlertWebhookUrl: string | null;
+  private readonly escalateGrooming: boolean;
+  private readonly fetchImpl: typeof fetch;
 
   constructor(options: ServiceOptions = {}) {
     this.maxReportsPerHour = options.maxReportsPerHour ?? 5;
     this.duplicateWindowMinutes = options.duplicateWindowMinutes ?? 5;
+    this.safetyAlertWebhookUrl = options.safetyAlertWebhookUrl ?? process.env.SAFETY_ALERT_WEBHOOK_URL ?? null;
+    this.escalateGrooming = options.escalateGrooming ?? process.env.SAFETY_ESCALATE_GROOMING === 'true';
+    this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   async createReport(input: CreateReportInput): Promise<{ ticketId: string; status: ReportStatus; createdAt: string }> {
@@ -66,7 +75,7 @@ export class ReportingService {
     await this.enforceRateLimit(input.reporterId);
     await this.enforceDuplicateWindow(input);
 
-    const status: ReportStatus = input.category === 'CSAM' ? 'ESCALATED' : 'OPEN';
+    const status: ReportStatus = this.requiresEscalation(input.category) ? 'ESCALATED' : 'OPEN';
     const description = input.description.trim();
     const supabase = getSupabase();
 
@@ -240,15 +249,69 @@ export class ReportingService {
     return value.trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  private requiresEscalation(category: ReportCategory): boolean {
+    if (category === 'CSAM') return true;
+    if (category === 'GROOMING_OR_SEXUAL_EXPLOITATION') return this.escalateGrooming;
+    return false;
+  }
+
   private async notifySafetyMailbox(reportId: string, category: ReportCategory): Promise<void> {
-    logger.info(
-      {
-        type: 'safety_notification_stub',
-        reportId,
-        category,
-        recipient: 'lagalaga@gtemp1.com',
-      },
-      'Safety escalation email stub queued'
-    );
+    if (!this.safetyAlertWebhookUrl) {
+      logger.error(
+        { type: 'safety_notification_missing_webhook', reportId, category },
+        'Safety escalation webhook URL is not configured'
+      );
+      return;
+    }
+
+    try {
+      const response = await this.fetchImpl(this.safetyAlertWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          event: 'safety_report_escalated',
+          reportId,
+          category,
+          escalatedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        logger.error(
+          {
+            type: 'safety_notification_failed',
+            reportId,
+            category,
+            status: response.status,
+            responseBody: body,
+          },
+          'Safety escalation webhook failed'
+        );
+        return;
+      }
+
+      logger.info(
+        {
+          type: 'safety_notification_sent',
+          reportId,
+          category,
+          recipient: this.safetyAlertWebhookUrl,
+        },
+        'Safety escalation webhook delivered'
+      );
+    } catch (error) {
+      logger.error(
+        {
+          type: 'safety_notification_failed',
+          reportId,
+          category,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Safety escalation webhook failed'
+      );
+    }
   }
 }

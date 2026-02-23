@@ -110,6 +110,14 @@ export const envSchema = {
       type: 'number',
       default: 6,
     },
+    SAFETY_ALERT_WEBHOOK_URL: {
+      type: 'string',
+      default: '',
+    },
+    SAFETY_ESCALATE_GROOMING: {
+      type: 'boolean',
+      default: false,
+    },
   },
 };
 
@@ -142,6 +150,8 @@ declare module 'fastify' {
       SESSION_LIFECYCLE_BATCH_SIZE: number;
       CACHE_CLEANUP_ENABLED: boolean;
       CACHE_CLEANUP_INTERVAL_HOURS: number;
+      SAFETY_ALERT_WEBHOOK_URL: string;
+      SAFETY_ESCALATE_GROOMING: boolean;
     };
   }
 }

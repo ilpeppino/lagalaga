@@ -8,6 +8,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { logger } from '@/src/lib/logger';
 
 
 export default function TabLayout() {
@@ -15,16 +16,24 @@ export default function TabLayout() {
   const router = useRouter();
 
   useEffect(() => {
-  const sub = Linking.addEventListener("url", ({ url }) => {
-    console.log("[LINKING] url event:", url);
-  });
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      logger.debug('Deep link url event', { url });
+    });
 
-  Linking.getInitialURL().then((url) => {
-    console.log("[LINKING] initial url:", url);
-  });
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) {
+          logger.debug('Deep link initial url', { url });
+        }
+      })
+      .catch((error) => {
+        logger.error('Failed to get initial URL in tabs layout', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
-  return () => sub.remove();
-}, []);
+    return () => sub.remove();
+  }, []);
 
   const UserIconButton = () => (
     <TouchableOpacity

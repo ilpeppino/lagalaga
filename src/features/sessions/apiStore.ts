@@ -1,4 +1,5 @@
 import { apiClient } from '../../lib/api';
+import { logger } from '../../lib/logger';
 import type { SessionsStore } from './index';
 import type { Session, CreateSessionInput, ListUpcomingParams } from './types';
 
@@ -19,7 +20,10 @@ export const apiSessionsStore: SessionsStore = {
       return session;
     } catch (error) {
       // Return null if not found
-      console.error('Failed to get session:', error);
+      logger.error('Failed to get session', {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: id,
+      });
       return null;
     }
   },

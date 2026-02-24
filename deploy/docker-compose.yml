@@ -1,0 +1,32 @@
+services:
+  backend:
+    image: node:20-alpine
+    working_dir: /app/backend
+    volumes:
+      - /data/apps/lagalaga:/app:rw
+    env_file:
+      - /data/apps/lagalaga/backend/.env
+    environment:
+      CI: "true"
+    command: >
+      sh -lc "
+      npm i -g pnpm@10.30.2 &&
+      cd /app/backend &&
+      pnpm install --prefer-offline &&
+      pnpm build &&
+      node dist/backend/src/server.js
+      "
+    restart: unless-stopped
+    expose:
+      - "3001"
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - backend
+    network_mode: host
+    volumes:
+      - /data/apps/lagalaga/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /data/apps/lagalaga/caddy/data:/data
+      - /data/apps/lagalaga/caddy/config:/config
+    restart: unless-stopped

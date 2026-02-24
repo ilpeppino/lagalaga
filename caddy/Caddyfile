@@ -1,0 +1,9 @@
+api.yourdomain.com {
+  encode gzip zstd
+
+  reverse_proxy localhost:3001
+
+  # Safety: don't expose metrics publicly by default
+  @metrics path /metrics
+  respond @metrics "forbidden" 403
+}

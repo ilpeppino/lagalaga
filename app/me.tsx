@@ -379,13 +379,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   profileName: {
-    fontSize: 21,
-    fontWeight: '600',
+    ...settingsTypography.username,
     textAlign: 'center',
     marginBottom: spacing.xs,
   },
   syncCaption: {
-    ...settingsTypography.disclaimer,
+    ...settingsTypography.caption,
     opacity: 0.8,
     marginTop: -spacing.sm,
   },
@@ -398,7 +397,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   disclaimerText: {
-    ...settingsTypography.disclaimer,
+    ...settingsTypography.caption,
     lineHeight: 18,
     opacity: 0.75,
   },

@@ -11,6 +11,7 @@ import {
   saveSessionSettings,
 } from '@/src/lib/sessionSettings';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
+import { settingsTypography, spacing } from '@/src/components/settings/tokens';
 
 const MIN_HOURS = 0;
 const MAX_HOURS = 48;
@@ -90,6 +91,8 @@ export default function SettingsScreen() {
     }
   }, [handleError]);
 
+  const sectionLabelColor = colorScheme === 'dark' ? '#9a9aa3' : '#6e6e73';
+
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
       <Stack.Screen options={{ title: 'Settings', headerShown: true }} />
@@ -100,7 +103,7 @@ export default function SettingsScreen() {
         </View>
       ) : (
         <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
-          <ThemedText type="titleLarge" style={styles.sectionTitle}>
+          <ThemedText type="titleLarge" style={[styles.sectionTitle, { color: sectionLabelColor }]}>
             Sessions
           </ThemedText>
 
@@ -139,7 +142,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    padding: spacing.md,
   },
   centered: {
     flex: 1,
@@ -148,23 +151,25 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 12,
-    padding: 16,
-    gap: 18,
+    padding: spacing.md,
+    gap: spacing.md,
   },
   sectionTitle: {
-    marginBottom: 2,
+    ...settingsTypography.sectionLabel,
+    marginBottom: spacing.sm,
   },
   settingRow: {
-    gap: 10,
+    minHeight: 50,
+    gap: spacing.sm,
   },
   settingLabel: {
-    fontSize: 15,
+    ...settingsTypography.rowText,
   },
   pickerWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 12,
+    gap: spacing.md,
   },
   pickerButton: {
     width: 32,
@@ -175,6 +180,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
   },
   valueText: {
+    ...settingsTypography.rowText,
     minWidth: 44,
     textAlign: 'center',
   },

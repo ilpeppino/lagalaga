@@ -7,7 +7,7 @@ interface DangerZoneProps {
 
 export function DangerZone({ onDelete }: DangerZoneProps) {
   return (
-    <SettingsSection title="Danger Zone">
+    <SettingsSection title="Danger Zone" tone="danger">
       <SettingsRow
         label="Delete Account"
         onPress={onDelete}

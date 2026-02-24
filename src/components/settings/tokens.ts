@@ -1,3 +1,5 @@
+import { typography } from '@/src/theme/typography';
+
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -7,20 +9,10 @@ export const spacing = {
 } as const;
 
 export const settingsTypography = {
-  sectionHeader: {
-    fontSize: 16,
-    fontWeight: '500' as const,
-  },
-  rowText: {
-    fontSize: 16,
-    fontWeight: '400' as const,
-  },
-  secondaryText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-  },
-  disclaimer: {
-    fontSize: 12,
-    fontWeight: '400' as const,
-  },
+  username: typography.username,
+  sectionLabel: typography.sectionLabel,
+  rowText: typography.rowText,
+  secondaryText: typography.secondaryText,
+  caption: typography.caption,
+  dangerText: typography.dangerText,
 };

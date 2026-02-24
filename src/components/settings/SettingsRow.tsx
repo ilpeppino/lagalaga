@@ -28,7 +28,7 @@ export function SettingsRow({
 }: SettingsRowProps) {
   const colorScheme = useColorScheme();
   const textColor = destructive
-    ? (colorScheme === 'dark' ? '#db6b6b' : '#c62828')
+    ? (colorScheme === 'dark' ? '#c67a7a' : '#b85d5d')
     : (colorScheme === 'dark' ? '#f2f2f5' : '#1b1b1f');
   const secondaryTextColor = colorScheme === 'dark' ? '#94949d' : '#6e6e73';
   const rowScale = useRef(new Animated.Value(1)).current;
@@ -50,9 +50,10 @@ export function SettingsRow({
         onPressOut={() => animateTo(1)}
         disabled={!onPress}
         accessibilityRole={onPress ? 'button' : undefined}
-        style={styles.pressable}
+        android_ripple={{ color: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}
+        style={({ pressed }) => [styles.pressable, onPress && pressed ? styles.pressed : null]}
       >
-        <Text style={[styles.label, { color: textColor }]}>{label}</Text>
+        <Text style={[styles.label, destructive ? styles.destructiveLabel : null, { color: textColor }]}>{label}</Text>
         <View style={styles.rightSide}>
           {rightContent}
           {!hideChevron && onPress ? (
@@ -66,18 +67,24 @@ export function SettingsRow({
 
 const styles = StyleSheet.create({
   wrapper: {
-    minHeight: 48,
+    minHeight: 50,
     justifyContent: 'center',
   },
   pressable: {
-    minHeight: 48,
+    minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
   },
+  pressed: {
+    opacity: 0.72,
+  },
   label: {
     ...settingsTypography.rowText,
+  },
+  destructiveLabel: {
+    ...settingsTypography.dangerText,
   },
   rightSide: {
     flexDirection: 'row',

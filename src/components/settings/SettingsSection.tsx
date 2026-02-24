@@ -7,11 +7,14 @@ interface SettingsSectionProps {
   title: string;
   children: ReactNode;
   elevated?: boolean;
+  tone?: 'default' | 'danger';
 }
 
-export function SettingsSection({ title, children, elevated = false }: SettingsSectionProps) {
+export function SettingsSection({ title, children, elevated = false, tone = 'default' }: SettingsSectionProps) {
   const colorScheme = useColorScheme();
-  const titleColor = colorScheme === 'dark' ? '#f2f2f5' : '#1b1b1f';
+  const titleColor = tone === 'danger'
+    ? (colorScheme === 'dark' ? '#b77a7a' : '#9c5050')
+    : (colorScheme === 'dark' ? '#9a9aa3' : '#6e6e73');
   const surfaceColor = colorScheme === 'dark' ? '#17181c' : '#f7f7fa';
   const borderColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(20,20,25,0.06)';
 
@@ -34,7 +37,9 @@ export function SettingsSection({ title, children, elevated = false }: SettingsS
       ]}
     >
       <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
-      {children}
+      <View style={styles.rows}>
+        {children}
+      </View>
     </View>
   );
 }
@@ -43,9 +48,12 @@ const styles = StyleSheet.create({
   section: {
     borderRadius: 14,
     padding: spacing.md,
+  },
+  rows: {
     gap: spacing.md,
+    marginTop: spacing.sm,
   },
   title: {
-    ...settingsTypography.sectionHeader,
+    ...settingsTypography.sectionLabel,
   },
 });

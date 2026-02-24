@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     ...settingsTypography.secondaryText,
   },
   achievementDate: {
-    ...settingsTypography.disclaimer,
+    ...settingsTypography.caption,
   },
   emptyText: {
     ...settingsTypography.secondaryText,

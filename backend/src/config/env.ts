@@ -114,6 +114,10 @@ export const envSchema = {
       type: 'string',
       default: '',
     },
+    SENTRY_DSN: {
+      type: 'string',
+      default: '',
+    },
     METRICS_BEARER_TOKEN: {
       type: 'string',
       default: '',
@@ -155,6 +159,7 @@ declare module 'fastify' {
       CACHE_CLEANUP_ENABLED: boolean;
       CACHE_CLEANUP_INTERVAL_HOURS: number;
       SAFETY_ALERT_WEBHOOK_URL: string;
+      SENTRY_DSN: string;
       METRICS_BEARER_TOKEN: string;
       SAFETY_ESCALATE_GROOMING: boolean;
     };

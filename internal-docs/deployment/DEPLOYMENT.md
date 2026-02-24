@@ -63,6 +63,7 @@ Save these values in a secure location (password manager):
    REFRESH_TOKEN_SECRET=<generate-different-random-32-char-string>
    REFRESH_TOKEN_EXPIRY=7d
    CORS_ORIGIN=https://your-frontend-domain.com
+   SENTRY_DSN=<your-backend-sentry-dsn>
    ```
 5. **Deploy**: Click **Create Web Service**
 6. **Copy URL**: Save your service URL (e.g., `https://lagalaga-api.onrender.com`)
@@ -141,6 +142,7 @@ Create `.env.production`:
 EXPO_PUBLIC_API_URL=https://your-backend-url.onrender.com
 EXPO_PUBLIC_ROBLOX_CLIENT_ID=<your-roblox-client-id>
 EXPO_PUBLIC_ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
+EXPO_PUBLIC_SENTRY_DSN=<your-mobile-sentry-dsn>
 ```
 
 ### 2. Update app.json
@@ -246,27 +248,14 @@ Should return:
 
 **Fly.io:**
 - View logs: `fly logs`
-- Set up Sentry: Add `@sentry/node` to backend
+- Set up Sentry by configuring `SENTRY_DSN` in service secrets
 
 ### Error Tracking
 
-Add Sentry to backend:
-
-```bash
-cd backend
-npm install @sentry/node
-```
-
-Add to `server.ts`:
-
-```typescript
-import * as Sentry from "@sentry/node";
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.NODE_ENV,
-});
-```
+Sentry support is built in:
+- Backend: set `SENTRY_DSN` to enable forwarding monitored errors/messages.
+- App: set `EXPO_PUBLIC_SENTRY_DSN` to enable mobile crash/event forwarding.
+- If either DSN is unset, monitoring gracefully falls back to console provider.
 
 ## Environment Variables Summary
 
@@ -286,6 +275,7 @@ JWT_EXPIRY=15m
 REFRESH_TOKEN_SECRET=<different-32-char-random-string>
 REFRESH_TOKEN_EXPIRY=7d
 CORS_ORIGIN=https://your-frontend-domain.com
+SENTRY_DSN=<your-backend-sentry-dsn>
 ```
 
 ### App (.env.production)
@@ -294,6 +284,7 @@ CORS_ORIGIN=https://your-frontend-domain.com
 EXPO_PUBLIC_API_URL=https://your-backend-url.onrender.com
 EXPO_PUBLIC_ROBLOX_CLIENT_ID=12345...
 EXPO_PUBLIC_ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
+EXPO_PUBLIC_SENTRY_DSN=<your-mobile-sentry-dsn>
 ```
 
 ## Security Checklist

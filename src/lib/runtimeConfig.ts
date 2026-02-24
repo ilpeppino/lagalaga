@@ -20,11 +20,17 @@ function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
 }
 
 function readOptionalPublicEnv(
-  name: 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL' | 'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
+  name:
+    | 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
+    | 'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
+    | 'EXPO_PUBLIC_SENTRY_DSN'
 ): string | null {
-  const value = name === 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
-    ? process.env.EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL
-    : process.env.EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL;
+  const value =
+    name === 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL'
+      ? process.env.EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL
+      : name === 'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
+        ? process.env.EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL
+        : process.env.EXPO_PUBLIC_SENTRY_DSN;
   if (!value || !value.trim()) {
     return null;
   }
@@ -65,3 +71,5 @@ export const DELETE_ACCOUNT_WEB_URL = readOptionalPublicEnv(
 export const CHILD_SAFETY_POLICY_URL = readOptionalPublicEnv(
   'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
 ) ?? 'https://ilpeppino.github.io/lagalaga/child-safety.html';
+
+export const SENTRY_DSN = readOptionalPublicEnv('EXPO_PUBLIC_SENTRY_DSN');

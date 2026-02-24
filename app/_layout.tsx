@@ -21,6 +21,7 @@ import {
   configureNotificationHandler,
   setupNotificationListeners,
 } from '@/src/features/notifications/notificationHandlers';
+import { initializeMonitoring } from '@/src/lib/monitoring-init';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -29,6 +30,8 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore: can throw if called multiple times during Fast Refresh.
 });
+
+initializeMonitoring();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();

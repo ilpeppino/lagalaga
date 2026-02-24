@@ -27,6 +27,7 @@ import { AccountDeletionService } from './services/account-deletion.service.js';
 import { SessionLifecycleService } from './services/session-lifecycle.service.js';
 import { CacheCleanupService } from './services/cache-cleanup.service.js';
 import { monitoring } from './lib/monitoring.js';
+import { initializeBackendSentry, SentryMonitoringProvider } from './lib/sentryMonitoringProvider.js';
 import { fileURLToPath } from 'node:url';
 
 export async function buildServer() {
@@ -51,6 +52,11 @@ export async function buildServer() {
     schema: envSchema,
     dotenv: true,
   });
+
+  if (fastify.config.SENTRY_DSN.trim()) {
+    initializeBackendSentry(fastify.config.SENTRY_DSN, fastify.config.NODE_ENV);
+    monitoring.setProvider(new SentryMonitoringProvider());
+  }
 
   // Initialize Supabase
   initSupabase(fastify);

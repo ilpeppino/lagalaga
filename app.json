@@ -90,6 +90,14 @@
           "icon": "./assets/generated/icon.png",
           "color": "#1A2A6C"
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "gtemp1"
+        }
       ]
     ],
     "experiments": {

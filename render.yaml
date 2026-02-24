@@ -39,3 +39,5 @@ services:
         sync: false
       - key: METRICS_BEARER_TOKEN
         sync: false
+      - key: SENTRY_DSN
+        sync: false

@@ -60,12 +60,18 @@ export default function RootLayout() {
       }
     };
 
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        logger.info('App opened with initial URL', { urlType: url.startsWith('https') ? 'https' : 'scheme' });
-        handleHttpsInviteUrl(url);
-      }
-    });
+    void Linking.getInitialURL()
+      .then((url) => {
+        if (url) {
+          logger.info('App opened with initial URL', { urlType: url.startsWith('https') ? 'https' : 'scheme' });
+          handleHttpsInviteUrl(url);
+        }
+      })
+      .catch((error) => {
+        logger.error('Failed to get initial app URL', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
     // Also handle HTTPS App Links received while the app is running
     const subscription = Linking.addEventListener('url', (event) => {

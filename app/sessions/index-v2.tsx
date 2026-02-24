@@ -505,10 +505,17 @@ export default function SessionsListScreenV2() {
 
     placeIds.forEach((placeId) => {
       if (fallbackThumbnails[placeId]) return;
-      getRobloxGameThumbnail(placeId).then((url) => {
-        if (!url || cancelled) return;
-        setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
-      });
+      void getRobloxGameThumbnail(placeId)
+        .then((url) => {
+          if (!url || cancelled) return;
+          setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
+        })
+        .catch((error) => {
+          logger.warn('Failed to load fallback game thumbnail', {
+            placeId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
     });
 
     return () => {

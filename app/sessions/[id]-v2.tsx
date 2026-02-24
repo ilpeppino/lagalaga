@@ -115,11 +115,18 @@ export default function SessionDetailScreenV2() {
       return;
     }
 
-    getRobloxGameThumbnail(placeId).then((url) => {
-      if (!cancelled) {
-        setFallbackThumbnail(url);
-      }
-    });
+    void getRobloxGameThumbnail(placeId)
+      .then((url) => {
+        if (!cancelled) {
+          setFallbackThumbnail(url);
+        }
+      })
+      .catch((error) => {
+        logger.warn('Failed to load fallback session thumbnail', {
+          placeId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
     return () => {
       cancelled = true;

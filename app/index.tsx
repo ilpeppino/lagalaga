@@ -4,6 +4,7 @@ import { useAuth } from "@/src/features/auth/useAuth";
 import { useEffect, useState } from "react";
 import { tokenStorage } from "@/src/lib/tokenStorage";
 import { LagaLoadingSpinner } from "@/components/ui/LagaLoadingSpinner";
+import { logger } from "@/src/lib/logger";
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -11,9 +12,16 @@ export default function Index() {
 
   useEffect(() => {
     // Check if token exists as fallback
-    tokenStorage.getToken().then((token) => {
-      setHasToken(!!token);
-    });
+    void tokenStorage.getToken()
+      .then((token) => {
+        setHasToken(!!token);
+      })
+      .catch((error) => {
+        logger.error('Failed to load stored token', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        setHasToken(false);
+      });
   }, []);
 
   if (loading || hasToken === null) {

@@ -215,6 +215,33 @@ metrics.tierPromotionsTotal = tierPromotionsTotal;
 metrics.suspiciousRankedActivityTotal = suspiciousRankedActivityTotal;
 
 export async function metricsPlugin(fastify: FastifyInstance) {
+  const isProduction = fastify.config.NODE_ENV === 'production';
+  const bearerToken = fastify.config.METRICS_BEARER_TOKEN.trim();
+
+  function isAuthorized(request: FastifyRequest): boolean {
+    if (!bearerToken) {
+      return !isProduction;
+    }
+
+    const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return false;
+    }
+
+    const providedToken = authHeader.slice('Bearer '.length).trim();
+    return providedToken.length > 0 && providedToken === bearerToken;
+  }
+
+  async function guardMetrics(request: FastifyRequest, reply: FastifyReply) {
+    if (!bearerToken && isProduction) {
+      return reply.code(404).send({ error: 'Not Found' });
+    }
+
+    if (!isAuthorized(request)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+  }
+
   // Collect request metrics
   fastify.addHook('onResponse', async (request: FastifyRequest, reply: FastifyReply) => {
     const method = request.method;
@@ -231,13 +258,13 @@ export async function metricsPlugin(fastify: FastifyInstance) {
   });
 
   // Prometheus text format
-  fastify.get('/metrics', async (_request, reply) => {
+  fastify.get('/metrics', { preHandler: guardMetrics }, async (_request, reply) => {
     reply.header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
     return reply.send(metrics.toPrometheus());
   });
 
   // JSON format
-  fastify.get('/metrics/json', async (_request, reply) => {
+  fastify.get('/metrics/json', { preHandler: guardMetrics }, async (_request, reply) => {
     return reply.send(metrics.toJSON());
   });
 }

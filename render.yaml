@@ -37,3 +37,5 @@ services:
         value: 7d
       - key: CORS_ORIGIN
         sync: false
+      - key: METRICS_BEARER_TOKEN
+        sync: false

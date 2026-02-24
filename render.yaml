@@ -36,4 +36,4 @@ services:
       - key: REFRESH_TOKEN_EXPIRY
         value: 7d
       - key: CORS_ORIGIN
-        value: "*"
+        sync: false

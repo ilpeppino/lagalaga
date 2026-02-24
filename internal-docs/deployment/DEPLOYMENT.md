@@ -62,7 +62,7 @@ Save these values in a secure location (password manager):
    JWT_EXPIRY=15m
    REFRESH_TOKEN_SECRET=<generate-different-random-32-char-string>
    REFRESH_TOKEN_EXPIRY=7d
-   CORS_ORIGIN=*
+   CORS_ORIGIN=https://your-frontend-domain.com
    ```
 5. **Deploy**: Click **Create Web Service**
 6. **Copy URL**: Save your service URL (e.g., `https://lagalaga-api.onrender.com`)
@@ -285,7 +285,7 @@ JWT_SECRET=<32-char-random-string>
 JWT_EXPIRY=15m
 REFRESH_TOKEN_SECRET=<different-32-char-random-string>
 REFRESH_TOKEN_EXPIRY=7d
-CORS_ORIGIN=*
+CORS_ORIGIN=https://your-frontend-domain.com
 ```
 
 ### App (.env.production)
@@ -301,7 +301,7 @@ EXPO_PUBLIC_ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
 - [ ] All environment variables are set correctly
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` is NEVER exposed to the client
 - [ ] JWT secrets are random and secure (32+ characters)
-- [ ] CORS is configured appropriately (consider restricting in production)
+- [ ] CORS_ORIGIN is set to explicit trusted origin(s) (never `*` in production)
 - [ ] HTTPS is enabled on backend (automatic with Render/Railway/Fly.io)
 - [ ] Roblox OAuth redirect URIs are whitelisted
 - [ ] Database has proper foreign key constraints

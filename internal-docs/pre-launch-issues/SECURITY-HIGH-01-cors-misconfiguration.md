@@ -1,5 +1,8 @@
 # SECURITY: CORS Configured to Accept All Origins
 
+## Status
+✅ **RESOLVED** (2026-02-24)
+
 ## Severity
 🔴 **HIGH**
 
@@ -13,7 +16,7 @@ CORS is configured to accept requests from ANY origin (`CORS_ORIGIN=*`) with cre
 - `backend/src/plugins/cors.ts`
 - `backend/.env` (line 27: `CORS_ORIGIN=*`)
 
-## Current Implementation
+## Previous Implementation
 ```typescript
 export async function corsPlugin(fastify: FastifyInstance) {
   await fastify.register(cors, {
@@ -28,6 +31,23 @@ export async function corsPlugin(fastify: FastifyInstance) {
 - Malicious sites can make authenticated requests on behalf of users
 - Credentials (cookies, auth headers) sent to unauthorized origins
 - Violates CORS spec (credentials: true incompatible with wildcard)
+
+## Resolution Implemented
+
+- `backend/src/config/env.ts`: `CORS_ORIGIN` default changed from `'*'` to `''`.
+- `backend/src/plugins/cors.ts`: production startup now throws if `CORS_ORIGIN` is empty or contains `'*'`.
+- `backend/src/plugins/cors.ts`: comma-separated explicit origins are supported.
+- `render.yaml`: `CORS_ORIGIN` is no longer hardcoded to wildcard.
+- `backend/.env.example` and deployment docs updated to explicit-origin examples.
+
+## Current Implementation
+```typescript
+if (isProduction && (hasWildcardOrigin || configuredOrigins.length === 0)) {
+  throw new Error(
+    'Invalid CORS_ORIGIN for production. Set one or more explicit origins (comma-separated), never "*".'
+  );
+}
+```
 
 ## Recommended Fix
 

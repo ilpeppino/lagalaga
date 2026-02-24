@@ -56,7 +56,7 @@ export const envSchema = {
     },
     CORS_ORIGIN: {
       type: 'string',
-      default: '*',
+      default: '',
     },
     FEATURE_FRIENDS_ENABLED: {
       type: 'boolean',

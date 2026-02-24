@@ -15,14 +15,19 @@ export interface TokenStorage {
 class SecureTokenStorage implements TokenStorage {
   async getToken(): Promise<string | null> {
     if (Platform.OS === 'web') {
-      return localStorage.getItem(TOKEN_KEY);
+      if (typeof sessionStorage === 'undefined') {
+        return null;
+      }
+      return sessionStorage.getItem(TOKEN_KEY);
     }
     return await SecureStore.getItemAsync(TOKEN_KEY);
   }
 
   async setToken(token: string): Promise<void> {
     if (Platform.OS === 'web') {
-      localStorage.setItem(TOKEN_KEY, token);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(TOKEN_KEY, token);
+      }
     } else {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
     }
@@ -30,14 +35,19 @@ class SecureTokenStorage implements TokenStorage {
 
   async getRefreshToken(): Promise<string | null> {
     if (Platform.OS === 'web') {
-      return localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (typeof sessionStorage === 'undefined') {
+        return null;
+      }
+      return sessionStorage.getItem(REFRESH_TOKEN_KEY);
     }
     return await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
   }
 
   async setRefreshToken(token: string): Promise<void> {
     if (Platform.OS === 'web') {
-      localStorage.setItem(REFRESH_TOKEN_KEY, token);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
+      }
     } else {
       await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, token);
     }
@@ -45,8 +55,10 @@ class SecureTokenStorage implements TokenStorage {
 
   async clearTokens(): Promise<void> {
     if (Platform.OS === 'web') {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(TOKEN_KEY);
+        sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+      }
     } else {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);

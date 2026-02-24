@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, Image, ScrollView, Alert, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { ThemedText } from '@/components/themed-text';
@@ -10,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { launchRobloxGame } from '@/src/services/roblox-launcher';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { logger } from '@/src/lib/logger';
+import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function SessionHandoffScreen() {
@@ -133,7 +133,7 @@ export default function SessionHandoffScreen() {
   const handleConnectRoblox = useCallback(async () => {
     try {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
-      await AsyncStorage.setItem('roblox_connect_state', state);
+      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
       await Linking.openURL(authorizationUrl);
     } catch {
       Alert.alert('Error', 'Failed to start Roblox connect flow.');

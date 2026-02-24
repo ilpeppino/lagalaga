@@ -1,9 +1,9 @@
 import { useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../../src/lib/api';
 import { tokenStorage } from '../../src/lib/tokenStorage';
+import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '../../src/lib/oauthTransientStorage';
 import { logger } from '@/src/lib/logger';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
@@ -46,18 +46,18 @@ export default function RobloxCallback() {
         return;
       }
 
-      const connectState = await AsyncStorage.getItem('roblox_connect_state');
+      const connectState = await oauthTransientStorage.getItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE);
       if (connectState && connectState === state) {
         await sessionsAPIStoreV2.completeRobloxConnect(code, state);
-        await AsyncStorage.removeItem('roblox_connect_state');
+        await oauthTransientStorage.removeItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE);
         await reloadUser();
         router.replace('/sessions');
         return;
       }
 
       // Retrieve stored verifier and state
-      const codeVerifier = await AsyncStorage.getItem('pkce_code_verifier');
-      const storedState = await AsyncStorage.getItem('pkce_state');
+      const codeVerifier = await oauthTransientStorage.getItem(OAUTH_STORAGE_KEYS.PKCE_CODE_VERIFIER);
+      const storedState = await oauthTransientStorage.getItem(OAUTH_STORAGE_KEYS.PKCE_STATE);
 
       if (!codeVerifier || !storedState) {
         logger.error('Missing stored PKCE parameters');
@@ -68,15 +68,15 @@ export default function RobloxCallback() {
       // Verify state matches
       if (state !== storedState) {
         logger.error('State mismatch - possible CSRF attack', {
-          receivedState: state,
+          stateMatches: false,
         });
         router.replace('/auth/sign-in');
         return;
       }
 
       // Clear stored PKCE parameters
-      await AsyncStorage.removeItem('pkce_code_verifier');
-      await AsyncStorage.removeItem('pkce_state');
+      await oauthTransientStorage.removeItem(OAUTH_STORAGE_KEYS.PKCE_CODE_VERIFIER);
+      await oauthTransientStorage.removeItem(OAUTH_STORAGE_KEYS.PKCE_STATE);
 
       // Exchange code for tokens
       const response = await apiClient.auth.completeRobloxAuth(code, state, codeVerifier);

@@ -1,5 +1,8 @@
 # SECURITY: OAuth State Parameter Stored Insecurely
 
+## Status
+✅ **RESOLVED** (2026-02-24)
+
 ## Severity
 🔴 **HIGH**
 
@@ -8,6 +11,22 @@ Security / Authentication / CSRF
 
 ## Description
 OAuth state parameters are stored in AsyncStorage (unencrypted on Android) instead of secure storage, weakening CSRF protection and exposing authentication flow to potential attacks.
+
+## Resolution Implemented
+- Added `src/lib/oauthTransientStorage.ts` to centralize temporary OAuth storage:
+  - Native (`iOS`/`Android`): `expo-secure-store`
+  - Web: `sessionStorage` (session-lifetime storage)
+- Replaced PKCE storage in `src/features/auth/useAuth.tsx`:
+  - `pkce_code_verifier`
+  - `pkce_state`
+- Replaced callback reads/deletes in `app/auth/roblox.tsx` for:
+  - `pkce_code_verifier`
+  - `pkce_state`
+  - `roblox_connect_state`
+- Replaced `roblox_connect_state` writes in:
+  - `app/sessions/[id]-v2.tsx`
+  - `app/sessions/handoff.tsx`
+- Removed state token value logging from mismatch path (log now records `stateMatches: false` only).
 
 ## Affected Files
 - `app/auth/roblox.tsx` (lines 35-51)

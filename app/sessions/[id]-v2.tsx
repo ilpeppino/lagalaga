@@ -14,7 +14,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
@@ -37,6 +36,7 @@ import {
   getSessionLiveBadge,
   sessionUiColors,
 } from '@/src/ui/sessionStatusUi';
+import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -188,7 +188,7 @@ export default function SessionDetailScreenV2() {
   const handleConnectRoblox = async () => {
     try {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
-      await AsyncStorage.setItem('roblox_connect_state', state);
+      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
       await Linking.openURL(authorizationUrl);
     } catch {
       Alert.alert('Error', 'Failed to start Roblox connect flow');

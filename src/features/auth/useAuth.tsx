@@ -3,9 +3,9 @@ import { AppState, Linking, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
+import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '../../lib/oauthTransientStorage';
 import { warmFavorites } from '../favorites/service';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 
@@ -87,11 +87,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-      await AsyncStorage.setItem('pkce_code_verifier', codeVerifier);
+      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.PKCE_CODE_VERIFIER, codeVerifier);
 
       const { authorizationUrl, state } = await apiClient.auth.startRobloxAuth(codeChallenge);
 
-      await AsyncStorage.setItem('pkce_state', state);
+      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.PKCE_STATE, state);
 
       // Always use app scheme for dev builds / standalone.
       // Expo Auth Proxy URL should be used only when explicitly configured.

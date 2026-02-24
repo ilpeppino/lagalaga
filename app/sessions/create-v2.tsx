@@ -1,52 +1,32 @@
-/**
- * Epic 3 Story 3.2: Session Creation UI
- *
- * Features:
- * - URL input with paste button
- * - Title input (auto-filled from pasted Roblox link when available)
- * - Visibility selector (public/friends/invite_only)
- * - Max participants slider (2-50)
- * - Optional scheduled start date/time
- * - Loading state
- * - Error handling via useErrorHandler
- */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Platform,
-  ActivityIndicator,
-  Pressable,
-  KeyboardAvoidingView,
-  RefreshControl,
   AppState,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { RobloxFriend, RobloxFriendPresence, SessionVisibility } from '@/src/features/sessions/types-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AnimatedButton as Button, TextInput } from '@/components/ui/paper';
-import { Menu, SegmentedButtons, Switch } from 'react-native-paper';
 import { useAuth } from '@/src/features/auth/useAuth';
 import type { Favorite } from '@/src/features/favorites/cache';
 import { warmFavorites } from '@/src/features/favorites/service';
 import { useFavorites } from '@/src/features/favorites/useFavorites';
 import { useFriends } from '@/src/features/friends/useFriends';
-import { FriendPickerTwoRowHorizontal } from '@/components/FriendPickerTwoRowHorizontal';
-import { SyncedAtBadge } from '@/components/SyncedAtBadge';
 import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
-
-const visibilityOptions: { value: SessionVisibility; label: string }[] = [
-  { value: 'public', label: 'Public' },
-  { value: 'friends', label: 'Friends Only' },
-  { value: 'invite_only', label: 'Invite Only' },
-];
+import { AdvancedOptionsSection } from '@/src/features/sessions/components/AdvancedOptionsSection';
+import { CreateSessionCTA } from '@/src/features/sessions/components/CreateSessionCTA';
+import { GameSelectorCard } from '@/src/features/sessions/components/GameSelectorCard';
+import { InviteFriendsSection } from '@/src/features/sessions/components/InviteFriendsSection';
+import { SessionTitleField } from '@/src/features/sessions/components/SessionTitleField';
+import { VisibilitySelector } from '@/src/features/sessions/components/VisibilitySelector';
+import { createSessionPalette, spacing } from '@/src/features/sessions/components/createSessionTokens';
+import { ThemedText } from '@/components/themed-text';
 
 function getFavoriteDisplayName(favorite: Favorite): string {
   const name = favorite.name?.trim();
@@ -57,11 +37,26 @@ function getFavoriteDisplayName(favorite: Favorite): string {
   return 'Unnamed Experience';
 }
 
+function buildAutoTitle(title: string, selectedFavorite: Favorite | null): string {
+  if (title.trim()) {
+    return title.trim();
+  }
+
+  if (selectedFavorite) {
+    return getFavoriteDisplayName(selectedFavorite);
+  }
+
+  return 'New Session';
+}
+
 export default function CreateSessionScreenV2() {
   const router = useRouter();
   const { getErrorMessage } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const palette = isDark ? createSessionPalette.dark : createSessionPalette.light;
   const { user } = useAuth();
+  const scrollViewRef = useRef<ScrollView>(null);
   const {
     favorites,
     loading: isLoadingFavorites,
@@ -77,31 +72,23 @@ export default function CreateSessionScreenV2() {
     isRefreshing: isRefreshingFriends,
     error: friendsError,
     syncedAt: friendsSyncedAt,
-    isStale: friendsIsStale,
-    robloxNotConnected,
     refresh: refreshFriends,
     reload: reloadFriends,
+    robloxNotConnected,
   } = useFriends(user?.id);
 
-  // Form state
   const [robloxUrl, setRobloxUrl] = useState('');
   const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
-  const [gameInputMode, setGameInputMode] = useState<'favorites' | 'link'>('favorites');
   const [title, setTitle] = useState('');
   const [visibility, setVisibility] = useState<SessionVisibility>('public');
   const [isRanked, setIsRanked] = useState(false);
   const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
   const [scheduledStart, setScheduledStart] = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [friendSearch, setFriendSearch] = useState('');
 
-  // Presence state (separate from friends — best-effort, updated frequently)
   const [presenceMap, setPresenceMap] = useState<Map<number, RobloxFriendPresence>>(new Map());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,11 +108,10 @@ export default function CreateSessionScreenV2() {
       const map = await sessionsAPIStoreV2.fetchBulkPresence(friendIds);
       setPresenceMap(map);
     } catch {
-      // Presence is best-effort; ignore errors
+      // Presence is best-effort; ignore errors.
     }
   }, []);
 
-  // Re-fetch friends list on focus (skip first focus — initial load handles it)
   useFocusEffect(
     useCallback(() => {
       if (!hasInitialFriendsLoadRef.current) {
@@ -136,14 +122,12 @@ export default function CreateSessionScreenV2() {
     }, [reloadFriends])
   );
 
-  // Refresh presence on screen focus
   useFocusEffect(
     useCallback(() => {
       if (friends.length > 0) {
         void fetchPresence(friends.map((f) => f.id));
       }
 
-      // Refresh every 30 s while screen is focused and app is active
       presenceIntervalRef.current = setInterval(() => {
         if (AppState.currentState === 'active' && friends.length > 0) {
           void fetchPresence(friends.map((f) => f.id));
@@ -159,7 +143,6 @@ export default function CreateSessionScreenV2() {
     }, [friends, fetchPresence])
   );
 
-  // Fetch presence once friends are loaded
   useEffect(() => {
     if (friends.length > 0) {
       void fetchPresence(friends.map((f) => f.id));
@@ -175,8 +158,7 @@ export default function CreateSessionScreenV2() {
     }
   }, [friends, fetchPresence]);
 
-  const handleSelectFavorite = (favorite: Favorite) => {
-    setFavoritesMenuVisible(false);
+  const handleSelectFavorite = useCallback((favorite: Favorite) => {
     setSelectedFavorite(favorite);
     setRobloxUrl(favorite.url ?? '');
 
@@ -184,72 +166,26 @@ export default function CreateSessionScreenV2() {
     if (preferredTitle) {
       setTitle(preferredTitle);
     }
-  };
-
-  const switchToLinkMode = () => {
-    setGameInputMode('link');
-    setSelectedFavorite(null);
-  };
-
-  const switchToFavoritesMode = () => {
-    setGameInputMode('favorites');
-  };
+  }, []);
 
   const handleForceFavoritesRefresh = useCallback(() => {
     void forceRefreshFavorites();
   }, [forceRefreshFavorites]);
 
-  /**
-   * Handle date/time picker change
-   */
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios'); // Keep open on iOS
-    if (selectedDate) {
-      setScheduledStart(selectedDate);
-    }
-  };
-
-  const openAndroidDateTimePicker = () => {
-    const base = scheduledStart ?? new Date();
-
-    // Android doesn't support mode="datetime" via the component; open date then time.
-    DateTimePickerAndroid.open({
-      value: base,
-      mode: 'date',
-      is24Hour: true,
-      onChange: (event, date) => {
-        if (event.type !== 'set' || !date) return;
-
-        const withDate = new Date(base);
-        withDate.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-
-        DateTimePickerAndroid.open({
-          value: withDate,
-          mode: 'time',
-          is24Hour: true,
-          onChange: (timeEvent, time) => {
-            if (timeEvent.type !== 'set' || !time) return;
-            const final = new Date(withDate);
-            final.setHours(time.getHours(), time.getMinutes(), 0, 0);
-            setScheduledStart(final);
-          },
-        });
-      },
-    });
-  };
-
-  /**
-   * Validate and submit form
-   */
   const handleCreate = async () => {
     setError(null);
 
-    // Validation
     if (!robloxUrl.trim()) {
       setError('Please enter or select a Roblox game link');
       return;
     }
+
+    const computedTitle = buildAutoTitle(title, selectedFavorite);
     if (!title.trim()) {
+      setTitle(computedTitle);
+    }
+
+    if (!computedTitle.trim()) {
       setError('Session title is required');
       return;
     }
@@ -260,7 +196,7 @@ export default function CreateSessionScreenV2() {
       const result = await sessionsAPIStoreV2.createSession(
         buildCreateSessionPayload({
           robloxUrl: robloxUrl.trim(),
-          title: title.trim(),
+          title: computedTitle,
           visibility,
           isRanked,
           scheduledStart: scheduledStart?.toISOString(),
@@ -268,7 +204,6 @@ export default function CreateSessionScreenV2() {
         })
       );
 
-      // Navigate to session detail with invite link
       router.replace({
         pathname: '/sessions/[id]',
         params: {
@@ -293,363 +228,140 @@ export default function CreateSessionScreenV2() {
   const filteredFriends = friendSearch.trim().length === 0
     ? friendsWithPresence
     : friendsWithPresence.filter((friend) => {
-        const q = friendSearch.trim().toLowerCase();
-        const display = (friend.displayName || '').toLowerCase();
-        const username = (friend.name || '').toLowerCase();
-        return display.includes(q) || username.includes(q);
-      });
+      const q = friendSearch.trim().toLowerCase();
+      const display = (friend.displayName || '').toLowerCase();
+      const username = (friend.name || '').toLowerCase();
+      return display.includes(q) || username.includes(q);
+    });
+
+  const hasGameSelected = robloxUrl.trim().length > 0;
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
+      style={[styles.container, { backgroundColor: palette.page }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        ref={scrollViewRef}
         style={styles.container}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={() => { void handlePullToRefresh(); }}
-            tintColor="#007AFF"
+            onRefresh={() => {
+              void handlePullToRefresh();
+            }}
+            tintColor={palette.accent}
           />
         }
       >
-      {/* Game */}
-      <View style={styles.field}>
-        <SyncedAtBadge
-          label="Game *"
-          syncedAt={favoritesSyncedAt}
-          isStale={favoritesIsStale}
-          isRefreshing={isLoadingFavorites}
-          onRefresh={handleForceFavoritesRefresh}
-          disabled={isLoadingFavorites || isCreating}
-        />
-        {gameInputMode === 'favorites' ? (
-          <>
-            <View style={styles.favoritesPickerMenu}>
-              <Menu
-                visible={favoritesMenuVisible}
-                onDismiss={() => setFavoritesMenuVisible(false)}
-                anchor={(
-                  <Button
-                    title={
-                      selectedFavorite
-                        ? getFavoriteDisplayName(selectedFavorite)
-                        : 'Select from your Roblox favorites'
-                    }
-                    variant="outlined"
-                    style={styles.dropdownButton}
-                    contentStyle={styles.dropdownButtonContent}
-                    labelStyle={styles.dropdownButtonLabel}
-                    onPress={() => setFavoritesMenuVisible(true)}
-                  />
-                )}
-              >
-                {favorites.map((favorite) => (
-                  <Menu.Item
-                    key={favorite.id}
-                    title={getFavoriteDisplayName(favorite)}
-                    onPress={() => handleSelectFavorite(favorite)}
-                  />
-                ))}
-                {favorites.length === 0 && isLoadingFavorites && (
-                  <Menu.Item title="Loading favorites..." onPress={() => setFavoritesMenuVisible(false)} />
-                )}
-                {favorites.length === 0 && !!favoritesError && (
-                  <Menu.Item
-                    title="Couldn't load favorites. Tap to retry"
-                    onPress={() => {
-                      void refreshFavorites();
-                      setFavoritesMenuVisible(false);
-                    }}
-                  />
-                )}
-                {favorites.length === 0 && !isLoadingFavorites && !favoritesError && (
-                  <Menu.Item title="No favorites found" onPress={() => setFavoritesMenuVisible(false)} />
-                )}
-              </Menu>
-            </View>
-            <Button
-              title="Paste a link instead"
-              variant="text"
-              style={styles.modeSwitchButton}
-              textColor="#007AFF"
-              onPress={switchToLinkMode}
-            />
-          </>
-        ) : (
-          <>
-            <TextInput
-              style={styles.input}
-              value={robloxUrl}
-              placeholder="https://www.roblox.com/games/..."
-              autoCapitalize="none"
-              keyboardType="url"
-              autoCorrect={false}
-              variant="outlined"
-              editable
-              onChangeText={setRobloxUrl}
-            />
-            <Button
-              title="Back to favorites"
-              variant="text"
-              style={styles.modeSwitchButton}
-              textColor="#007AFF"
-              onPress={switchToFavoritesMode}
-            />
-          </>
-        )}
-        {favoritesError && gameInputMode === 'favorites' && (
-          <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80" style={styles.resolveHint}>
-            {favoritesError}
-          </ThemedText>
-        )}
-      </View>
-
-      {/* Title */}
-      <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Session Title *
-        </ThemedText>
-        <TextInput
-          style={styles.input}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="e.g., Late night Jailbreak"
-          maxLength={100}
-          variant="outlined"
-        />
-      </View>
-
-      {/* Visibility */}
-      <View style={styles.field}>
-        <ThemedText type="titleMedium" style={styles.label}>
-          Visibility
-        </ThemedText>
-        <SegmentedButtons
-          value={visibility}
-          onValueChange={(value) => {
-            if (isRanked) {
-              setVisibility('public');
-              return;
-            }
-            setVisibility(value as SessionVisibility);
-          }}
-          buttons={visibilityOptions.map((option) => ({
-            value: option.value,
-            label: option.label,
-            disabled: isRanked && option.value !== 'public',
-          }))}
-          style={styles.visibilityPicker}
-        />
-        {isRanked && (
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999" style={styles.helperText}>
-            Ranked sessions are always public.
-          </ThemedText>
-        )}
-      </View>
-
-      {/* Friend Picker */}
-      <View style={styles.field}>
-        <SyncedAtBadge
-          label="Invite Friends"
-          syncedAt={friendsSyncedAt}
-          isStale={friendsIsStale}
-          isRefreshing={isRefreshingFriends}
-          onRefresh={() => { void refreshFriends(); }}
-          disabled={isRefreshingFriends || isCreating || isLoadingFriends}
-        />
-        <TextInput
-          style={styles.searchInput}
-          value={friendSearch}
-          onChangeText={setFriendSearch}
-          placeholder="Search friends"
-          variant="outlined"
-        />
-        {isLoadingFriends ? (
-          <View style={styles.loadingFriendsContainer}>
-            <View style={styles.skeletonRow}>
-              <View style={styles.skeletonCard} />
-              <View style={styles.skeletonCard} />
-              <View style={styles.skeletonCard} />
-            </View>
-            <ActivityIndicator size="small" color="#007AFF" />
-          </View>
-        ) : null}
-
-        {!isLoadingFriends && robloxNotConnected ? (
-          <View style={styles.inlineInfoBox}>
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-              Connect Roblox to invite friends directly.
+        <View style={styles.section}>
+          <GameSelectorCard
+            favorites={favorites}
+            selectedFavorite={selectedFavorite}
+            robloxUrl={robloxUrl}
+            favoritesError={favoritesError}
+            isLoadingFavorites={isLoadingFavorites}
+            isCreating={isCreating}
+            onSelectFavorite={handleSelectFavorite}
+            onSetRobloxUrl={(value) => {
+              setSelectedFavorite(null);
+              setRobloxUrl(value);
+            }}
+            onForceRefreshFavorites={handleForceFavoritesRefresh}
+            onRetryFavorites={() => {
+              void refreshFavorites();
+            }}
+          />
+          {favoritesSyncedAt && (
+            <ThemedText type="bodySmall" lightColor={palette.textSecondary} darkColor={palette.textSecondary} style={styles.syncedCaption}>
+              {favoritesIsStale ? 'Game data may be stale.' : `Games synced ${new Date(favoritesSyncedAt).toLocaleTimeString()}`}
             </ThemedText>
-            <Button
-              title="Connect Roblox"
-              variant="text"
-              onPress={() => router.push('/roblox')}
-            />
-          </View>
-        ) : null}
+          )}
+        </View>
 
-        {!isLoadingFriends && !robloxNotConnected && friendsError ? (
-          <View style={styles.inlineInfoBox}>
-            <ThemedText type="bodySmall" lightColor="#c62828" darkColor="#ff8a80">
-              {friendsError}
-            </ThemedText>
-            <Button
-              title="Retry"
-              variant="text"
-              onPress={() => { void reloadFriends(); }}
-            />
-          </View>
-        ) : null}
+        <View style={styles.section}>
+          <SessionTitleField
+            title={title}
+            onChangeTitle={setTitle}
+            disabled={isCreating}
+            onFocus={() => {
+              scrollViewRef.current?.scrollTo({ y: 180, animated: true });
+            }}
+          />
+        </View>
 
-        {!isLoadingFriends && !robloxNotConnected && !friendsError && friends.length === 0 ? (
-          <View style={styles.emptyFriendsContainer}>
-            <ThemedText type="bodyMedium" lightColor="#444" darkColor="#bbb">
-              No friends yet.
-            </ThemedText>
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-              Add friends from the Friends tab.
-            </ThemedText>
-          </View>
-        ) : null}
+        <View style={styles.section}>
+          <VisibilitySelector
+            visibility={visibility}
+            isRanked={isRanked}
+            isCreating={isCreating}
+            onChangeVisibility={(value) => {
+              if (isRanked) {
+                setVisibility('public');
+                return;
+              }
+              setVisibility(value);
+            }}
+          />
+        </View>
 
-        {!isLoadingFriends && !robloxNotConnected && !friendsError && friends.length > 0 && (
-          <FriendPickerTwoRowHorizontal
+        <View style={styles.section}>
+          <InviteFriendsSection
             friends={filteredFriends}
-            selectedIds={selectedFriendIds}
-            onToggle={(friendId) => {
+            selectedFriendIds={selectedFriendIds}
+            onToggleFriend={(friendId) => {
               setSelectedFriendIds((current) => toggleFriendSelection(current, friendId));
             }}
-            disabled={isCreating || isRefreshingFriends}
+            friendSearch={friendSearch}
+            onChangeFriendSearch={setFriendSearch}
+            isLoadingFriends={isLoadingFriends}
+            isRefreshingFriends={isRefreshingFriends}
+            friendsError={friendsError}
+            friendsSyncedAt={friendsSyncedAt}
+            robloxNotConnected={robloxNotConnected}
+            isCreating={isCreating}
+            onRefreshFriends={() => {
+              void refreshFriends();
+            }}
+            onReloadFriends={() => {
+              void reloadFriends();
+            }}
+            onConnectRoblox={() => {
+              router.push('/roblox');
+            }}
           />
-        )}
-      </View>
+        </View>
 
-      {/* Advanced Options */}
-      <View style={styles.field}>
-        <Pressable
-          style={[
-            styles.advancedHeader,
-            { borderColor: colorScheme === 'dark' ? '#2d2d2d' : '#d9d9d9' },
-          ]}
-          onPress={() => {
-            setShowAdvancedOptions((current) => !current);
-          }}
-        >
-          <View style={styles.advancedHeaderTextWrap}>
-            <ThemedText type="titleMedium">Advanced options</ThemedText>
-            <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-              Ranked and schedule settings
+        <View style={styles.section}>
+          <AdvancedOptionsSection
+            isRanked={isRanked}
+            scheduledStart={scheduledStart}
+            isCreating={isCreating}
+            onChangeRanked={(value) => {
+              setIsRanked(value);
+              if (value) {
+                setVisibility('public');
+              }
+            }}
+            onChangeScheduledStart={setScheduledStart}
+          />
+        </View>
+
+        {error && (
+          <View style={[styles.errorContainer, { backgroundColor: palette.dangerBg }]}> 
+            <ThemedText type="bodyMedium" lightColor={palette.dangerText} darkColor={palette.dangerText}>
+              {error}
             </ThemedText>
           </View>
-          <MaterialIcons
-            name={showAdvancedOptions ? 'expand-less' : 'expand-more'}
-            size={20}
-            color={colorScheme === 'dark' ? '#bbb' : '#555'}
-          />
-        </Pressable>
-
-        {showAdvancedOptions && (
-          <View style={styles.advancedBody}>
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleTextWrap}>
-                <ThemedText type="titleMedium" style={styles.label}>
-                  Ranked session
-                </ThemedText>
-                <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-                  Ranked session (affects rating)
-                </ThemedText>
-                <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-                  Only applies to eligible sessions.
-                </ThemedText>
-              </View>
-              <Switch
-                value={isRanked}
-                onValueChange={(value) => {
-                  setIsRanked(value);
-                  if (value) {
-                    setVisibility('public');
-                  }
-                }}
-                disabled={isCreating}
-              />
-            </View>
-
-            <View style={styles.advancedInnerSection}>
-              <ThemedText type="titleMedium" style={styles.label}>
-                Scheduled Start (optional)
-              </ThemedText>
-              <Pressable
-                style={[
-                  styles.scheduleRow,
-                  { borderColor: colorScheme === 'dark' ? '#333' : '#d9d9d9' },
-                  { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fb' },
-                ]}
-                onPress={() => {
-                  if (Platform.OS === 'android') {
-                    openAndroidDateTimePicker();
-                  } else {
-                    setShowDatePicker(true);
-                  }
-                }}
-                disabled={isCreating}
-              >
-                <View style={styles.scheduleLeft}>
-                  <MaterialIcons name="calendar-today" size={18} color={colorScheme === 'dark' ? '#bbb' : '#666'} />
-                  <ThemedText type="bodyLarge" lightColor="#222" darkColor="#eee" style={styles.scheduleValue}>
-                    {scheduledStart ? scheduledStart.toLocaleString() : 'Set start time'}
-                  </ThemedText>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color={colorScheme === 'dark' ? '#bbb' : '#666'} />
-              </Pressable>
-              {scheduledStart && (
-                <Button
-                  title="Clear"
-                  variant="text"
-                  style={styles.clearButton}
-                  textColor="#007AFF"
-                  onPress={() => setScheduledStart(null)}
-                />
-              )}
-            </View>
-          </View>
         )}
-      </View>
 
-      {showDatePicker && (
-        <DateTimePicker
-          value={scheduledStart || new Date()}
-          mode="datetime"
-          display="default"
-          onChange={handleDateChange}
+        <CreateSessionCTA
+          hasGameSelected={hasGameSelected}
+          isCreating={isCreating}
+          onPress={handleCreate}
         />
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
-            {error}
-          </ThemedText>
-        </View>
-      )}
-
-      {/* Submit Button */}
-      <Button
-        title={isCreating ? 'Creating Session...' : 'CREATE SESSION'}
-        variant="filled"
-        buttonColor="#007AFF"
-        enableHaptics
-        style={[styles.submitButton, (isCreating || !robloxUrl || !title) && styles.submitButtonDisabled]}
-        contentStyle={styles.submitButtonContent}
-        labelStyle={styles.submitButtonLabel}
-        onPress={handleCreate}
-        loading={isCreating}
-        disabled={isCreating || !robloxUrl || !title}
-      />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -660,155 +372,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
-    paddingBottom: 56,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
   },
-  field: {
-    marginBottom: 20,
+  section: {
+    marginBottom: spacing.lg,
   },
-  label: {
-    marginBottom: 8,
-  },
-  helperText: {
-    marginTop: 4,
-  },
-  modeSwitchButton: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  resolveHint: {
-    marginTop: 6,
-  },
-  input: {
-    borderRadius: 8,
-  },
-  dropdownButton: {
-    borderRadius: 8,
-  },
-  favoritesPickerMenu: {
-    flex: 1,
-  },
-  dropdownButtonContent: {
-    minHeight: 52,
-    justifyContent: 'center',
-  },
-  dropdownButtonLabel: {
-    textAlign: 'left',
-    width: '100%',
-  },
-  visibilityPicker: {
-    marginTop: 4,
-  },
-  emptyFriendsContainer: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    gap: 4,
-  },
-  searchInput: {
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  advancedHeader: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  advancedHeaderTextWrap: {
-    flex: 1,
-  },
-  advancedBody: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 12,
-    gap: 10,
-  },
-  advancedInnerSection: {
-    marginTop: 4,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  toggleTextWrap: {
-    flex: 1,
-  },
-  loadingFriendsContainer: {
-    minHeight: 90,
-    justifyContent: 'center',
-    gap: 10,
-  },
-  skeletonRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  skeletonCard: {
-    width: 100,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: '#ececec',
-  },
-  inlineInfoBox: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 10,
-    gap: 4,
-  },
-  scheduleRow: {
-    borderWidth: 1,
-    borderRadius: 10,
-    minHeight: 52,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  scheduleLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 8,
-  },
-  scheduleValue: {
-    flex: 1,
-  },
-  clearButton: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
+  syncedCaption: {
+    marginTop: spacing.sm,
+    textAlign: 'right',
+    fontSize: 12,
   },
   errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  submitButton: {
     borderRadius: 12,
-    marginTop: 10,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-    shadowOpacity: 0,
-  },
-  submitButtonContent: {
-    minHeight: 60,
-  },
-  submitButtonLabel: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '600',
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
 });

@@ -12,6 +12,7 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -51,10 +52,17 @@ function FriendChip({
 }) {
   const pressScale = useSharedValue(1);
   const selectedProgress = useSharedValue(selected ? 1 : 0);
+  const avatarScale = useSharedValue(1);
 
   useEffect(() => {
     selectedProgress.value = withTiming(selected ? 1 : 0, { duration: 170 });
-  }, [selected, selectedProgress]);
+    if (selected) {
+      avatarScale.value = withSequence(
+        withTiming(1.08, { duration: 60 }),
+        withTiming(1, { duration: 60 })
+      );
+    }
+  }, [avatarScale, selected, selectedProgress]);
 
   const cardAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pressScale.value }],
@@ -62,18 +70,27 @@ function FriendChip({
     borderColor: interpolateColor(
       selectedProgress.value,
       [0, 1],
-      [isDark ? '#2f2f2f' : '#ddd', '#007AFF']
+      [isDark ? '#2f2f2f' : '#ddd', '#4F9DFF']
     ),
     backgroundColor: interpolateColor(
       selectedProgress.value,
       [0, 1],
-      [isDark ? '#171717' : '#f8f8f8', isDark ? '#10253f' : '#EAF3FF']
+      [isDark ? '#171717' : '#f8f8f8', isDark ? '#142c47' : '#EAF3FF']
     ),
+    shadowColor: '#4F9DFF',
+    shadowOpacity: selectedProgress.value * (isDark ? 0.38 : 0.2),
+    shadowRadius: 6 + selectedProgress.value * 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 + selectedProgress.value * 4,
   }));
 
   const checkmarkAnimatedStyle = useAnimatedStyle(() => ({
     opacity: selectedProgress.value,
     transform: [{ scale: 0.85 + selectedProgress.value * 0.15 }],
+  }));
+
+  const avatarAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: avatarScale.value }],
   }));
 
   const presenceType = friend.presence?.userPresenceType;
@@ -104,7 +121,7 @@ function FriendChip({
       accessibilityState={{ selected, disabled }}
       testID={`friend-chip-${friend.id}`}
     >
-      <View style={styles.avatarWrap}>
+      <Animated.View style={[styles.avatarWrap, avatarAnimatedStyle]}>
         {friend.avatarUrl ? (
           <Image source={{ uri: friend.avatarUrl }} style={styles.avatar} />
         ) : (
@@ -113,7 +130,7 @@ function FriendChip({
         {presenceDotColor != null && (
           <View style={[styles.presenceDot, { backgroundColor: presenceDotColor }]} />
         )}
-      </View>
+      </Animated.View>
       <AnimatedCheckmark style={[styles.checkmarkBadge, checkmarkAnimatedStyle]}>
         <MaterialIcons name="check" size={12} color="#fff" />
       </AnimatedCheckmark>
@@ -144,9 +161,11 @@ export function FriendPickerTwoRowHorizontal({
 
   return (
     <View>
-      <Text style={[styles.countLabel, { color: isDark ? '#a5a5a5' : '#666' }]}>
-        Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}
-      </Text>
+      {selectedIds.length > 0 && (
+        <Text style={[styles.countLabel, { color: isDark ? '#a5a5a5' : '#666' }]}>
+          Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}
+        </Text>
+      )}
 
       <ScrollView
         horizontal
@@ -177,13 +196,13 @@ const styles = StyleSheet.create({
   countLabel: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 10,
+    marginBottom: 16,
   },
   scrollContent: {
     paddingBottom: 4,
   },
   column: {
-    marginRight: 10,
+    marginRight: 16,
     justifyContent: 'space-between',
   },
   card: {
@@ -194,7 +213,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 16,
     position: 'relative',
   },
   cardDisabled: {
@@ -203,7 +222,7 @@ const styles = StyleSheet.create({
   cardSpacer: {
     width: 120,
     minHeight: 70,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   avatarWrap: {
     position: 'relative',

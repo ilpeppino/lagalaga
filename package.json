@@ -11,6 +11,7 @@
     "android": "expo run:android",
     "android:dev": "APP_VARIANT=dev expo run:android",
     "android:prod": "APP_VARIANT=prod expo run:android",
+    "release:local": "bash ./local-release-menu.sh",
     "ios": "expo run:ios",
     "ios:dev": "APP_VARIANT=dev expo run:ios",
     "ios:prod": "APP_VARIANT=prod expo run:ios",

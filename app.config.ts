@@ -29,7 +29,7 @@ const config: ExpoConfig = {
     backgroundColor: "#1A2A6C",
   },
   ios: {
-    buildNumber: "10",
+    buildNumber: "11",
     supportsTablet: true,
     bundleIdentifier: iosBundleIdentifier,
     associatedDomains: ["applinks:ilpeppino.github.io"],

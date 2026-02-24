@@ -1,5 +1,15 @@
 # iOS Release guide
 
+## Repo
+
+- Set ios.buildNumber to a newer version in app.config.ts and  app.json
+
+- Run:
+
+```
+npx expo prebuild -p ios
+```
+
 ## xCode
 
 - Menu -> Product -> Clean build folder

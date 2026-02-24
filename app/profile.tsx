@@ -3,21 +3,15 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  TouchableOpacity,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
+import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
+import { SettingsRow } from '@/src/components/settings/SettingsRow';
+import { SettingsSection } from '@/src/components/settings/SettingsSection';
+import { settingsTypography, spacing } from '@/src/components/settings/tokens';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
@@ -29,28 +23,25 @@ export default function ProfileScreen() {
     sessionsJoined: number;
     streakDays: number;
   } | null>(null);
-  const [achievements, setAchievements] = useState<Array<{ code: string; unlockedAt: string }>>([]);
+  const [achievements, setAchievements] = useState<{ code: string; unlockedAt: string }[]>([]);
 
   const openSafetyReport = () => {
     router.push('/safety-report');
-  };
-
-  const openOverflow = () => {
-    Alert.alert('Profile options', 'Choose an action', [
-      { text: 'Safety & Report', onPress: openSafetyReport },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   };
 
   useEffect(() => {
     async function loadStats() {
       try {
         const data = await sessionsAPIStoreV2.getUserStats();
-        setStats(data.stats ? {
-          sessionsHosted: data.stats.sessionsHosted,
-          sessionsJoined: data.stats.sessionsJoined,
-          streakDays: data.stats.streakDays,
-        } : null);
+        setStats(
+          data.stats
+            ? {
+                sessionsHosted: data.stats.sessionsHosted,
+                sessionsJoined: data.stats.sessionsJoined,
+                streakDays: data.stats.streakDays,
+              }
+            : null
+        );
         setAchievements(data.achievements);
       } catch (error) {
         handleError(error, { fallbackMessage: 'Failed to load user stats' });
@@ -58,22 +49,17 @@ export default function ProfileScreen() {
         setIsLoading(false);
       }
     }
-    loadStats();
+
+    void loadStats();
   }, [handleError]);
+
+  const backgroundColor = colorScheme === 'dark' ? '#050507' : '#fff';
+  const secondaryTextColor = colorScheme === 'dark' ? '#94949d' : '#6e6e73';
 
   if (isLoading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-        <Stack.Screen
-          options={{
-            title: 'Profile',
-            headerRight: () => (
-              <TouchableOpacity onPress={openOverflow} style={styles.headerMenuButton}>
-                <IconSymbol name="ellipsis.circle" size={22} color="#007AFF" />
-              </TouchableOpacity>
-            ),
-          }}
-        />
+      <View style={[styles.centered, { backgroundColor }]}>
+        <Stack.Screen options={{ title: 'Profile', headerShown: true }} />
         <LagaLoadingSpinner size={56} label="Loading profile..." />
       </View>
     );
@@ -81,85 +67,63 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}
+      style={[styles.container, { backgroundColor }]}
       contentContainerStyle={styles.content}
     >
-      <Stack.Screen
-        options={{
-          title: 'Profile',
-          headerRight: () => (
-            <TouchableOpacity onPress={openOverflow} style={styles.headerMenuButton}>
-              <IconSymbol name="ellipsis.circle" size={22} color="#007AFF" />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-      <ThemedView style={styles.section}>
-        <ThemedText type="titleLarge" style={styles.sectionTitle}>
-          Statistics
-        </ThemedText>
-        <View style={styles.statsGrid}>
-          <View style={[
-            styles.statCard,
-            { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-          ]}>
-            <ThemedText type="headlineMedium">{stats?.sessionsHosted ?? 0}</ThemedText>
-            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
-              Sessions Hosted
-            </ThemedText>
-          </View>
-          <View style={[
-            styles.statCard,
-            { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-          ]}>
-            <ThemedText type="headlineMedium">{stats?.sessionsJoined ?? 0}</ThemedText>
-            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
-              Sessions Joined
-            </ThemedText>
-          </View>
-          <View style={[
-            styles.statCard,
-            { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-          ]}>
-            <ThemedText type="headlineMedium">{stats?.streakDays ?? 0}</ThemedText>
-            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
-              Day Streak
-            </ThemedText>
-          </View>
-        </View>
-      </ThemedView>
+      <Stack.Screen options={{ title: 'Profile', headerShown: true }} />
 
-      <ThemedView style={styles.section}>
-        <ThemedText type="titleLarge" style={styles.sectionTitle}>
-          Achievements
-        </ThemedText>
-        {achievements.length === 0 ? (
-          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999">
-            No achievements unlocked yet. Create or join a session to get started!
-          </ThemedText>
-        ) : (
-          <View style={styles.achievementsList}>
-            {achievements.map((achievement) => (
-              <View
-                key={achievement.code}
-                style={[
-                  styles.achievementBadge,
-                  { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa' }
-                ]}
-              >
-                <ThemedText type="titleMedium">
-                  {achievement.code === 'FIRST_HOST' ? '🎯 First Host' :
-                   achievement.code === 'FIRST_JOIN' ? '🎉 First Join' :
-                   achievement.code}
-                </ThemedText>
-                <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">
-                  Unlocked {new Date(achievement.unlockedAt).toLocaleDateString()}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-        )}
-      </ThemedView>
+      <SettingsSection title="Statistics" elevated>
+        <SettingsRow
+          label="Sessions Hosted"
+          hideChevron
+          rightContent={<Text style={[styles.rowValue, { color: secondaryTextColor }]}>{stats?.sessionsHosted ?? 0}</Text>}
+        />
+        <SettingsRow
+          label="Sessions Joined"
+          hideChevron
+          rightContent={<Text style={[styles.rowValue, { color: secondaryTextColor }]}>{stats?.sessionsJoined ?? 0}</Text>}
+        />
+        <SettingsRow
+          label="Day Streak"
+          hideChevron
+          rightContent={<Text style={[styles.rowValue, { color: secondaryTextColor }]}>{stats?.streakDays ?? 0}</Text>}
+        />
+      </SettingsSection>
+
+      <View style={styles.sectionGap}>
+        <SettingsSection title="Achievements" elevated>
+          {achievements.length === 0 ? (
+            <Text style={[styles.emptyText, { color: secondaryTextColor }]}>
+              No achievements unlocked yet.
+            </Text>
+          ) : (
+            achievements.map((achievement) => (
+              <SettingsRow
+                key={`${achievement.code}-${achievement.unlockedAt}`}
+                label={
+                  achievement.code === 'FIRST_HOST'
+                    ? 'First Host'
+                    : achievement.code === 'FIRST_JOIN'
+                      ? 'First Join'
+                      : achievement.code
+                }
+                hideChevron
+                rightContent={
+                  <Text style={[styles.achievementDate, { color: secondaryTextColor }]}>
+                    {new Date(achievement.unlockedAt).toLocaleDateString()}
+                  </Text>
+                }
+              />
+            ))
+          )}
+        </SettingsSection>
+      </View>
+
+      <View style={styles.sectionGap}>
+        <SettingsSection title="Account">
+          <SettingsRow label="Safety & Report" onPress={openSafetyReport} />
+        </SettingsSection>
+      </View>
     </ScrollView>
   );
 }
@@ -169,42 +133,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 16,
+  sectionGap: {
+    marginTop: spacing.lg,
   },
-  headerMenuButton: {
-    paddingHorizontal: 4,
+  rowValue: {
+    ...settingsTypography.secondaryText,
   },
-  section: {
-    marginBottom: 24,
+  achievementDate: {
+    ...settingsTypography.disclaimer,
   },
-  sectionTitle: {
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: 100,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  achievementsList: {
-    gap: 12,
-  },
-  achievementBadge: {
-    padding: 16,
-    borderRadius: 12,
+  emptyText: {
+    ...settingsTypography.secondaryText,
   },
 });

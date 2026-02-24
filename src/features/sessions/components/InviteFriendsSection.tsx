@@ -86,12 +86,6 @@ export function InviteFriendsSection({
         </Pressable>
       </View>
 
-      {selectedFriendIds.length > 0 && (
-        <ThemedText type="bodySmall" lightColor={palette.textSecondary} darkColor={palette.textSecondary} style={styles.selectedCount}>
-          Inviting {selectedFriendIds.length} friend{selectedFriendIds.length === 1 ? '' : 's'}
-        </ThemedText>
-      )}
-
       {isLoadingFriends ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="small" color={palette.accent} />
@@ -179,10 +173,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  selectedCount: {
-    marginBottom: spacing.md,
-    fontSize: 12,
   },
   loadingWrap: {
     minHeight: 70,

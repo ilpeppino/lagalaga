@@ -161,11 +161,13 @@ export function FriendPickerTwoRowHorizontal({
 
   return (
     <View>
-      {selectedIds.length > 0 && (
-        <Text style={[styles.countLabel, { color: isDark ? '#a5a5a5' : '#666' }]}>
-          Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}
-        </Text>
-      )}
+      <View style={styles.countRow}>
+        {selectedIds.length > 0 && (
+          <Text style={[styles.countLabel, { color: isDark ? '#a5a5a5' : '#666' }]}>
+            Inviting {selectedIds.length} friend{selectedIds.length === 1 ? '' : 's'}
+          </Text>
+        )}
+      </View>
 
       <ScrollView
         horizontal
@@ -193,10 +195,14 @@ export function FriendPickerTwoRowHorizontal({
 }
 
 const styles = StyleSheet.create({
+  countRow: {
+    minHeight: 20,
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
   countLabel: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 16,
   },
   scrollContent: {
     paddingBottom: 4,

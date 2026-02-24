@@ -65,6 +65,8 @@ export default function SafetyReportScreen() {
   const backgroundColor = Colors[colorScheme ?? 'light'].background;
   const textColor = Colors[colorScheme ?? 'light'].text;
   const tintColor = Colors[colorScheme ?? 'light'].tint;
+  const primaryButtonColor = Colors.light.tint;
+  const primaryButtonTextColor = '#ffffff';
   const cardColor = colorScheme === 'dark' ? '#1c1c1e' : '#f2f2f7';
   const inputBg = colorScheme === 'dark' ? '#101012' : '#ffffff';
   const borderColor = colorScheme === 'dark' ? '#313136' : '#d5d7de';
@@ -142,8 +144,8 @@ export default function SafetyReportScreen() {
             <Button
               title="Continue"
               variant="filled"
-              buttonColor={tintColor}
-              textColor="#fff"
+              buttonColor={primaryButtonColor}
+              textColor={primaryButtonTextColor}
               style={styles.primaryActionButton}
               contentStyle={styles.primaryActionButtonContent}
               labelStyle={styles.primaryActionButtonLabel}
@@ -234,8 +236,8 @@ export default function SafetyReportScreen() {
               <Button
                 title="Submit report"
                 variant="filled"
-                buttonColor={tintColor}
-                textColor="#fff"
+                buttonColor={primaryButtonColor}
+                textColor={primaryButtonTextColor}
                 style={styles.primaryButton}
                 contentStyle={styles.primaryActionButtonContent}
                 labelStyle={styles.primaryActionButtonLabel}
@@ -260,8 +262,8 @@ export default function SafetyReportScreen() {
             <Button
               title="Done"
               variant="filled"
-              buttonColor={tintColor}
-              textColor="#fff"
+              buttonColor={primaryButtonColor}
+              textColor={primaryButtonTextColor}
               style={styles.primaryActionButton}
               contentStyle={styles.primaryActionButtonContent}
               labelStyle={styles.primaryActionButtonLabel}

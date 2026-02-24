@@ -158,6 +158,7 @@ export default function SessionsListScreenV2() {
   const sessionsRef = useRef<Session[]>([]);
   const plannedSessionsRef = useRef<Session[]>([]);
   const deleteBackupsRef = useRef<Record<string, { active: Session | null; planned: Session | null }>>({});
+  const loadAllSessionsInFlightRef = useRef<Promise<void> | null>(null);
 
   const LIMIT = 20;
 
@@ -176,79 +177,94 @@ export default function SessionsListScreenV2() {
   }, []);
 
   const loadAllSessions = useCallback(async (refresh = false) => {
-    try {
-      if (refresh) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-      }
-      setLoadError(null);
+    if (loadAllSessionsInFlightRef.current) {
+      return loadAllSessionsInFlightRef.current;
+    }
 
-      const statusesToFetch: ('active' | 'scheduled')[] =
-        sessionFilter === 'live'
-          ? ['active']
-          : sessionFilter === 'starting_soon'
-            ? ['scheduled']
-            : ['active', 'scheduled'];
+    const loadPromise = (async () => {
+      try {
+        if (refresh) {
+          setIsRefreshing(true);
+        } else {
+          setIsLoading(true);
+        }
+        setLoadError(null);
 
-      const [sessionResults, plannedResult] = await Promise.all([
-        Promise.allSettled(
-          statusesToFetch.map((status) =>
-            sessionsAPIStoreV2.listSessions({
-              status,
+        const statusesToFetch: ('active' | 'scheduled')[] =
+          sessionFilter === 'live'
+            ? ['active']
+            : sessionFilter === 'starting_soon'
+              ? ['scheduled']
+              : ['active', 'scheduled'];
+
+        const [sessionResults, plannedResult] = await Promise.all([
+          Promise.allSettled(
+            statusesToFetch.map((status) =>
+              sessionsAPIStoreV2.listSessions({
+                status,
+                limit: LIMIT,
+                offset: 0,
+              })
+            )
+          ),
+          Promise.allSettled([
+            sessionsAPIStoreV2.listMyPlannedSessions({
               limit: LIMIT,
               offset: 0,
-            })
-          )
-        ),
-        Promise.allSettled([
-          sessionsAPIStoreV2.listMyPlannedSessions({
-            limit: LIMIT,
-            offset: 0,
-          }),
-        ]),
-      ]);
+            }),
+          ]),
+        ]);
 
-      const fetchedSessions = new Map<string, Session>();
-      sessionResults.forEach((result, index) => {
-        const status = statusesToFetch[index];
-        if (result.status === 'fulfilled') {
-          result.value.sessions.forEach((session) => fetchedSessions.set(session.id, session));
+        const fetchedSessions = new Map<string, Session>();
+        sessionResults.forEach((result, index) => {
+          const status = statusesToFetch[index];
+          if (result.status === 'fulfilled') {
+            result.value.sessions.forEach((session) => fetchedSessions.set(session.id, session));
+          } else {
+            logger.error(`Failed to load ${status} sessions`, {
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            });
+          }
+        });
+
+        if (fetchedSessions.size > 0) {
+          setSessions(Array.from(fetchedSessions.values()).sort(sortSessionsForList));
+        } else if (sessionResults.every((result) => result.status === 'rejected')) {
+          setSessions([]);
+        }
+
+        const plannedSessionsResult = plannedResult[0];
+        if (plannedSessionsResult.status === 'fulfilled') {
+          setPlannedSessions(plannedSessionsResult.value.sessions);
         } else {
-          logger.error(`Failed to load ${status} sessions`, {
-            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          logger.error('Failed to load planned sessions', {
+            error: plannedSessionsResult.reason instanceof Error
+              ? plannedSessionsResult.reason.message
+              : String(plannedSessionsResult.reason),
           });
         }
-      });
 
-      if (fetchedSessions.size > 0) {
-        setSessions(Array.from(fetchedSessions.values()).sort(sortSessionsForList));
-      } else if (sessionResults.every((result) => result.status === 'rejected')) {
-        setSessions([]);
-      }
-
-      const plannedSessionsResult = plannedResult[0];
-      if (plannedSessionsResult.status === 'fulfilled') {
-        setPlannedSessions(plannedSessionsResult.value.sessions);
-      } else {
-        logger.error('Failed to load planned sessions', {
-          error: plannedSessionsResult.reason instanceof Error
-            ? plannedSessionsResult.reason.message
-            : String(plannedSessionsResult.reason),
+        if (sessionResults.every((result) => result.status === 'rejected') && plannedSessionsResult.status === 'rejected') {
+          setLoadError('Failed to load sessions');
+        }
+      } catch (error) {
+        logger.error('Failed to load sessions list', {
+          error: error instanceof Error ? error.message : String(error),
         });
-      }
-
-      if (sessionResults.every((result) => result.status === 'rejected') && plannedSessionsResult.status === 'rejected') {
         setLoadError('Failed to load sessions');
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
-    } catch (error) {
-      logger.error('Failed to load sessions list', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      setLoadError('Failed to load sessions');
+    })();
+
+    loadAllSessionsInFlightRef.current = loadPromise;
+    try {
+      await loadPromise;
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (loadAllSessionsInFlightRef.current === loadPromise) {
+        loadAllSessionsInFlightRef.current = null;
+      }
     }
   }, [sessionFilter]); // LIMIT is a constant, no need in deps
 

@@ -114,6 +114,22 @@ export const envSchema = {
       type: 'number',
       default: 200,
     },
+    SESSION_REMINDER_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
+    SESSION_REMINDER_INTERVAL_MINUTES: {
+      type: 'number',
+      default: 1,
+    },
+    SESSION_REMINDER_LEAD_MINUTES: {
+      type: 'number',
+      default: 10,
+    },
+    SESSION_REMINDER_WINDOW_SECONDS: {
+      type: 'number',
+      default: 60,
+    },
     CACHE_CLEANUP_ENABLED: {
       type: 'boolean',
       default: true,
@@ -171,6 +187,10 @@ declare module 'fastify' {
       SESSION_AUTO_COMPLETE_AFTER_HOURS: number;
       SESSION_COMPLETED_RETENTION_HOURS: number;
       SESSION_LIFECYCLE_BATCH_SIZE: number;
+      SESSION_REMINDER_ENABLED: boolean;
+      SESSION_REMINDER_INTERVAL_MINUTES: number;
+      SESSION_REMINDER_LEAD_MINUTES: number;
+      SESSION_REMINDER_WINDOW_SECONDS: number;
       CACHE_CLEANUP_ENABLED: boolean;
       CACHE_CLEANUP_INTERVAL_HOURS: number;
       SAFETY_ALERT_WEBHOOK_URL: string;

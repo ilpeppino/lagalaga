@@ -50,6 +50,21 @@ export type ReportCategory =
 
 export type ReportTargetType = 'USER' | 'SESSION' | 'GENERAL';
 
+export interface NotificationPrefsResponse {
+  sessionsRemindersEnabled: boolean;
+  friendRequestsEnabled: boolean;
+}
+
+export interface InAppNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
 function generateCorrelationId(): string {
   // Use crypto.randomUUID if available, otherwise fall back
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -495,6 +510,52 @@ class ApiClient {
       return this.request(`/api/friends/${friendshipId}`, {
         method: 'DELETE',
       });
+    },
+  };
+
+  notificationPrefs = {
+    get: async (): Promise<NotificationPrefsResponse> => {
+      const response = await this.request<{ success: boolean; data: NotificationPrefsResponse }>(
+        '/api/notification-prefs',
+        { method: 'GET' }
+      );
+      return response.data ?? (response as unknown as NotificationPrefsResponse);
+    },
+
+    patch: async (
+      patch: Partial<NotificationPrefsResponse>
+    ): Promise<NotificationPrefsResponse> => {
+      const response = await this.request<{ success: boolean; data: NotificationPrefsResponse }>(
+        '/api/notification-prefs',
+        {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        }
+      );
+      return response.data ?? (response as unknown as NotificationPrefsResponse);
+    },
+  };
+
+  notifications = {
+    list: async (params?: { limit?: number; cursor?: string }): Promise<{
+      notifications: InAppNotification[];
+      nextCursor: string | null;
+    }> => {
+      const query = new URLSearchParams();
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.cursor) query.set('cursor', params.cursor);
+      const queryString = query.toString();
+
+      const response = await this.request<{
+        success: boolean;
+        data: { notifications: InAppNotification[]; nextCursor: string | null };
+      }>(`/api/notifications${queryString ? `?${queryString}` : ''}`, { method: 'GET' });
+
+      return response.data ?? (response as any);
+    },
+
+    markRead: async (id: string): Promise<void> => {
+      await this.request(`/api/notifications/${id}/read`, { method: 'POST' });
     },
   };
 }

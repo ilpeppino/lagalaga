@@ -21,10 +21,12 @@ import { leaderboardRoutes } from './routes/leaderboard.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
 import { reportsRoutes } from './routes/reports.routes.js';
 import { safetyEscalationWebhookRoutes } from './routes/safety-escalation-webhook.routes.js';
+import { notificationsRoutes } from './routes/notifications.routes.js';
 import { isCompetitiveDepthEnabled } from './config/featureFlags.js';
 import { SeasonService } from './services/seasonService.js';
 import { AccountDeletionService } from './services/account-deletion.service.js';
 import { SessionLifecycleService } from './services/session-lifecycle.service.js';
+import { SessionReminderService } from './services/session-reminder.service.js';
 import { CacheCleanupService } from './services/cache-cleanup.service.js';
 import { monitoring } from './lib/monitoring.js';
 import { initializeBackendSentry, SentryMonitoringProvider } from './lib/sentryMonitoringProvider.js';
@@ -88,6 +90,7 @@ export async function buildServer() {
   await fastify.register(leaderboardRoutes);
   await fastify.register(accountRoutes, { prefix: '/v1/account' });
   await fastify.register(reportsRoutes);
+  await fastify.register(notificationsRoutes);
   await fastify.register(safetyEscalationWebhookRoutes);
 
   if (isCompetitiveDepthEnabled(fastify)) {
@@ -172,6 +175,37 @@ export async function buildServer() {
 
     fastify.addHook('onClose', async () => {
       clearInterval(lifecycleTimer);
+    });
+  }
+
+  if (fastify.config.SESSION_REMINDER_ENABLED && fastify.config.NODE_ENV !== 'test') {
+    const reminderService = new SessionReminderService(undefined, {
+      leadMinutes: fastify.config.SESSION_REMINDER_LEAD_MINUTES,
+      windowSeconds: fastify.config.SESSION_REMINDER_WINDOW_SECONDS,
+    });
+    const intervalMs = Math.max(1, fastify.config.SESSION_REMINDER_INTERVAL_MINUTES) * 60 * 1000;
+
+    const runReminders = async () => {
+      try {
+        const result = await reminderService.processReminders();
+        if (result.notificationsQueued > 0) {
+          fastify.log.info(result, 'Session reminder cycle finished');
+        }
+      } catch (error) {
+        fastify.log.error(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Session reminder cycle failed'
+        );
+      }
+    };
+
+    const reminderTimer = setInterval(() => {
+      void runReminders();
+    }, intervalMs);
+    void runReminders();
+
+    fastify.addHook('onClose', async () => {
+      clearInterval(reminderTimer);
     });
   }
 

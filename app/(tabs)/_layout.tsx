@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity } from 'react-native';
 
 import * as Linking from "expo-linking";
 
@@ -38,11 +38,24 @@ export default function TabLayout() {
   const UserIconButton = () => (
     <TouchableOpacity
       onPress={() => router.push('/me')}
-      style={{ marginRight: 16 }}
+      style={{ marginRight: 12 }}
     >
       <IconSymbol
         name="person.circle.fill"
         size={28}
+        color={Colors[colorScheme ?? 'light'].tint}
+      />
+    </TouchableOpacity>
+  );
+
+  const NotificationsButton = () => (
+    <TouchableOpacity
+      onPress={() => router.push('/notifications')}
+      style={{ marginRight: 12 }}
+    >
+      <IconSymbol
+        name="bell.fill"
+        size={24}
         color={Colors[colorScheme ?? 'light'].tint}
       />
     </TouchableOpacity>
@@ -54,7 +67,12 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: true,
         tabBarButton: HapticTab,
-        headerRight: () => <UserIconButton />,
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <NotificationsButton />
+            <UserIconButton />
+          </View>
+        ),
       }}>
       <Tabs.Screen
         name="index"

@@ -4,6 +4,7 @@ import { metrics } from '../plugins/metrics.js';
 import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { RobloxFriendsService } from './roblox-friends.service.js';
+import { NotificationService } from './notification.service.js';
 
 type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
 
@@ -26,7 +27,13 @@ interface UserProfileRow {
 }
 
 export class FriendshipService {
-  private robloxFriendsService = new RobloxFriendsService();
+  private robloxFriendsService: RobloxFriendsService;
+  private notificationService: NotificationService;
+
+  constructor(deps: { robloxFriendsService?: RobloxFriendsService; notificationService?: NotificationService } = {}) {
+    this.robloxFriendsService = deps.robloxFriendsService ?? new RobloxFriendsService();
+    this.notificationService = deps.notificationService ?? new NotificationService();
+  }
 
   private canonicalPair(a: string, b: string): { userId: string; friendId: string } {
     return a < b ? { userId: a, friendId: b } : { userId: b, friendId: a };
@@ -272,6 +279,39 @@ export class FriendshipService {
 
     metrics.incrementCounter('friends_request_total', { action: 'send' });
     logger.info({ action: 'friend_request', userId, targetUserId, friendshipId: inserted.id }, 'Friend request created');
+
+    const { data: fromProfile } = await supabase
+      .from('app_users')
+      .select('roblox_display_name, roblox_username')
+      .eq('id', userId)
+      .maybeSingle<{ roblox_display_name: string | null; roblox_username: string | null }>();
+
+    const fromUserDisplayName = fromProfile?.roblox_display_name ?? fromProfile?.roblox_username ?? 'Someone';
+
+    void this.notificationService
+      .send({
+        type: 'FRIEND_REQUEST_RECEIVED',
+        recipients: [targetUserId],
+        title: 'New friend request',
+        body: `${fromUserDisplayName} sent you a friend request`,
+        data: {
+          route: '/(tabs)/friends',
+          tab: 'requests',
+          friendshipId: inserted.id,
+        },
+        idempotencyKey: `FRIEND_REQUEST_RECEIVED:${inserted.id}`,
+      })
+      .catch((error) => {
+        logger.warn(
+          {
+            userId,
+            targetUserId,
+            friendshipId: inserted.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Friend request notification send failed'
+        );
+      });
 
     return {
       friendshipId: inserted.id,

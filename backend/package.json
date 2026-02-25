@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "purge:accounts": "tsx src/jobs/accountDeletionPurge.ts",
     "lifecycle:sessions": "tsx src/jobs/sessionLifecycleMaintenance.ts",
+    "notify:session-reminders": "tsx src/jobs/sessionReminderNotifications.ts",
     "cleanup:caches": "tsx src/jobs/cacheCleanup.ts",
     "build": "tsc",
     "start": "node dist/backend/src/server.js",

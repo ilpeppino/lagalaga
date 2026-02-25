@@ -112,6 +112,7 @@ export default function RootLayout() {
                   options={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220 }}
                 />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications' }} />
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
                 <Stack.Screen name="settings" options={{ headerShown: true, title: 'Settings' }} />
                 <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />

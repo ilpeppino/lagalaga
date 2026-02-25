@@ -12,6 +12,8 @@ const metrics = {
   incrementCounter: jest.fn(),
 };
 
+const notificationSend = jest.fn(async () => undefined);
+
 jest.unstable_mockModule('../../config/supabase.js', () => ({
   getSupabase: () => activeSupabase,
 }));
@@ -24,6 +26,12 @@ jest.unstable_mockModule('../roblox-friends.service.js', () => ({
   RobloxFriendsService: class {
     enforceRefreshRateLimit = jest.fn();
     syncForUser = jest.fn();
+  },
+}));
+
+jest.unstable_mockModule('../notification.service.js', () => ({
+  NotificationService: class {
+    send = notificationSend;
   },
 }));
 
@@ -43,10 +51,15 @@ function buildSupabase(options: {
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => ({
-                data: targetExists ? { id: 'target-user' } : null,
-                error: null,
-              }),
+              maybeSingle: async () => {
+                if (targetExists) {
+                  return {
+                    data: { id: 'target-user', roblox_display_name: 'Requester Display', roblox_username: 'requester' },
+                    error: null,
+                  };
+                }
+                return { data: null, error: null };
+              },
             }),
           }),
         };
@@ -87,6 +100,7 @@ describe('FriendshipService.sendRequest', () => {
 
   beforeEach(() => {
     metrics.incrementCounter.mockClear();
+    notificationSend.mockClear();
     Object.values(logger).forEach((fn) => fn.mockClear());
     activeSupabase = buildSupabase();
     service = new FriendshipService();
@@ -111,5 +125,11 @@ describe('FriendshipService.sendRequest', () => {
 
     expect(result).toEqual({ friendshipId: 'friend-new', status: 'pending' });
     expect(metrics.incrementCounter).toHaveBeenCalledWith('friends_request_total', { action: 'send' });
+    const firstCallArg = (notificationSend as any).mock.calls[0][0];
+    expect(firstCallArg).toMatchObject({
+      type: 'FRIEND_REQUEST_RECEIVED',
+      recipients: ['target-user'],
+      idempotencyKey: 'FRIEND_REQUEST_RECEIVED:friend-new',
+    });
   });
 });

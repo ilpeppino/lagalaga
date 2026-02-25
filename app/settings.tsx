@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -12,6 +12,7 @@ import {
 } from '@/src/lib/sessionSettings';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { settingsTypography, spacing } from '@/src/components/settings/tokens';
+import { apiClient, type NotificationPrefsResponse } from '@/src/lib/api';
 
 const MIN_HOURS = 0;
 const MAX_HOURS = 48;
@@ -64,6 +65,10 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const { handleError } = useErrorHandler();
   const [settings, setSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefsResponse>({
+    sessionsRemindersEnabled: true,
+    friendRequestsEnabled: true,
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSettings = useCallback(async () => {
@@ -71,6 +76,8 @@ export default function SettingsScreen() {
       setIsLoading(true);
       const loaded = await loadSessionSettings();
       setSettings(loaded);
+      const prefs = await apiClient.notificationPrefs.get();
+      setNotificationPrefs(prefs);
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load settings' });
     } finally {
@@ -92,6 +99,21 @@ export default function SettingsScreen() {
   }, [handleError]);
 
   const sectionLabelColor = colorScheme === 'dark' ? '#9a9aa3' : '#6e6e73';
+
+  const updateNotificationPref = useCallback(
+    async (patch: Partial<NotificationPrefsResponse>) => {
+      const previous = notificationPrefs;
+      setNotificationPrefs((current) => ({ ...current, ...patch }));
+      try {
+        const next = await apiClient.notificationPrefs.patch(patch);
+        setNotificationPrefs(next);
+      } catch (error) {
+        setNotificationPrefs(previous);
+        handleError(error, { fallbackMessage: 'Failed to save notification settings' });
+      }
+    },
+    [handleError, notificationPrefs]
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
@@ -133,6 +155,34 @@ export default function SettingsScreen() {
               void updateSetting({ startingSoonWindowHours: nextValue });
             }}
           />
+
+          <ThemedText type="titleLarge" style={[styles.sectionTitle, { color: sectionLabelColor }]}>
+            Notifications
+          </ThemedText>
+
+          <View style={styles.toggleRow}>
+            <ThemedText type="bodyMedium" style={styles.settingLabel}>
+              Session reminders
+            </ThemedText>
+            <Switch
+              value={notificationPrefs.sessionsRemindersEnabled}
+              onValueChange={(value) => {
+                void updateNotificationPref({ sessionsRemindersEnabled: value });
+              }}
+            />
+          </View>
+
+          <View style={styles.toggleRow}>
+            <ThemedText type="bodyMedium" style={styles.settingLabel}>
+              Friend requests
+            </ThemedText>
+            <Switch
+              value={notificationPrefs.friendRequestsEnabled}
+              onValueChange={(value) => {
+                void updateNotificationPref({ friendRequestsEnabled: value });
+              }}
+            />
+          </View>
         </View>
       )}
     </View>
@@ -183,5 +233,11 @@ const styles = StyleSheet.create({
     ...settingsTypography.rowText,
     minWidth: 44,
     textAlign: 'center',
+  },
+  toggleRow: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });

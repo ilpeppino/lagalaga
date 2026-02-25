@@ -37,15 +37,28 @@ function handleNotificationResponse(
 ): void {
   const data = response.notification.request.content.data;
 
+  if (data?.route && typeof data.route === 'string') {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key === 'route' || value == null) continue;
+      params[key] = String(value);
+    }
+
+    logger.info('Navigating from notification route payload', { route: data.route });
+    router.push({
+      pathname: data.route as any,
+      params,
+    } as any);
+    return;
+  }
+
   if (data?.type === 'session_invite' && data?.sessionId) {
     const sessionId = String(data.sessionId);
-    logger.info('Navigating to invite screen from notification', { sessionId });
-    router.push(
-      {
-        pathname: '/invites/[sessionId]',
-        params: { sessionId },
-      } as any
-    );
+    logger.info('Navigating to invite screen from legacy notification payload', { sessionId });
+    router.push({
+      pathname: '/invites/[sessionId]',
+      params: { sessionId },
+    } as any);
   }
 }
 

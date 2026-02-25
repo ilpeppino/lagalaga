@@ -1,6 +1,5 @@
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
-import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { logger } from '@/src/lib/logger';
@@ -86,19 +85,6 @@ function extractProjectId(): string | null {
 }
 
 async function getDeviceId(): Promise<string | undefined> {
-  try {
-    if (Platform.OS === 'android') {
-      return Application.getAndroidId();
-    }
-    if (Platform.OS === 'ios') {
-      return (await Application.getIosIdForVendorAsync()) ?? undefined;
-    }
-  } catch (err) {
-    logger.warn('Failed to resolve stable device ID, falling back', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
   return Device.osBuildId ?? Device.modelId ?? undefined;
 }
 

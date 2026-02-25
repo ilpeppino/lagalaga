@@ -1,4 +1,4 @@
-import { ErrorCodes, type ErrorSeverity } from '../../../shared/errors/codes.js';
+import { ErrorCodes, type ErrorSeverity } from '../shared/errorCodes.js';
 
 export { ErrorCodes };
 

@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import type { Breadcrumb, MonitoringProvider, MonitoringUser } from '../../../shared/monitoring/types.js';
+import type { Breadcrumb, MonitoringProvider, MonitoringUser } from '../types/monitoring.js';
 import { sanitize } from './sanitizer.js';
 
 export class SentryMonitoringProvider implements MonitoringProvider {

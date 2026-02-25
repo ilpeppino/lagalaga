@@ -17,6 +17,7 @@ export const ErrorCodes = {
     SESSION_ALREADY_JOINED: 'SESSION_003',
     SESSION_NOT_ACTIVE: 'SESSION_004',
     SESSION_CREATE_FAILED: 'SESSION_005',
+    SESSION_ACCESS_DENIED: 'SESSION_006',
     // Validation errors
     VALIDATION_ERROR: 'VAL_001',
     VALIDATION_MISSING_FIELDS: 'VAL_002',
@@ -37,6 +38,17 @@ export const ErrorCodes = {
     INTERNAL_EXTERNAL_SERVICE: 'INT_003',
     // Conflict
     CONFLICT: 'CONFLICT_001',
+    // Friend errors
+    FRIEND_SELF_REQUEST: 'FRIEND_001',
+    FRIEND_ALREADY_EXISTS: 'FRIEND_002',
+    FRIEND_REQUEST_EXISTS: 'FRIEND_003',
+    FRIEND_BLOCKED: 'FRIEND_004',
+    FRIEND_NOT_FOUND: 'FRIEND_005',
+    FRIEND_NOT_PENDING: 'FRIEND_006',
+    FRIEND_NOT_RECIPIENT: 'FRIEND_007',
+    FRIEND_SYNC_FAILED: 'FRIEND_008',
+    FRIEND_RATE_LIMITED: 'FRIEND_009',
+    FRIEND_NOT_AUTHORIZED: 'FRIEND_010',
     // Legacy codes (kept for backward compatibility)
     FORBIDDEN: 'AUTH_006',
     BAD_REQUEST: 'VAL_001',
@@ -46,6 +58,8 @@ export function getErrorCategory(code) {
         return 'auth';
     if (code.startsWith('SESSION_'))
         return 'session';
+    if (code.startsWith('FRIEND_'))
+        return 'friend';
     if (code.startsWith('VAL_'))
         return 'validation';
     if (code.startsWith('NET_'))

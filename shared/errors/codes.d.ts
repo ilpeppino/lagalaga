@@ -15,6 +15,7 @@ export declare const ErrorCodes: {
     readonly SESSION_ALREADY_JOINED: "SESSION_003";
     readonly SESSION_NOT_ACTIVE: "SESSION_004";
     readonly SESSION_CREATE_FAILED: "SESSION_005";
+    readonly SESSION_ACCESS_DENIED: "SESSION_006";
     readonly VALIDATION_ERROR: "VAL_001";
     readonly VALIDATION_MISSING_FIELDS: "VAL_002";
     readonly VALIDATION_INVALID_FORMAT: "VAL_003";
@@ -29,11 +30,21 @@ export declare const ErrorCodes: {
     readonly INTERNAL_DB_ERROR: "INT_002";
     readonly INTERNAL_EXTERNAL_SERVICE: "INT_003";
     readonly CONFLICT: "CONFLICT_001";
+    readonly FRIEND_SELF_REQUEST: "FRIEND_001";
+    readonly FRIEND_ALREADY_EXISTS: "FRIEND_002";
+    readonly FRIEND_REQUEST_EXISTS: "FRIEND_003";
+    readonly FRIEND_BLOCKED: "FRIEND_004";
+    readonly FRIEND_NOT_FOUND: "FRIEND_005";
+    readonly FRIEND_NOT_PENDING: "FRIEND_006";
+    readonly FRIEND_NOT_RECIPIENT: "FRIEND_007";
+    readonly FRIEND_SYNC_FAILED: "FRIEND_008";
+    readonly FRIEND_RATE_LIMITED: "FRIEND_009";
+    readonly FRIEND_NOT_AUTHORIZED: "FRIEND_010";
     readonly FORBIDDEN: "AUTH_006";
     readonly BAD_REQUEST: "VAL_001";
 };
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
 export type ErrorSeverity = 'fatal' | 'error' | 'warning' | 'info';
-export type ErrorCategory = 'auth' | 'session' | 'validation' | 'network' | 'not_found' | 'rate_limit' | 'internal' | 'conflict';
+export type ErrorCategory = 'auth' | 'session' | 'friend' | 'validation' | 'network' | 'not_found' | 'rate_limit' | 'internal' | 'conflict';
 export declare function getErrorCategory(code: string): ErrorCategory;
 //# sourceMappingURL=codes.d.ts.map

@@ -6,7 +6,7 @@
  * Swap in Sentry/DataDog by calling monitoring.setProvider(newProvider).
  */
 
-import type { MonitoringProvider, Breadcrumb, MonitoringUser } from '../../../shared/monitoring/types.js';
+import type { MonitoringProvider, Breadcrumb, MonitoringUser } from '../types/monitoring.js';
 import { logger } from './logger.js';
 
 class ConsoleMonitoringProvider implements MonitoringProvider {

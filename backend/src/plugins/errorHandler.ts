@@ -1,7 +1,7 @@
 import fp from 'fastify-plugin';
 import { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError, ErrorCodes } from '../utils/errors.js';
-import type { ErrorSeverity } from '../../../shared/errors/codes.js';
+import type { ErrorSeverity } from '../shared/errorCodes.js';
 import { logError } from '../lib/logger.js';
 
 interface ErrorResponseBody {

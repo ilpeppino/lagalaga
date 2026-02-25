@@ -1,6 +1,7 @@
 services:
   backend:
     image: node:20-alpine
+    container_name: lagalaga-backend
     working_dir: /app/backend
     volumes:
       - /data/apps/lagalaga:/app:rw
@@ -8,6 +9,7 @@ services:
       - /data/apps/lagalaga/backend/.env
     environment:
       CI: "true"
+      NODE_ENV: "production"
     command: >
       sh -lc "
       npm i -g pnpm@10.30.2 &&
@@ -17,16 +19,16 @@ services:
       node dist/backend/src/server.js
       "
     restart: unless-stopped
-    expose:
-      - "3001"
 
-  caddy:
-    image: caddy:2
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: lagalaga-cloudflared
+    user: "1000:1000"
     depends_on:
       - backend
-    network_mode: host
+    environment:
+      HOME: /tmp
+    command: tunnel --config /tmp/.cloudflared/config.yml run
     volumes:
-      - /data/apps/lagalaga/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /data/apps/lagalaga/caddy/data:/data
-      - /data/apps/lagalaga/caddy/config:/config
+      - /data/apps/lagalaga/_cloudflared:/tmp/.cloudflared
     restart: unless-stopped

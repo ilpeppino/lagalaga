@@ -4,6 +4,9 @@
 node_modules/
 .pnpm-store/
 
+# Cloudflare Tunnel secrets/state
+_cloudflared/
+
 # Expo
 .expo/
 dist/

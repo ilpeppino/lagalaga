@@ -36,10 +36,33 @@ Component: SessionsListScreenV2 (type: React Function Component)
 
 ## Types Used In The Screen
 - `Session` from `@/src/features/sessions/types-v2`
+- `SessionListFilter` from `@/src/features/sessions/filtering` — `'all' | 'live' | 'starting_soon'`
+- `SessionSettings` from `@/src/lib/sessionSettings`
 - `ReactNode` from React
 
 ## Important Named UI Elements
-- Session cards (live/planned)
-- Quick play action
-- Create session action
-- Delete session (swipe + selection mode)
+- SegmentedButtons filter bar: "All" / "Starting soon" / "Live" (default: 'live')
+- Session cards with live badge + LivePulseDot, host badge, participant count, FULL badge
+- Game thumbnail image (or letter placeholder)
+- Swipeable delete action for planned sessions (native only)
+- Selection mode (long-press): checkboxes, toggle-all, bulk delete
+- FAB stack:
+  - **Quick Play FAB** (flash icon, green) → `createQuickSession()` → navigates to `/sessions/[id]` with `justCreated` + `inviteLink` params
+  - **Create FAB** (plus icon, blue) → `/sessions/create`
+
+## Key Behaviour
+- Session filter state changes clear selection mode
+- Session settings (`startingSoonWindowHours`, `autoCompleteLiveAfterHours`, `autoHideCompletedAfterHours`) are loaded from AsyncStorage on focus and applied via `applySessionFilter()`
+- Planned sessions (user is host) loaded separately via `listMyPlannedSessions()` and merged into the display list
+- Deduplication: a Map keyed by `session.id` merges public + planned sessions
+- Delete: optimistic collapse animation (CollapsibleSessionRow), then API call, reverts on failure
+- Bulk delete: immediate API call, optimistic UI removal, reloads on failure
+- Fallback thumbnails fetched from Roblox API for sessions missing `thumbnailUrl`
+- `loadAllSessionsInFlightRef` prevents concurrent duplicate loads
+
+## API Calls
+- `sessionsAPIStoreV2.listSessions({ status, limit, offset })` — fetch active/scheduled sessions
+- `sessionsAPIStoreV2.listMyPlannedSessions({ limit, offset })` — fetch sessions user hosts
+- `sessionsAPIStoreV2.deleteSession(id)` — delete single session
+- `sessionsAPIStoreV2.bulkDeleteSessions(ids)` — delete multiple sessions
+- `sessionsAPIStoreV2.createQuickSession()` — create quick-play session

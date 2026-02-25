@@ -32,6 +32,10 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 │  │  Push Tokens    │  │   Presence      │  │   Favorites     │ │
 │  │  Registration   │  │   Tracking      │  │   Cache         │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────┐                       │
+│  │  In-App Inbox   │  │  Notification   │                       │
+│  │  (Notifications)│  │  Preferences    │                       │
+│  └─────────────────┘  └─────────────────┘                       │
 │         │                          │                            │
 │         └──────────────────────────┴────────────────────────────│
 │                          │                                      │
@@ -50,6 +54,10 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 │  │ Roblox   │  │   Me     │  │  Health/  │  │   Roblox     │   │
 │  │ Service  │  │  Routes  │  │  Metrics  │  │   Connect    │   │
 │  └──────────┘  └──────────┘  └───────────┘  └──────────────┘   │
+│  ┌──────────┐  ┌──────────────────────────┐                     │
+│  │ Notifs   │  │  Notification Prefs      │                     │
+│  │ Inbox    │  │  Service                 │                     │
+│  └──────────┘  └──────────────────────────┘                     │
 │         │            │              │                           │
 │         └────────────┴──────────────┘                           │
 │                      │                                          │
@@ -607,18 +615,49 @@ Session participants have a `handoff_state` field tracking their journey from RS
 - Updates `handoff_state` when users are confirmed in game
 - Enables "who's playing now" indicators
 
-## 8. Push Notifications
+## 8. Push Notifications & In-App Inbox
 
-**Registration**:
+### Push Token Registration
 - Mobile clients register Expo push tokens via `POST /api/me/push-tokens` (body: `expoPushToken`, `deviceId?`, `platform?`)
 - Remove token via `DELETE /api/me/push-tokens`
 - Tokens stored in `user_push_tokens` table, associated with user for targeted notifications
 
-**Use Cases**:
+**Push Use Cases**:
 - Session start reminders
 - Friend request notifications
 - Session invitations
 - Friend joined session alerts
+
+### In-App Notification Inbox
+
+**Frontend**: `app/notifications.tsx` (`NotificationsScreen`)
+- Accessible from the tab bar header bell icon (all tabs)
+- Lists `InAppNotification` items: `id`, `title`, `body`, `isRead`, `createdAt`, `data`
+- `data.route` drives deep-link navigation on tap
+- Marks item read on tap via `POST /api/notifications/:id/read`
+
+**Type** (`src/lib/api.ts`):
+```typescript
+interface InAppNotification {
+  id: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  createdAt: string;       // ISO
+  data: Record<string, unknown>;  // data.route = navigation path
+}
+```
+
+**Backend routes** (`backend/src/routes/notifications.routes.ts`):
+- `GET /api/notifications?limit=N&cursor=...` — list inbox (authenticated, max 100)
+- `POST /api/notifications/:id/read` — mark notification read (authenticated)
+- `GET /api/notification-prefs` — get per-user notification preferences (authenticated)
+- `PATCH /api/notification-prefs` — update per-user preferences (authenticated)
+
+**Notification Preferences** (`NotificationPreferencesService`):
+- `sessionsRemindersEnabled: boolean` — session start reminder push notifications
+- `friendRequestsEnabled: boolean` — friend request push notifications
+- Managed via `app/settings.tsx` (`SettingsScreen`)
 
 ## 9. Favorites & Caching
 
@@ -684,6 +723,12 @@ apiClient.sessions.create(input)
 apiClient.sessions.getById(id)
 apiClient.sessions.join(id)
 apiClient.sessions.leave(id)
+
+apiClient.notifications.list({ limit, cursor })
+apiClient.notifications.markRead(id)
+
+apiClient.notificationPrefs.get()
+apiClient.notificationPrefs.patch({ sessionsRemindersEnabled, friendRequestsEnabled })
 ```
 
 ### Safety Reporting System
@@ -761,6 +806,7 @@ fastify.register(friendsRoutes)
 fastify.register(leaderboardRoutes)
 fastify.register(accountRoutes, { prefix: '/v1/account' })
 fastify.register(reportsRoutes)
+fastify.register(notificationsRoutes)
 ```
 
 **Background Timers (started at boot if features enabled):**
@@ -873,6 +919,15 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
   - Duplicate window: 5 minutes
   - CSAM reports auto-escalated and triggers notification stub
 
+#### Notifications Routes
+**File**: `backend/src/routes/notifications.routes.ts`
+
+- `GET /api/notifications` - List in-app inbox (authenticated, query: `limit`, `cursor`)
+- `POST /api/notifications/:id/read` - Mark notification as read (authenticated)
+- `GET /api/notification-prefs` - Get notification preferences (authenticated)
+- `PATCH /api/notification-prefs` - Update notification preferences (authenticated)
+  - Body: `{ sessionsRemindersEnabled?: boolean, friendRequestsEnabled?: boolean }`
+
 #### Health & Metrics
 **Files**: `backend/src/plugins/healthCheck.ts`, `backend/src/plugins/metrics.ts`
 
@@ -933,7 +988,7 @@ Not present in current codebase.
 ### Route Groups
 
 **`app/(tabs)/`** - Tab navigator (3 tabs)
-- `_layout.tsx` - Tab bar configuration; all tabs have a user icon button (top-right → `/me`)
+- `_layout.tsx` - Tab bar configuration; all tabs have header-right buttons: notifications bell (→ `/notifications`) + user icon (→ `/me`)
 - `index.tsx` - Home tab (welcome screen with Quick Play button)
 - `friends.tsx` - Friends tab
 - `explore.tsx` - Explore tab

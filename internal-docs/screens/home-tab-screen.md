@@ -49,5 +49,12 @@ Component: HomeScreen (type: React Function Component)
 - `HelloWave` animated component
 
 ## Key Behaviour
-- `handleQuickPlay()` creates a session with `template=quick` and immediately navigates to the session detail screen
+- `handleQuickPlay()` creates a session via `sessionsAPIStoreV2.createQuickSession()` and navigates to `/sessions/${session.session.id}-v2`
 - Error handling via `useErrorHandler()` hook
+
+## Tab Header Buttons
+Set in `app/(tabs)/_layout.tsx` `headerRight` for all tabs:
+- **NotificationsButton** — `bell.fill` icon → navigates to `/notifications`
+- **UserIconButton** — `person.circle.fill` icon → navigates to `/me`
+
+Both buttons use `Colors[colorScheme].tint` for icon color.

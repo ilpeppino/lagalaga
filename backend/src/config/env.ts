@@ -58,6 +58,18 @@ export const envSchema = {
       type: 'string',
       default: '',
     },
+    RATE_LIMIT_ENABLED: {
+      type: 'boolean',
+      default: true,
+    },
+    RATE_LIMIT_MAX: {
+      type: 'number',
+      default: 600,
+    },
+    RATE_LIMIT_TIME_WINDOW: {
+      type: 'string',
+      default: '1 minute',
+    },
     FEATURE_FRIENDS_ENABLED: {
       type: 'boolean',
       default: true,
@@ -145,6 +157,9 @@ declare module 'fastify' {
       REFRESH_TOKEN_SECRET: string;
       REFRESH_TOKEN_EXPIRY: string;
       CORS_ORIGIN: string;
+      RATE_LIMIT_ENABLED: boolean;
+      RATE_LIMIT_MAX: number;
+      RATE_LIMIT_TIME_WINDOW: string;
       FEATURE_FRIENDS_ENABLED: boolean;
       ENABLE_COMPETITIVE_DEPTH: boolean;
       DEFAULT_PLACE_ID?: number;

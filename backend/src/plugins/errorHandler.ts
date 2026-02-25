@@ -47,6 +47,20 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
       if (error instanceof AppError) {
         logError(error, { requestId, severity: error.severity }, `[${error.code}] ${error.message}`);
 
+        const rateLimitSource = typeof error.metadata?.rateLimitSource === 'string'
+          ? error.metadata.rateLimitSource
+          : null;
+        if (rateLimitSource) {
+          reply.header('X-RateLimit-Source', rateLimitSource);
+        }
+
+        const retryAfterSec = error.metadata?.retryAfterSec;
+        if (typeof retryAfterSec === 'number' && retryAfterSec >= 0) {
+          reply.header('Retry-After', String(retryAfterSec));
+        }
+
+        const details = error.metadata?.details;
+
         return reply.status(error.statusCode).send(
           buildErrorResponse(
             error.code,
@@ -54,6 +68,7 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
             error.statusCode,
             error.severity,
             requestId,
+            details,
           )
         );
       }
@@ -76,6 +91,9 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
       // Handle Fastify rate-limit errors
       if (error.statusCode === 429) {
         logError(error, { requestId }, 'Rate limit exceeded');
+        if (!reply.hasHeader('X-RateLimit-Source')) {
+          reply.header('X-RateLimit-Source', 'backend');
+        }
 
         return reply.status(429).send(
           buildErrorResponse(

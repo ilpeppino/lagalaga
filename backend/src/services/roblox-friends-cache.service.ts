@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../config/supabase.js';
 import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
-import { fetchWithTimeoutAndRetry } from '../lib/http.js';
+import { fetchUpstream } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
@@ -42,10 +42,14 @@ export interface RobloxFriend {
 
 export interface RobloxFriendsResult {
   robloxUserId: string;
-  source: 'cache' | 'refreshed';
+  source: 'cache' | 'refreshed' | 'stale_cache';
   fetchedAt: string;
   expiresAt: string;
   friends: RobloxFriend[];
+  warning?: {
+    code: 'ROBLOX_RATE_LIMIT';
+    retryAfterSec: number | null;
+  };
 }
 
 export class RobloxFriendsCacheService {
@@ -57,8 +61,12 @@ export class RobloxFriendsCacheService {
     this.fetchFn = deps.fetchFn ?? fetch;
   }
 
-  async getFriendsForUser(userId: string, options: { forceRefresh?: boolean } = {}): Promise<RobloxFriendsResult> {
+  async getFriendsForUser(
+    userId: string,
+    options: { forceRefresh?: boolean; requestId?: string } = {}
+  ): Promise<RobloxFriendsResult> {
     const forceRefresh = options.forceRefresh ?? false;
+    const requestId = options.requestId;
     const robloxUserId = await this.getRobloxUserId(userId);
     const cache = await this.getCacheRow(userId);
 
@@ -67,7 +75,7 @@ export class RobloxFriendsCacheService {
     }
 
     try {
-      const refreshedFriends = await this.fetchRobloxFriends(robloxUserId);
+      const refreshedFriends = await this.fetchRobloxFriends(robloxUserId, requestId);
       const fetchedAt = new Date();
       const expiresAt = new Date(fetchedAt.getTime() + ROBLOX_FRIENDS_CACHE_TTL_MS);
 
@@ -81,10 +89,33 @@ export class RobloxFriendsCacheService {
         friends: refreshedFriends,
       };
     } catch (error) {
-      if (cache && error instanceof AppError && error.statusCode === 429) {
-        const retryAfterMs = Number(error.metadata?.retryAfterMs ?? 1000);
-        await sleep(Math.min(Math.max(retryAfterMs, 250), 5000));
-        return this.toResult(robloxUserId, 'cache', cache.fetched_at, cache.expires_at, cache.friends_json);
+      if (error instanceof AppError && error.code === 'ROBLOX_RATE_LIMIT') {
+        const retryAfterSec =
+          typeof error.metadata?.retryAfterSec === 'number' ? error.metadata.retryAfterSec : null;
+
+        if (cache) {
+          return {
+            ...this.toResult(robloxUserId, 'stale_cache', cache.fetched_at, cache.expires_at, cache.friends_json),
+            warning: {
+              code: 'ROBLOX_RATE_LIMIT',
+              retryAfterSec,
+            },
+          };
+        }
+
+        throw new AppError('ROBLOX_RATE_LIMIT', 'Roblox friends API is currently rate limited', 503, {
+          severity: 'warning',
+          metadata: {
+            retryAfterSec,
+            rateLimitSource: 'roblox',
+            details: {
+              warning: {
+                code: 'ROBLOX_RATE_LIMIT',
+                retryAfterSec,
+              },
+            },
+          },
+        });
       }
       throw error;
     }
@@ -167,7 +198,7 @@ export class RobloxFriendsCacheService {
 
   private toResult(
     robloxUserId: string,
-    source: 'cache' | 'refreshed',
+    source: 'cache' | 'refreshed' | 'stale_cache',
     fetchedAt: string,
     expiresAt: string,
     friendsJson: unknown
@@ -182,8 +213,8 @@ export class RobloxFriendsCacheService {
     };
   }
 
-  private async fetchRobloxFriends(robloxUserId: string): Promise<RobloxFriend[]> {
-    const basicFriends = await this.fetchFriendsList(robloxUserId);
+  private async fetchRobloxFriends(robloxUserId: string, requestId?: string): Promise<RobloxFriend[]> {
+    const basicFriends = await this.fetchFriendsList(robloxUserId, requestId);
     const friendIds = dedupePositiveNumbers(basicFriends.map((friend) => friend.id));
 
     if (friendIds.length === 0) {
@@ -191,8 +222,8 @@ export class RobloxFriendsCacheService {
     }
 
     const [detailMap, avatarMap] = await Promise.all([
-      this.fetchUserDetails(friendIds),
-      this.fetchAvatarHeadshots(friendIds),
+      this.fetchUserDetails(friendIds, requestId),
+      this.fetchAvatarHeadshots(friendIds, requestId),
     ]);
 
     return basicFriends.map((basic) => {
@@ -209,15 +240,15 @@ export class RobloxFriendsCacheService {
     });
   }
 
-  private async fetchFriendsList(robloxUserId: string): Promise<RobloxFriendBasic[]> {
+  private async fetchFriendsList(robloxUserId: string, requestId?: string): Promise<RobloxFriendBasic[]> {
     const url = `https://friends.roblox.com/v1/users/${encodeURIComponent(robloxUserId)}/friends`;
-    const response = await this.robloxRequest(url, {
+    const response = await this.robloxRequest('friends', url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
         'User-Agent': 'lagalaga-backend/1.0',
       },
-    });
+    }, requestId);
 
     const body = await response.json() as { data?: Array<{ id?: number; name?: string; displayName?: string }> };
     const rows = Array.isArray(body.data) ? body.data : [];
@@ -235,11 +266,11 @@ export class RobloxFriendsCacheService {
       .filter((item) => Number.isInteger(item.id) && item.id > 0);
   }
 
-  private async fetchUserDetails(userIds: number[]): Promise<Map<number, RobloxUserDetail>> {
+  private async fetchUserDetails(userIds: number[], requestId?: string): Promise<Map<number, RobloxUserDetail>> {
     const map = new Map<number, RobloxUserDetail>();
 
     for (const chunk of chunkArray(userIds, ROBLOX_BATCH_SIZE)) {
-      const response = await this.robloxRequest('https://users.roblox.com/v1/users', {
+      const response = await this.robloxRequest('users', 'https://users.roblox.com/v1/users', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -247,7 +278,7 @@ export class RobloxFriendsCacheService {
           'User-Agent': 'lagalaga-backend/1.0',
         },
         body: JSON.stringify({ userIds: chunk }),
-      });
+      }, requestId);
 
       const body = await response.json() as { data?: Array<{ id?: number; name?: string; displayName?: string }> };
       const rows = Array.isArray(body.data) ? body.data : [];
@@ -269,7 +300,7 @@ export class RobloxFriendsCacheService {
     return map;
   }
 
-  private async fetchAvatarHeadshots(userIds: number[]): Promise<Map<number, string>> {
+  private async fetchAvatarHeadshots(userIds: number[], requestId?: string): Promise<Map<number, string>> {
     const map = new Map<number, string>();
 
     for (const chunk of chunkArray(userIds, ROBLOX_BATCH_SIZE)) {
@@ -281,6 +312,7 @@ export class RobloxFriendsCacheService {
       });
 
       const response = await this.robloxRequest(
+        'thumbnails',
         `https://thumbnails.roblox.com/v1/users/avatar-headshot?${query.toString()}`,
         {
           method: 'GET',
@@ -288,7 +320,8 @@ export class RobloxFriendsCacheService {
             Accept: 'application/json',
             'User-Agent': 'lagalaga-backend/1.0',
           },
-        }
+        },
+        requestId
       );
 
       const body = await response.json() as {
@@ -313,51 +346,56 @@ export class RobloxFriendsCacheService {
     return map;
   }
 
-  private async robloxRequest(url: string, init: RequestInit): Promise<Response> {
-    let response: Response;
+  private async robloxRequest(
+    endpoint: 'friends' | 'users' | 'thumbnails',
+    url: string,
+    init: RequestInit,
+    requestId?: string
+  ): Promise<Response> {
+    const result = await fetchUpstream(
+      url,
+      init,
+      {
+        fetchFn: this.fetchFn,
+        timeoutMs: 5000,
+        retries: 1,
+        source: 'Roblox API',
+        upstream: 'roblox',
+        endpoint,
+        requestId,
+      }
+    );
 
-    try {
-      response = await fetchWithTimeoutAndRetry(
-        url,
-        init,
-        {
-          fetchFn: this.fetchFn,
-          timeoutMs: 5000,
-          retries: 1,
-          source: 'Roblox API',
-        }
-      );
-    } catch (error) {
+    if (result.kind === 'network_error') {
       throw new AppError('ROBLOX_UPSTREAM_FAILED', 'Failed to communicate with Roblox', 502, {
         severity: 'warning',
         metadata: {
-          reason: error instanceof Error ? error.message : String(error),
+          reason: result.error.message,
         },
       });
     }
 
-    if (response.status === 429) {
-      const retryAfterRaw = response.headers.get('retry-after');
-      const retryAfterMs = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) * 1000 : 1000;
-      throw new AppError('ROBLOX_RATE_LIMITED', 'Roblox API rate limit reached', 429, {
+    if (result.kind === 'rate_limited') {
+      throw new AppError('ROBLOX_RATE_LIMIT', 'Roblox API rate limit reached', 429, {
         severity: 'warning',
         metadata: {
-          retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : 1000,
+          retryAfterSec: result.retryAfterSec,
+          rateLimitSource: 'roblox',
         },
       });
     }
 
-    if (!response.ok) {
-      logger.warn({ url, statusCode: response.status }, 'Roblox API request failed');
+    if (result.kind === 'http_error') {
+      logger.warn({ url, statusCode: result.response.status }, 'Roblox API request failed');
       throw new AppError('ROBLOX_UPSTREAM_FAILED', 'Roblox API request failed', 502, {
         severity: 'warning',
         metadata: {
-          statusCode: response.status,
+          statusCode: result.response.status,
         },
       });
     }
 
-    return response;
+    return result.response;
   }
 }
 
@@ -413,8 +451,4 @@ function parseFriendsJson(value: unknown): RobloxFriend[] {
       return { id, name, displayName, avatarUrl };
     })
     .filter((row): row is RobloxFriend => row !== null);
-}
-
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
 }

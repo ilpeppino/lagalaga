@@ -144,9 +144,24 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
       '/roblox/friends',
       {
         preHandler: authPreHandler,
+        config: {
+          rateLimit: {
+            max: 30,
+            timeWindow: '1 minute',
+          },
+        },
       },
       async (request, reply) => {
-        const data = await friendsCacheService.getFriendsForUser(request.user.userId);
+        const data = await friendsCacheService.getFriendsForUser(request.user.userId, {
+          requestId: String(request.id),
+        });
+
+        if (data.warning?.code === 'ROBLOX_RATE_LIMIT') {
+          reply.header('X-RateLimit-Source', 'roblox');
+          if (data.warning.retryAfterSec != null) {
+            reply.header('Retry-After', String(data.warning.retryAfterSec));
+          }
+        }
 
         return reply.send({
           success: true,

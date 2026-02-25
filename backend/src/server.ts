@@ -32,6 +32,9 @@ import { fileURLToPath } from 'node:url';
 
 export async function buildServer() {
   const fastify = Fastify({
+    // Render sits behind a reverse proxy and forwards X-Forwarded-For.
+    // If we need stricter trust boundaries later, replace with CIDR-based trust function.
+    trustProxy: true,
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
       transport:

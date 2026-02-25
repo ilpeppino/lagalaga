@@ -4,7 +4,7 @@ import { AppError, ExternalServiceError } from '../utils/errors.js';
 import { RobloxConnectionService } from './roblox-connection.service.js';
 import { TtlCache } from '../lib/ttlCache.js';
 import type { FetchLike } from '../lib/http.js';
-import { fetchWithTimeoutAndRetry } from '../lib/http.js';
+import { fetchUpstream } from '../lib/http.js';
 import { metrics } from '../plugins/metrics.js';
 
 export type PresenceStatus = 'offline' | 'online' | 'in_game' | 'in_studio' | 'unknown';
@@ -12,6 +12,10 @@ export type PresenceStatus = 'offline' | 'online' | 'in_game' | 'in_studio' | 'u
 export interface RobloxPresenceResult {
   available: boolean;
   reason?: string;
+  warning?: {
+    code: 'ROBLOX_RATE_LIMIT';
+    retryAfterSec: number | null;
+  };
   statuses?: Array<{
     userId: string;
     status: PresenceStatus;
@@ -39,6 +43,7 @@ interface PresenceDeps {
 }
 
 export const ROBLOX_PRESENCE_CACHE_TTL_MS = 30_000;
+const PRESENCE_MAX_BATCH_SIZE = 50;
 
 function normalizePresenceType(value: number | undefined): PresenceStatus {
   switch (value) {
@@ -93,23 +98,38 @@ export class RobloxPresenceService {
       .filter((id) => Number.isFinite(id) && id > 0);
 
     const statusesByRobloxId = new Map<string, { status: PresenceStatus; lastOnline?: string | null; placeId?: number | null }>();
+    let warning: RobloxPresenceResult['warning'];
     if (numericRobloxIds.length > 0) {
-      const userPresences = await this.fetchFriendPresence(
-        tokenResult.token,
-        numericRobloxIds,
-        'app_users'
-      );
-      for (const presence of userPresences) {
-        statusesByRobloxId.set(String(presence.userId), {
-          status: normalizePresenceType(presence.userPresenceType),
-          lastOnline: presence.lastOnline ?? null,
-          placeId: presence.placeId ?? null,
-        });
+      try {
+        const userPresences = await this.fetchFriendPresence(
+          tokenResult.token,
+          numericRobloxIds,
+          'app_users'
+        );
+        for (const presence of userPresences) {
+          statusesByRobloxId.set(String(presence.userId), {
+            status: normalizePresenceType(presence.userPresenceType),
+            lastOnline: presence.lastOnline ?? null,
+            placeId: presence.placeId ?? null,
+          });
+        }
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'ROBLOX_RATE_LIMIT') {
+          warning = {
+            code: 'ROBLOX_RATE_LIMIT',
+            retryAfterSec: typeof error.metadata.retryAfterSec === 'number'
+              ? error.metadata.retryAfterSec
+              : null,
+          };
+        } else {
+          throw error;
+        }
       }
     }
 
     return {
       available: true,
+      ...(warning ? { warning } : {}),
       statuses: mapping.map(({ userId, robloxUserId }) => {
         if (!robloxUserId) {
           return { userId, status: 'unknown' as PresenceStatus };
@@ -189,59 +209,78 @@ export class RobloxPresenceService {
     }
     metrics.incrementCounter('roblox_presence_cache_total', { result: 'miss', source });
 
-    const response = await fetchWithTimeoutAndRetry(
-      'https://presence.roblox.com/v1/presence/users',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userIds: numericIds }),
-      },
-      { fetchFn: this.fetchFn, timeoutMs: 5000, retries: 1, source: 'Roblox Presence' }
-    );
+    return this.friendPresenceCache.getOrCreate(cacheKey, async () => {
+      const chunkedResults: FriendPresenceItem[] = [];
 
-    if (response.status === 429) {
-      const retryAfterHeader = response.headers.get('Retry-After');
-      const retryAfterSec = retryAfterHeader != null ? Number(retryAfterHeader) : undefined;
-      throw new AppError('ROBLOX_RATE_LIMIT', 'Roblox presence rate limit exceeded', 429, {
-        severity: 'warning',
-        metadata: retryAfterSec != null ? { retryAfterSec } : {},
-      });
-    }
+      for (const chunk of chunkArray(numericIds, PRESENCE_MAX_BATCH_SIZE)) {
+        const result = await fetchUpstream(
+          'https://presence.roblox.com/v1/presence/users',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userIds: chunk }),
+          },
+          {
+            fetchFn: this.fetchFn,
+            timeoutMs: 5000,
+            retries: 1,
+            source: 'Roblox Presence',
+            upstream: 'roblox',
+            endpoint: 'presence',
+          }
+        );
 
-    if (response.status < 200 || response.status >= 300) {
-      throw new ExternalServiceError('Roblox Presence', `HTTP ${response.status}`);
-    }
+        if (result.kind === 'network_error') {
+          throw result.error;
+        }
 
-    const payload = await response.json() as {
-      userPresences?: Array<{
-        userId?: number;
-        userPresenceType?: number;
-        lastLocation?: string;
-        placeId?: number;
-        rootPlaceId?: number;
-        universeId?: number;
-        gameId?: string;
-        lastOnline?: string;
-      }>;
-    };
+        if (result.kind === 'rate_limited') {
+          throw new AppError('ROBLOX_RATE_LIMIT', 'Roblox presence rate limit exceeded', 429, {
+            severity: 'warning',
+            metadata: {
+              retryAfterSec: result.retryAfterSec,
+              rateLimitSource: 'roblox',
+            },
+          });
+        }
 
-    const userPresences: FriendPresenceItem[] = (payload.userPresences ?? [])
-      .filter((p) => p.userId != null)
-      .map((p) => ({
-        userId: p.userId as number,
-        userPresenceType: Math.min(Math.max(p.userPresenceType ?? 0, 0), 3) as 0 | 1 | 2 | 3,
-        lastLocation: p.lastLocation ?? null,
-        placeId: p.placeId ?? p.rootPlaceId ?? null,
-        universeId: p.universeId ?? null,
-        gameId: p.gameId ?? null,
-        lastOnline: p.lastOnline ?? null,
-      }));
+        if (result.kind === 'http_error') {
+          throw new ExternalServiceError('Roblox Presence', `HTTP ${result.response.status}`);
+        }
 
-    this.friendPresenceCache.set(cacheKey, userPresences);
-    return userPresences;
+        const payload = await result.response.json() as {
+          userPresences?: Array<{
+            userId?: number;
+            userPresenceType?: number;
+            lastLocation?: string;
+            placeId?: number;
+            rootPlaceId?: number;
+            universeId?: number;
+            gameId?: string;
+            lastOnline?: string;
+          }>;
+        };
+
+        const rows: FriendPresenceItem[] = (payload.userPresences ?? [])
+          .filter((p) => p.userId != null)
+          .map((p) => ({
+            userId: p.userId as number,
+            userPresenceType: Math.min(Math.max(p.userPresenceType ?? 0, 0), 3) as 0 | 1 | 2 | 3,
+            lastLocation: p.lastLocation ?? null,
+            placeId: p.placeId ?? p.rootPlaceId ?? null,
+            universeId: p.universeId ?? null,
+            gameId: p.gameId ?? null,
+            lastOnline: p.lastOnline ?? null,
+          }));
+
+        chunkedResults.push(...rows);
+      }
+
+      return chunkedResults;
+    });
   }
 
   /**
@@ -253,7 +292,10 @@ export class RobloxPresenceService {
   async getPresenceByRobloxIds(
     requesterUserId: string,
     robloxUserIds: number[]
-  ): Promise<{ userPresences: FriendPresenceItem[] }> {
+  ): Promise<{
+    userPresences: FriendPresenceItem[];
+    warning?: { code: 'ROBLOX_RATE_LIMIT'; retryAfterSec: number | null };
+  }> {
     if (robloxUserIds.length === 0) {
       return { userPresences: [] };
     }
@@ -263,7 +305,50 @@ export class RobloxPresenceService {
       return { userPresences: [] };
     }
 
-    const userPresences = await this.fetchFriendPresence(tokenResult.token, robloxUserIds, 'bulk');
-    return { userPresences };
+    try {
+      const userPresences = await this.fetchFriendPresence(tokenResult.token, robloxUserIds, 'bulk');
+      return { userPresences };
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'ROBLOX_RATE_LIMIT') {
+        const retryAfterSec = typeof error.metadata.retryAfterSec === 'number'
+          ? error.metadata.retryAfterSec
+          : null;
+
+        return {
+          userPresences: buildUnavailablePresence(robloxUserIds),
+          warning: {
+            code: 'ROBLOX_RATE_LIMIT',
+            retryAfterSec,
+          },
+        };
+      }
+      throw error;
+    }
   }
+}
+
+function buildUnavailablePresence(robloxUserIds: number[]): FriendPresenceItem[] {
+  return Array.from(new Set(robloxUserIds))
+    .filter((userId) => Number.isFinite(userId) && userId > 0)
+    .map((userId) => ({
+      userId,
+      userPresenceType: 0,
+      lastLocation: null,
+      placeId: null,
+      universeId: null,
+      gameId: null,
+      lastOnline: null,
+    }));
+}
+
+function chunkArray<T>(values: T[], chunkSize: number): T[][] {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
 }

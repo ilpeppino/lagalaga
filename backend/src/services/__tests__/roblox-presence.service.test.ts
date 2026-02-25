@@ -61,8 +61,9 @@ describe('RobloxPresenceService', () => {
 
   it('throws ROBLOX_UPSTREAM_FAILED when upstream presence request fails', async () => {
     const fetchFn = jest.fn(async () => ({
+      ok: false,
       status: 503,
-      headers: { get: (_key: string) => null },
+      headers: new Headers(),
       json: async () => ({}),
     }));
 
@@ -82,8 +83,9 @@ describe('RobloxPresenceService', () => {
 
   it('returns mapped statuses on success', async () => {
     const fetchFn = jest.fn(async () => ({
+      ok: true,
       status: 200,
-      headers: { get: (_key: string) => null },
+      headers: new Headers(),
       json: async () => ({
         userPresences: [
           {

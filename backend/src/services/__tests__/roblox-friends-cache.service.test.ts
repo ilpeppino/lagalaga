@@ -207,8 +207,12 @@ describe('RobloxFriendsCacheService', () => {
 
     const result = await service.getFriendsForUser('user-1');
 
-    expect(result.source).toBe('cache');
+    expect(result.source).toBe('stale_cache');
     expect(result.friends).toHaveLength(1);
     expect(result.friends[0]?.id).toBe(303);
+    expect(result.warning).toEqual({
+      code: 'ROBLOX_RATE_LIMIT',
+      retryAfterSec: 0,
+    });
   });
 });

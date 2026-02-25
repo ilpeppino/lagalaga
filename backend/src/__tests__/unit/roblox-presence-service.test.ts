@@ -27,9 +27,11 @@ function makePresence(userId: number, overrides: Partial<FriendPresenceItem> = {
 }
 
 function makeFetchFn(status: number, body: unknown, headers: Record<string, string> = {}) {
+  const normalizedHeaders = new Headers(headers);
   return jest.fn(async () => ({
+    ok: status >= 200 && status < 300,
     status,
-    headers: { get: (key: string) => headers[key] ?? null },
+    headers: { get: (key: string) => normalizedHeaders.get(key) },
     json: async () => body,
   })) as unknown as typeof fetch;
 }
@@ -120,7 +122,7 @@ describe('RobloxPresenceService.getPresenceByRobloxIds', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
-  it('throws ROBLOX_RATE_LIMIT on 429 from Roblox', async () => {
+  it('returns fallback payload + warning on 429 from Roblox', async () => {
     const fetchFn = makeFetchFn(429, {}, { 'Retry-After': '10' });
     const svc = new RobloxPresenceService({
       connectionService: makeTokenService('token-abc'),
@@ -128,10 +130,18 @@ describe('RobloxPresenceService.getPresenceByRobloxIds', () => {
       friendPresenceCache: cache,
     });
 
-    await expect(svc.getPresenceByRobloxIds('user-1', [111])).rejects.toMatchObject({
-      code: 'ROBLOX_RATE_LIMIT',
-      statusCode: 429,
-      metadata: { retryAfterSec: 10 },
+    await expect(svc.getPresenceByRobloxIds('user-1', [111])).resolves.toMatchObject({
+      userPresences: [
+        {
+          userId: 111,
+          userPresenceType: 0,
+          placeId: null,
+        },
+      ],
+      warning: {
+        code: 'ROBLOX_RATE_LIMIT',
+        retryAfterSec: 10,
+      },
     });
   });
 

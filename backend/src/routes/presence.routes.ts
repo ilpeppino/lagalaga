@@ -21,6 +21,12 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
       Body: { userIds: number[] };
     }>('/api/roblox/presence', {
       preHandler: authPreHandler,
+      config: {
+        rateLimit: {
+          max: 120,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         body: {
           type: 'object',
@@ -41,6 +47,13 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
         request.user.userId,
         userIds
       );
+
+      if (data.warning?.code === 'ROBLOX_RATE_LIMIT') {
+        reply.header('X-RateLimit-Source', 'roblox');
+        if (data.warning.retryAfterSec != null) {
+          reply.header('Retry-After', String(data.warning.retryAfterSec));
+        }
+      }
 
       return reply.send({
         success: true,
@@ -69,6 +82,12 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
         .filter(Boolean);
 
       const data = await presenceService.getPresenceForUsers(request.user.userId, userIds);
+      if (data.warning?.code === 'ROBLOX_RATE_LIMIT') {
+        reply.header('X-RateLimit-Source', 'roblox');
+        if (data.warning.retryAfterSec != null) {
+          reply.header('Retry-After', String(data.warning.retryAfterSec));
+        }
+      }
 
       return reply.send(data);
     });

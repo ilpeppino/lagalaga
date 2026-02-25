@@ -5,7 +5,7 @@
  * GET /health/detailed — database ping, memory, uptime, version
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getSupabase } from '../config/supabase.js';
 
 interface HealthCheckResult {
@@ -16,13 +16,23 @@ interface HealthCheckResult {
 }
 
 export async function healthCheckPlugin(fastify: FastifyInstance) {
-  // Lightweight health check
-  fastify.get('/health', async (_request, reply) => {
-    return reply.send({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  const basicHealthHandler = async (_request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('X-RateLimit-Excluded', 'true');
+    return reply.send({
+      ok: true,
+      service: 'backend',
+      ts: new Date().toISOString(),
+    });
+  };
+
+  // Lightweight health checks (Render and common probes)
+  fastify.get('/health', { config: { rateLimit: false } }, basicHealthHandler);
+  fastify.get('/healthz', { config: { rateLimit: false } }, basicHealthHandler);
+  fastify.get('/live', { config: { rateLimit: false } }, basicHealthHandler);
+  fastify.get('/ready', { config: { rateLimit: false } }, basicHealthHandler);
 
   // Detailed health check
-  fastify.get('/health/detailed', async (_request, reply) => {
+  fastify.get('/health/detailed', { config: { rateLimit: false } }, async (_request, reply) => {
     const checks: HealthCheckResult[] = [];
 
     // Database check

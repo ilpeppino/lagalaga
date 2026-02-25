@@ -9,6 +9,26 @@ interface RateLimitIdentity {
   keyType: RateLimitKeyType;
 }
 
+const HEALTH_CHECK_PATHS = new Set([
+  '/health',
+  '/healthz',
+  '/live',
+  '/ready',
+  '/health/detailed',
+]);
+
+function normalizePath(url: string): string {
+  const queryIndex = url.indexOf('?');
+  return queryIndex >= 0 ? url.slice(0, queryIndex) : url;
+}
+
+export function isHealthCheckRequest(request: FastifyRequest): boolean {
+  if (request.method !== 'GET') {
+    return false;
+  }
+  return HEALTH_CHECK_PATHS.has(normalizePath(request.raw.url ?? request.url));
+}
+
 function parseBearerToken(authorization: string | undefined): string | null {
   if (!authorization) {
     return null;
@@ -94,6 +114,14 @@ export const rateLimitPlugin = fp(async (fastify: FastifyInstance) => {
     global: true,
     max: fastify.config?.RATE_LIMIT_MAX ?? 600,
     timeWindow: fastify.config?.RATE_LIMIT_TIME_WINDOW ?? '1 minute',
+    allowList: (request) => {
+      const excluded = isHealthCheckRequest(request);
+      if (excluded) {
+        request.rateLimitExcluded = true;
+        request.log.debug({ path: normalizePath(request.raw.url ?? request.url) }, 'Excluded health check from rate limit');
+      }
+      return excluded;
+    },
     addHeaders: {
       'x-ratelimit-limit': true,
       'x-ratelimit-remaining': true,
@@ -118,6 +146,12 @@ export const rateLimitPlugin = fp(async (fastify: FastifyInstance) => {
   });
 
   fastify.addHook('onSend', async (request, reply, payload) => {
+    const existingExcluded = reply.getHeader('X-RateLimit-Excluded');
+    if (existingExcluded === undefined) {
+      const excluded = request.rateLimitExcluded === true || isHealthCheckRequest(request);
+      reply.header('X-RateLimit-Excluded', excluded ? 'true' : 'false');
+    }
+
     if (request.rateLimitKeyType) {
       reply.header('X-RateLimit-KeyType', request.rateLimitKeyType);
       reply.header('X-RateLimit-Key', request.rateLimitKey ?? '');
@@ -155,5 +189,6 @@ declare module 'fastify' {
   interface FastifyRequest {
     rateLimitKey?: string;
     rateLimitKeyType?: RateLimitKeyType;
+    rateLimitExcluded?: boolean;
   }
 }

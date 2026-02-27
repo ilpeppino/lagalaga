@@ -1,4 +1,5 @@
 import type { ExpoConfig } from "expo/config";
+import { withAndroidManifest } from "@expo/config-plugins";
 
 const variant = process.env.APP_VARIANT ?? "prod";
 const isDevVariant = variant === "dev";
@@ -135,6 +136,35 @@ const config: ExpoConfig = {
       },
     ],
     "expo-sqlite",
+    // Adds the reversed-client-ID intent filter needed for expo-auth-session's
+    // Google OAuth callback on Android. Generated from EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.
+    // Cast needed: ExpoConfig.plugins typing doesn't include function plugins, but Expo supports them.
+    ((cfg: ExpoConfig) => {
+      const clientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+      if (!clientId?.endsWith(".apps.googleusercontent.com")) return cfg;
+      const scheme = `com.googleusercontent.apps.${clientId.replace(".apps.googleusercontent.com", "")}`;
+      return withAndroidManifest(cfg, (c) => {
+        const mainActivity = c.modResults.manifest.application?.[0]?.activity?.find(
+          (a) => a.$["android:name"] === ".MainActivity"
+        );
+        if (!mainActivity) return c;
+        mainActivity["intent-filter"] = mainActivity["intent-filter"] ?? [];
+        const alreadyAdded = mainActivity["intent-filter"].some((f) =>
+          f.data?.some((d) => d.$["android:scheme"] === scheme)
+        );
+        if (!alreadyAdded) {
+          mainActivity["intent-filter"].push({
+            action: [{ $: { "android:name": "android.intent.action.VIEW" } }],
+            category: [
+              { $: { "android:name": "android.intent.category.DEFAULT" } },
+              { $: { "android:name": "android.intent.category.BROWSABLE" } },
+            ],
+            data: [{ $: { "android:scheme": scheme } }],
+          });
+        }
+        return c;
+      });
+    }) as unknown as string,
     [
       "expo-notifications",
       {

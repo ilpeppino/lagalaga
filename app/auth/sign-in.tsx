@@ -12,22 +12,35 @@ const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
 const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
 
 export default function SignInScreen() {
-  const [loading, setLoading] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<"roblox" | "google" | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const { signInWithRoblox } = useAuth();
+  const { signInWithRoblox, signInWithGoogle } = useAuth();
   const { handleError } = useErrorHandler();
   const colorScheme = useColorScheme();
-  const canSignIn = acceptedTerms && acceptedPrivacy && !loading;
+  const canSignIn = acceptedTerms && acceptedPrivacy && !loadingProvider;
+  const robloxLoading = loadingProvider === "roblox";
+  const googleLoading = loadingProvider === "google";
 
   async function handleRobloxSignIn() {
     try {
-      setLoading(true);
+      setLoadingProvider("roblox");
       await signInWithRoblox();
     } catch (error) {
       handleError(error, { fallbackMessage: "Failed to sign in with Roblox. Please try again." });
     } finally {
-      setLoading(false);
+      setLoadingProvider(null);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    try {
+      setLoadingProvider("google");
+      await signInWithGoogle();
+    } catch (error) {
+      handleError(error, { fallbackMessage: "Failed to sign in with Google. Please try again." });
+    } finally {
+      setLoadingProvider(null);
     }
   }
 
@@ -55,13 +68,23 @@ export default function SignInScreen() {
             title="Sign in with Roblox"
             variant="filled"
             onPress={handleRobloxSignIn}
-            loading={loading}
+            loading={robloxLoading}
             disabled={!canSignIn}
             enableHaptics
             buttonColor="#007AFF"
             style={styles.button}
             contentStyle={styles.buttonContent}
             labelStyle={styles.buttonLabel}
+          />
+          <AnimatedButton
+            title="Sign in with Google"
+            variant="outlined"
+            onPress={handleGoogleSignIn}
+            loading={googleLoading}
+            disabled={!canSignIn}
+            enableHaptics
+            style={styles.button}
+            contentStyle={styles.buttonContent}
           />
 
           <View style={styles.ackContainer}>

@@ -332,6 +332,47 @@ class ApiClient {
       });
     },
 
+    startGoogleAuth: async (): Promise<{ url: string }> => {
+      try {
+        return await this.request('/api/auth/google/start', {
+          method: 'GET',
+        });
+      } catch (error) {
+        const apiError = error as ApiError | undefined;
+        if (apiError?.statusCode !== 404) {
+          throw error;
+        }
+
+        // Compatibility fallback for environments exposing Google auth under /auth/*
+        return this.request('/auth/google/start', {
+          method: 'GET',
+        });
+      }
+    },
+
+    completeGoogleAuth: async (
+      code: string,
+      state: string
+    ): Promise<AuthResponse> => {
+      try {
+        return await this.request('/api/auth/google/callback', {
+          method: 'POST',
+          body: JSON.stringify({ code, state }),
+        });
+      } catch (error) {
+        const apiError = error as ApiError | undefined;
+        if (apiError?.statusCode !== 404) {
+          throw error;
+        }
+
+        // Compatibility fallback for environments exposing Google auth under /auth/*
+        return this.request('/auth/google/callback', {
+          method: 'POST',
+          body: JSON.stringify({ code, state }),
+        });
+      }
+    },
+
     refresh: async (): Promise<RefreshResponse> => {
       const refreshToken = await tokenStorage.getRefreshToken();
       if (!refreshToken) {

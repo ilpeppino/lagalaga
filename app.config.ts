@@ -86,6 +86,8 @@ const config: ExpoConfig = {
     },
     intentFilters: [
       {
+        // Android verification helper:
+        // adb shell am start -W -a android.intent.action.VIEW -d "lagalaga://auth/google?code=1&state=2"
         action: "VIEW",
         category: ["BROWSABLE", "DEFAULT"],
         data: [
@@ -93,6 +95,21 @@ const config: ExpoConfig = {
             scheme: appScheme,
             host: "auth",
             pathPrefix: "/roblox",
+          },
+          {
+            scheme: appScheme,
+            host: "auth",
+            pathPrefix: "/google",
+          },
+          {
+            scheme: "exp+lagalaga",
+            host: "auth",
+            pathPrefix: "/roblox",
+          },
+          {
+            scheme: "exp+lagalaga",
+            host: "auth",
+            pathPrefix: "/google",
           },
         ],
       },

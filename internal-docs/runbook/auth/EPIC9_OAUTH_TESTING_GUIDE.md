@@ -734,6 +734,20 @@ Add to app.json:
 
 ---
 
+## Android Deep Link Verification (Google)
+
+Use this command to validate Android deep-link handling for Google callbacks:
+
+```bash
+adb shell am start -W -a android.intent.action.VIEW -d "lagalaga://auth/google?code=1&state=2"
+```
+
+Expected:
+- App opens.
+- Callback route resolves without a crash.
+
+---
+
 ## Resources
 
 - [Roblox OAuth Documentation](https://create.roblox.com/docs/cloud/reference/oauth2)

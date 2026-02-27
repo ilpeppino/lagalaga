@@ -27,6 +27,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   reloadUser: () => Promise<void>;
 }
@@ -129,6 +130,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      const { url } = await apiClient.auth.startGoogleAuth();
+      const returnUrl =
+        process.env.EXPO_PUBLIC_GOOGLE_REDIRECT_URI?.trim() || 'lagalaga://auth/google';
+
+      if (Platform.OS === 'ios') {
+        await Linking.openURL(url);
+        logger.info('Opened Google OAuth URL in iOS browser');
+        return;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
+      logger.info('Google OAuth session finished', {
+        type: result.type,
+      });
+
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        return;
+      }
+    } catch (error) {
+      logger.error('Failed to start Google OAuth flow', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     try {
       await apiClient.auth.revoke();
@@ -148,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signOut, reloadUser: loadUser }}>
+    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithGoogle, signOut, reloadUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );

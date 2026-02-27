@@ -10,6 +10,7 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
+import { getPostLoginRoute } from '@/src/features/auth/oauthCallback';
 
 // Module-level guard prevents duplicate processing across StrictMode remounts.
 const processedCallbackKeys = new Set<string>();
@@ -91,10 +92,9 @@ export default function RobloxCallback() {
       // Reload user to update AuthContext
       await reloadUser();
 
-      logger.info('User reloaded, navigating to sessions...');
-
-      // Redirect to sessions
-      router.replace('/sessions');
+      const me = await apiClient.auth.me();
+      const nextRoute = getPostLoginRoute(Boolean(me.robloxConnected));
+      router.replace(nextRoute);
     } catch (callbackError) {
       const conflictResolution = resolveAccountLinkConflict(callbackError, 'roblox');
       if (conflictResolution.handled) {

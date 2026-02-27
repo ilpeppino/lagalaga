@@ -6,6 +6,8 @@ export default function AuthLayout() {
       <Stack.Screen name="sign-in" />
       {/* Roblox OAuth redirect target (see backend ROBLOX_REDIRECT_URI). */}
       <Stack.Screen name="roblox" />
+      {/* Google OAuth redirect target (see backend GOOGLE_REDIRECT_URI). */}
+      <Stack.Screen name="google" />
     </Stack>
   );
 }

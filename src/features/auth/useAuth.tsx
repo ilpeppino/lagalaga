@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Google's Android OAuth clients require the reversed-client-ID URI scheme.
   // expo-auth-session defaults to Application.applicationId which Google rejects with 400.
   const googleRedirectUri = hasValidGoogleAndroidClientId
-    ? `com.googleusercontent.apps.${googleAndroidClientId!.replace('.apps.googleusercontent.com', '')}:/oauth2redirect`
+    ? `com.googleusercontent.apps.${googleAndroidClientId!.replace('.apps.googleusercontent.com', '')}:/oauth2redirect/google`
     : undefined;
 
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({

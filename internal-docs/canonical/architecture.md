@@ -17,7 +17,11 @@ The system employs a **backend-mediated architecture** where the mobile app neve
 - Web (via Expo Web)
 
 ### Current Authentication Strategy
-Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users authenticate via Roblox, and the backend issues custom JWT tokens for subsequent API requests. The frontend never receives Supabase credentials.
+Backend-mediated OAuth 2.0 with PKCE. Two sign-in paths are supported:
+- **Roblox OAuth** (primary): Users authenticate via Roblox; backend issues custom JWT tokens.
+- **Google OAuth** (Google-first users): Users authenticate via Google; Roblox linking is optional and done post-login. Nullable `roblox_user_id` and `roblox_username` on `app_users` enables accounts that have never connected Roblox.
+
+The frontend never receives Supabase credentials. Platform identity is tracked in the `user_platforms` table via `PlatformIdentityService`.
 
 ## 2. High-Level Architecture
 
@@ -84,29 +88,39 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 ### Files Involved
 
 **Frontend:**
-- `src/features/auth/useAuth.tsx` - Auth context provider
+- `src/features/auth/useAuth.tsx` - Auth context provider (signInWithRoblox, signOut, reloadUser)
+- `src/features/auth/accountLinkConflict.ts` - Handles `ACCOUNT_LINK_CONFLICT` errors gracefully
 - `src/lib/api.ts` - HTTP client with token refresh
 - `src/lib/tokenStorage.ts` - Secure token storage
 - `src/lib/pkce.ts` - PKCE code generation
-- `app/auth/sign-in.tsx` - Sign-in screen
-- `app/auth/roblox.tsx` - OAuth callback handler
+- `src/lib/oauthTransientStorage.ts` - Ephemeral storage for PKCE verifier/state during OAuth flow
+- `src/lib/robloxGate.ts` - Route-level guard for Roblox-not-connected state
+- `src/lib/robloxGateController.ts` - Redirects to `/me` when `ROBLOX_NOT_CONNECTED` error is received
+- `app/auth/sign-in.tsx` - Sign-in screen (requires ToS + Privacy Policy checkbox before sign-in)
+- `app/auth/roblox.tsx` - OAuth callback handler for Roblox (and Roblox-connect flows)
+- `app/roblox.tsx` - Deep link compatibility shim that redirects params to `/auth/roblox`
 
 **Backend:**
-- `backend/src/routes/auth.ts` - Auth endpoints
-- `backend/src/services/robloxOAuth.ts` - OAuth client
+- `backend/src/routes/auth.ts` - Roblox sign-in endpoints (`/auth/roblox/start`, `/auth/roblox/callback`, `/auth/refresh`, `/auth/revoke`, `/auth/me`)
+- `backend/src/routes/roblox-connect.routes.ts` - Post-login platform connection: Roblox connect and Google OAuth sign-in
+- `backend/src/services/robloxOAuth.ts` - Roblox OAuth client
+- `backend/src/services/googleOAuth.ts` - Google OAuth client (PKCE + ID token verification)
+- `backend/src/services/google-auth.service.ts` - Google login: resolves or creates user, links Google platform
+- `backend/src/services/platform-identity.service.ts` - `PlatformIdentityService`: links/unlinks platforms (`roblox`, `google`) to users via `user_platforms`
 - `backend/src/services/tokenService.ts` - JWT generation/verification
-- `backend/src/services/userService.ts` - User CRUD operations
+- `backend/src/services/userService.ts` - User CRUD operations (nullable roblox fields)
 - `backend/src/middleware/authenticate.ts` - JWT middleware
+- `backend/src/middleware/requireRobloxConnected.ts` - Middleware that rejects requests when user has no Roblox connection; reads from `user_platforms`
 
-### Step-by-Step Flow
+### Roblox Sign-In Flow
 
 1. **Initiate OAuth** (`POST /auth/roblox/start`)
    - Client generates PKCE `code_verifier` (random 128-char string)
    - Client derives `code_challenge` = SHA256(code_verifier)
    - Client sends challenge to backend
-   - Backend generates random `state` parameter (CSRF protection)
+   - Backend generates HMAC-signed `state` parameter (CSRF protection, verified via JWT_SECRET)
    - Backend returns Roblox authorization URL
-   - Client stores `code_verifier` and `state` in AsyncStorage
+   - Client stores `code_verifier` and `state` in `oauthTransientStorage`
 
 2. **User Authorization**
    - Client opens WebBrowser to Roblox OAuth page
@@ -114,16 +128,42 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
    - Roblox redirects to `lagalaga://auth/roblox?code=...&state=...`
 
 3. **Complete OAuth** (`POST /auth/roblox/callback`)
-   - Client retrieves `code_verifier` and `state` from AsyncStorage
+   - Client retrieves `code_verifier` and `state` from `oauthTransientStorage`
    - Client sends `code`, `state`, `code_verifier` to backend
-   - Backend validates state parameter
+   - Backend validates HMAC-signed state parameter
    - Backend exchanges code for Roblox access token (with code_verifier)
    - Backend fetches user info from Roblox API
-   - Backend upserts user to `app_users` table
+   - Backend looks up or creates user via `PlatformIdentityService.findUserIdByPlatform('roblox', ...)`
+   - Backend links the Roblox platform to the user in `user_platforms` via `PlatformIdentityService.linkPlatformToUser(...)`
    - Backend generates custom JWT tokens (access + refresh)
    - Backend returns tokens + user info to client
 
-4. **Token Storage**
+### Google OAuth Sign-In Flow (Google-first users)
+
+Google sign-in is handled via the `/api/auth` prefix (roblox-connect routes), without requiring a prior logged-in session.
+
+1. **Initiate Google OAuth** (`GET /api/auth/google/start`)
+   - Backend generates HMAC-signed `state`, PKCE `code_verifier`/`code_challenge`, and a random `nonce`
+   - State entry stored in server-side `googleOauthStateStore` (in-memory Map, 10-min TTL)
+   - Returns Google authorization URL
+
+2. **User Authorization**
+   - Client opens Google OAuth page in browser
+   - Google redirects to `GOOGLE_REDIRECT_URI` (e.g., `lagalaga://auth`)
+   - `app/roblox.tsx` acts as deep-link shim, forwarding params to `/auth/roblox`
+
+3. **Complete Google OAuth** (`POST /api/auth/google/callback`)
+   - Backend validates state, consumes state entry (single-use)
+   - Exchanges code for tokens, validates ID token (nonce, issuer, audience via JWKS)
+   - `GoogleAuthService.resolveUserForGoogleLogin()` looks up or creates an `app_users` row (with null roblox fields)
+   - Links Google platform to user in `user_platforms`
+   - Returns JWT access + refresh tokens
+
+4. **Account Link Conflict**
+   - If a platform account (Roblox or Google) is already linked to a different `app_users` row, backend returns `ACCOUNT_LINK_CONFLICT` (409)
+   - Frontend `accountLinkConflict.ts` catches this and shows an alert prompting the user to log in with their original method
+
+4. **Token Storage** (Roblox sign-in path; Google path is identical)
    - Client stores `accessToken` in SecureStore (native) / localStorage (web)
    - Client stores `refreshToken` in SecureStore (native) / localStorage (web)
    - Tokens are encrypted on iOS/Android via system keychain
@@ -214,8 +254,8 @@ Backend-mediated Roblox OAuth 2.0 with PKCE (Proof Key for Code Exchange). Users
 #### app_users
 ```sql
 id                   UUID PRIMARY KEY
-roblox_user_id       VARCHAR UNIQUE
-roblox_username      VARCHAR
+roblox_user_id       VARCHAR UNIQUE NULLABLE  -- NULL for Google-first users who haven't connected Roblox
+roblox_username      VARCHAR NULLABLE         -- NULL for Google-first users
 roblox_display_name  VARCHAR
 roblox_profile_url   TEXT
 avatar_headshot_url  TEXT            -- Cached avatar
@@ -227,7 +267,7 @@ updated_at           TIMESTAMPTZ
 last_login_at        TIMESTAMPTZ
 ```
 
-**Purpose**: User accounts linked to Roblox OAuth
+**Purpose**: User accounts. Roblox fields are nullable to support Google-first users who connect Roblox later (or never). Platform identities are stored in `user_platforms`.
 
 #### games
 ```sql
@@ -706,8 +746,10 @@ Supports URL params `targetType`, `targetUserId`, `targetSessionId` for pre-fill
 - Validates target existence (looks up `app_users` / `sessions`)
 - Rate limit: 5 reports per hour per user
 - Duplicate window: 5-minute dedup check
-- CSAM reports auto-set to `ESCALATED` status
-- Structured safety event logging for CSAM
+- CSAM reports auto-set to `ESCALATED` status and trigger safety escalation webhook
+- `GROOMING_OR_SEXUAL_EXPLOITATION` also auto-escalated when `SAFETY_ESCALATE_GROOMING=true`
+- Structured safety event logging for CSAM/escalated reports
+- Safety mailer (`safetyMailer.ts`) sends emails on escalation (also callable via `POST /webhooks/safety-escalation`)
 
 **Database** (`supabase/migrations/20260220154000_create_reports_and_safety_rls.sql`):
 - See `reports` table in Database Schema doc
@@ -727,11 +769,22 @@ apiClient.reports.create({
 
 **File**: `src/lib/runtimeConfig.ts`
 
-- `API_URL`: Backend URL from `EXPO_PUBLIC_API_URL` env var — falls back to localhost for development
+- `API_URL`: Backend URL from `EXPO_PUBLIC_API_URL` env var (required; must be an absolute http(s) URL)
 - `ENABLE_COMPETITIVE_DEPTH`: Feature flag for ranked sessions, leaderboard, match history (`EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH`)
-- `DELETE_ACCOUNT_WEB_URL`: URL for web-based account deletion (`EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL`)
+- `DELETE_ACCOUNT_WEB_URL`: URL for web-based account deletion (`EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL`; defaults to `https://ilpeppino.github.io/lagalaga/delete-account.html`)
 - `CHILD_SAFETY_POLICY_URL`: URL for child safety policy (`EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL`; defaults to `https://ilpeppino.github.io/lagalaga/child-safety.html`)
 - Used by all API clients and safety-related screens
+
+### Session Settings
+
+**File**: `src/lib/sessionSettings.ts`
+
+Client-side preferences stored in `AsyncStorage` (key: `session_settings`). The Settings screen (`app/settings.tsx`) allows users to configure:
+- `autoCompleteLiveAfterHours` — When to auto-complete live sessions (0–48h)
+- `autoHideCompletedAfterHours` — When to hide completed sessions (0–48h)
+- `startingSoonWindowHours` — Window for "starting soon" badge (0–48h)
+
+These values are read by the session list screen to filter display.
 
 ## 8. Backend API Structure
 
@@ -761,12 +814,14 @@ fastify.register(friendsRoutes)
 fastify.register(leaderboardRoutes)
 fastify.register(accountRoutes, { prefix: '/v1/account' })
 fastify.register(reportsRoutes)
+fastify.register(safetyEscalationWebhookRoutes)  // POST /webhooks/safety-escalation
 ```
 
 **Background Timers (started at boot if features enabled):**
 - Season rollover check (hourly) when `isCompetitiveDepthEnabled()`
 - Account deletion purge cycle (interval set by `ACCOUNT_PURGE_INTERVAL_MINUTES`) when `ACCOUNT_PURGE_ENABLED`
 - Session lifecycle cycle (interval set by `SESSION_LIFECYCLE_INTERVAL_MINUTES`) when `SESSION_LIFECYCLE_ENABLED` — auto-completes sessions after `SESSION_AUTO_COMPLETE_AFTER_HOURS` and clears completed sessions after `SESSION_COMPLETED_RETENTION_HOURS`
+- Cache cleanup cycle (interval set by `CACHE_CLEANUP_INTERVAL_HOURS`) when `CACHE_CLEANUP_ENABLED` — removes stale entries from `roblox_experience_cache`, `roblox_friends_cache`, `user_favorites_cache`, and orphaned `games` rows
 
 ### Real Endpoints Discovered
 
@@ -841,8 +896,16 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 #### Roblox Connect Routes (`/api/auth`)
 **File**: `backend/src/routes/roblox-connect.routes.ts`
 
-- `GET /api/auth/roblox/start` - Start Roblox OAuth flow for token refresh (authenticated)
-- `POST /api/auth/roblox/callback` - Complete Roblox OAuth token exchange (authenticated)
+- `GET /api/auth/roblox/start` - Start Roblox OAuth flow for token refresh / first-time Roblox connection (authenticated)
+- `POST /api/auth/roblox/callback` - Complete Roblox OAuth token exchange for linking (authenticated)
+- `GET /api/auth/roblox/callback` - Same as POST variant, accepts `code`/`state` as query params (authenticated)
+- `GET /api/auth/google/start` - Initiate Google OAuth sign-in (unauthenticated; rate-limited 10/min); accepts optional `redirectUri` query param
+- `POST /api/auth/google/callback` - Complete Google OAuth; creates or resolves user and returns JWT tokens (unauthenticated; rate-limited 10/min)
+
+#### Safety Escalation Webhook
+**File**: `backend/src/routes/safety-escalation-webhook.routes.ts`
+
+- `POST /webhooks/safety-escalation` - Receives safety escalation events from external systems; requires `X-Safety-Token` header matching `SAFETY_WEBHOOK_TOKEN` env var; triggers safety mailer email
 
 #### Leaderboard Routes
 **File**: `backend/src/routes/leaderboard.routes.ts`
@@ -926,9 +989,21 @@ Not present in current codebase.
   <Stack.Screen name="auth" />            // Auth group
   <Stack.Screen name="sessions" />        // Sessions group
   <Stack.Screen name="(tabs)" />          // Tab navigator
+  <Stack.Screen name="me" />              // Profile screen
+  <Stack.Screen name="settings" />        // Session settings
+  <Stack.Screen name="account/delete" />  // Account deletion flow
+  <Stack.Screen name="account/delete-confirm" />
+  <Stack.Screen name="account/delete-done" />
+  <Stack.Screen name="safety-report" />   // Safety reporting
   <Stack.Screen name="modal" />           // Example modal
+  <Stack.Screen name="invites" />         // Session invite view
+  <Stack.Screen name="invite" />          // Invite deep link
+  <Stack.Screen name="match-history" />   // Feature-flagged by ENABLE_COMPETITIVE_DEPTH
 </Stack>
 ```
+
+**Roblox Gate (Unconnected User Redirect)**
+`app/_layout.tsx` registers a global `ROBLOX_NOT_CONNECTED` handler via `setRobloxNotConnectedHandler`. When an API call returns this error, `robloxGateController.ts` redirects the user to `/me` (where they can connect Roblox), unless the current route is already `/me`, `/roblox`, or `/auth/roblox`.
 
 ### Route Groups
 
@@ -968,10 +1043,12 @@ Not present in current codebase.
 - `index.tsx` - Leaderboard screen (feature-flagged by `ENABLE_COMPETITIVE_DEPTH`)
 
 **Root-level screens:**
-- `app/me.tsx` - User profile (has "Safety & Report" button → `/safety-report`)
+- `app/me.tsx` - User profile (has "Safety & Report" button → `/safety-report`; "Settings" → `/settings`; Legal card with Privacy Policy and ToS links)
+- `app/settings.tsx` - Session settings (auto-complete hours, auto-hide hours, starting-soon window); persisted via `src/lib/sessionSettings.ts`
 - `app/profile.tsx` - User stats and achievements (has "Safety & Report" overflow action)
 - `app/safety-report.tsx` - 3-step safety reporting flow (category → target/details → confirmation)
 - `app/match-history.tsx` - Match history (feature-flagged by `ENABLE_COMPETITIVE_DEPTH`)
+- `app/roblox.tsx` - Deep link compatibility shim: normalizes params and redirects to `/auth/roblox` (handles the `lagalaga://roblox` scheme used by some deep links)
 
 ### Navigation Patterns
 
@@ -1034,6 +1111,13 @@ ROBLOX_CLIENT_ID=your-client-id
 ROBLOX_CLIENT_SECRET=your-client-secret
 ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
 
+# Google OAuth (required in production)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=lagalaga://auth     # Deep link URI for Google OAuth callback
+GOOGLE_ISSUER=https://accounts.google.com
+GOOGLE_JWKS_URI=                        # Optional; defaults to Google's discovery document
+
 # JWT
 JWT_SECRET=your-super-secret-jwt-key-min-32-chars
 JWT_EXPIRY=15m                    # Default: 15m
@@ -1058,6 +1142,21 @@ SESSION_LIFECYCLE_INTERVAL_MINUTES=15       # Job interval (default: 15)
 SESSION_AUTO_COMPLETE_AFTER_HOURS=2         # Hours until active session auto-completes (default: 2)
 SESSION_COMPLETED_RETENTION_HOURS=2         # Hours to keep completed sessions visible (default: 2)
 SESSION_LIFECYCLE_BATCH_SIZE=200            # Sessions processed per run (default: 200)
+
+# Cache Cleanup
+CACHE_CLEANUP_ENABLED=true                  # Enable stale cache purge job (default: true)
+CACHE_CLEANUP_INTERVAL_HOURS=6              # Job interval in hours (default: 6)
+
+# Safety
+SAFETY_ALERT_WEBHOOK_URL=                   # External webhook URL for safety escalations (optional)
+SAFETY_WEBHOOK_TOKEN=                       # Bearer token required on POST /webhooks/safety-escalation
+SAFETY_ESCALATE_GROOMING=false             # Auto-escalate GROOMING_OR_SEXUAL_EXPLOITATION reports (default: false)
+
+# Observability
+METRICS_BEARER_TOKEN=                       # Bearer token required for /metrics and /metrics/json (optional)
+
+# Defaults
+DEFAULT_PLACE_ID=                           # Optional default Roblox place ID for quick sessions
 ```
 
 **File**: `backend/.env.example`
@@ -1264,10 +1363,18 @@ Based on the current architecture, the following extensions are feasible:
 - Frontend 3-step flow: `/safety-report` screen
 - Entry points from Me screen, Profile screen, and Session detail screen
 
-### 11. Production Hardening
-- Redis for session state (currently in-memory Map)
+### 11. ✅ Google OAuth / Multi-Platform Sign-In (Implemented)
+- Google OAuth 2.0 sign-in path via `/api/auth/google/start` and `/api/auth/google/callback`
+- `PlatformIdentityService` manages `user_platforms` links for `roblox` and `google` platforms
+- Nullable `roblox_user_id`/`roblox_username` on `app_users` enables Google-first accounts
+- Account link conflict detection prevents one platform account from linking to multiple LagaLaga users
+- `requireRobloxConnected` middleware protects Roblox-specific endpoints (friends, presence, favorites)
+- Roblox Gate on frontend: `ROBLOX_NOT_CONNECTED` API error triggers redirect to `/me` for Roblox linking
+
+### 12. Production Hardening
+- Redis for session state (currently in-memory Map for OAuth state)
 - Token blacklist for logout (currently mitigated by `token_version` on `app_users`)
-- Rate limiting per user
+- Rate limiting per user (currently via `@fastify/rate-limit` per route)
 - Database connection pooling
 
 ### 12. Observability

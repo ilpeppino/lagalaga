@@ -2,13 +2,13 @@
 
 This document describes the complete database schema for LagaLaga as deployed on Supabase and replicated for on-premise installations.
 
-> Last updated: 2026-02-20. For the authoritative live schema see `database-schema.md` (generated from Supabase).
+> Last updated: 2026-02-27. For the authoritative live schema see `database-schema.md` (generated from Supabase).
 
 ## Overview
 
-The database consists of 22 tables organized into several functional areas:
+The database consists of 22+ tables organized into several functional areas:
 - **User Management**: `app_users`, `user_platforms`
-- **Platform Support**: `platforms`
+- **Platform Support**: `platforms` (roblox, google, discord, steam)
 - **Gaming Sessions**: `games`, `sessions`, `session_participants`, `session_invites`, `session_invited_roblox`
 - **Social Features**: `friendships`, `roblox_friends_cache`, `roblox_friends_cache_legacy`
 - **Caching**: `roblox_experience_cache`, `user_favorites_cache`
@@ -68,8 +68,8 @@ Stores user accounts linked via Roblox OAuth. This is the primary user identity 
 ```sql
 CREATE TABLE app_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  roblox_user_id VARCHAR NOT NULL UNIQUE,
-  roblox_username VARCHAR NOT NULL,
+  roblox_user_id VARCHAR UNIQUE,             -- NULL for Google-first users who haven't connected Roblox
+  roblox_username VARCHAR,                    -- NULL for Google-first users
   roblox_display_name VARCHAR,
   roblox_profile_url TEXT,
   avatar_headshot_url TEXT,        -- Cached Roblox avatar headshot URL
@@ -82,9 +82,11 @@ CREATE TABLE app_users (
 );
 ```
 
+**Note**: `roblox_user_id` and `roblox_username` are nullable as of the Google-first user migration. Users who sign in via Google do not have Roblox fields populated until they connect Roblox via the Me screen. Platform identity (Roblox or Google) is authoritatively tracked in `user_platforms`.
+
 **Indexes:**
 - `app_users_pkey` - Primary key on `id`
-- `app_users_roblox_user_id_key` - Unique constraint on `roblox_user_id`
+- `app_users_roblox_user_id_key` - Unique constraint on `roblox_user_id` (nullable-safe)
 - `idx_app_users_roblox_user_id` - Index for Roblox user lookups
 - `idx_app_users_status` - Index for status filtering
 
@@ -110,6 +112,7 @@ CREATE TABLE platforms (
 
 **Initial Data:**
 - `roblox` - Roblox platform with deep link `roblox://`
+- `google` - Google platform (used for Google OAuth sign-in)
 - `discord` - Discord platform (for future use)
 - `steam` - Steam platform (for future use)
 
@@ -121,12 +124,12 @@ CREATE TABLE platforms (
 
 ### user_platforms
 
-Links users to their accounts on various gaming platforms. Stores OAuth tokens for Roblox.
+Links users to their accounts on various gaming/identity platforms. Stores OAuth tokens for Roblox and identity metadata for Google.
 
 ```sql
 CREATE TABLE user_platforms (
   user_id UUID NOT NULL,
-  platform_id TEXT NOT NULL,
+  platform_id TEXT NOT NULL,         -- 'roblox' | 'google'
   platform_user_id TEXT NOT NULL,
   platform_username TEXT,
   platform_display_name TEXT,
@@ -135,10 +138,11 @@ CREATE TABLE user_platforms (
   verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  roblox_access_token_enc TEXT,
-  roblox_refresh_token_enc TEXT,
+  roblox_access_token_enc TEXT,      -- Encrypted Roblox OAuth access token
+  roblox_refresh_token_enc TEXT,     -- Encrypted Roblox OAuth refresh token
   roblox_token_expires_at TIMESTAMPTZ,
   roblox_scope TEXT,
+  metadata JSONB,                    -- Platform-specific metadata (e.g., Google email, email_verified)
 
   PRIMARY KEY (user_id, platform_id),
   FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE,
@@ -146,6 +150,10 @@ CREATE TABLE user_platforms (
   UNIQUE (platform_id, platform_user_id)
 );
 ```
+
+**Supported platforms:** `roblox` (OAuth tokens), `google` (identity metadata: email, email_verified, name, picture)
+
+**`PlatformIdentityService`** (backend service) is the authoritative interface for all `user_platforms` reads/writes. It uses a transactional RPC (`link_platform_to_user_tx`) with a fallback upsert, and enforces conflict detection (one platform account cannot be linked to multiple LagaLaga users).
 
 **Indexes:**
 - `user_platforms_pkey` - Primary key on `(user_id, platform_id)`
@@ -700,7 +708,8 @@ CREATE TABLE reports (
 **Business logic (enforced in `reporting.service.ts`):**
 - Rate limit: 5 reports per hour per reporter
 - Duplicate dedup: 5-minute window per (reporter, target) pair
-- CSAM reports: automatically set to `ESCALATED` status + stub escalation notification
+- CSAM reports: automatically set to `ESCALATED` status + triggers safety escalation webhook
+- `GROOMING_OR_SEXUAL_EXPLOITATION` reports: auto-escalated when `SAFETY_ESCALATE_GROOMING=true`
 - Target existence: reporter_id, target_user_id, target_session_id all validated before insert
 
 ---
@@ -735,7 +744,7 @@ RETURNS TABLE (...)
 
 ## Migration History
 
-All 19 migrations applied to production (Supabase) as of 2026-02-20:
+Migrations applied to production (Supabase) as of 2026-02-27:
 
 | # | Version | Name |
 |---|---------|------|
@@ -758,6 +767,7 @@ All 19 migrations applied to production (Supabase) as of 2026-02-20:
 | 17 | 20260217203258 | account_deletion |
 | 18 | 20260217221455 | rls_account_deletion_experience_favorites |
 | 19 | 20260220154000 | create_reports_and_safety_rls |
+| 20+ | 20260222–20260227 | google_auth, nullable_roblox_fields, platform_identity_tx_rpc, google_platform_seed (post-2026-02-20 migrations enabling Google OAuth and nullable Roblox fields) |
 
 ---
 
@@ -820,11 +830,15 @@ Foreign keys reference `app_users.id`, not `auth.users.id`.
 
 ## Data Retention
 
-Currently no automated cleanup. Consider implementing:
+Automated cleanup is handled by `CacheCleanupService` (runs on interval `CACHE_CLEANUP_INTERVAL_HOURS`, default 6h):
+- Deletes stale `roblox_experience_cache` entries (past `expires_at`)
+- Deletes stale `roblox_friends_cache` entries (past `expires_at`)
+- Deletes stale `user_favorites_cache` entries (past `expires_at`)
+- Deletes orphaned `games` rows (place IDs no longer referenced by any session)
+
+Still to consider:
 - Archive completed/cancelled sessions after 30 days
 - Expire invite codes after 7 days of inactivity
-- Refresh Roblox friends cache every 24 hours
-- Clear stale roblox_experience_cache entries after 7 days
 
 ---
 

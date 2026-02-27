@@ -29,6 +29,10 @@ interface AppleAuthRequest {
   } | null;
 }
 
+interface GoogleAuthRequest {
+  identityToken: string;
+}
+
 interface RefreshResponse {
   accessToken: string;
   refreshToken: string;
@@ -360,6 +364,13 @@ class ApiClient {
       });
     },
 
+    signInWithGoogle: async (payload: GoogleAuthRequest): Promise<AuthResponse> => {
+      return this.request('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     refresh: async (): Promise<RefreshResponse> => {
       const refreshToken = await tokenStorage.getRefreshToken();
       if (!refreshToken) {
@@ -388,7 +399,7 @@ class ApiClient {
       robloxDisplayName?: string;
       avatarHeadshotUrl: string | null;
       robloxConnected: boolean;
-      authProvider?: 'ROBLOX' | 'APPLE';
+      authProvider?: 'ROBLOX' | 'APPLE' | 'GOOGLE';
       email?: string | null;
     }> => {
       return this.request('/auth/me', {

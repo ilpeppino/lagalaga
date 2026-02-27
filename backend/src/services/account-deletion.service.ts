@@ -40,7 +40,7 @@ interface ImmediateDeleteInput {
 
 export interface ImmediateDeleteResponse {
   deletedAt: string;
-  authProvider: 'ROBLOX' | 'APPLE' | 'UNKNOWN';
+  authProvider: 'ROBLOX' | 'APPLE' | 'GOOGLE' | 'UNKNOWN';
 }
 
 interface ServiceOptions {
@@ -344,7 +344,7 @@ export class AccountDeletionService {
       .from('app_users')
       .select('id, auth_provider')
       .eq('id', input.userId)
-      .maybeSingle<{ id: string; auth_provider: 'ROBLOX' | 'APPLE' | null }>();
+      .maybeSingle<{ id: string; auth_provider: 'ROBLOX' | 'APPLE' | 'GOOGLE' | null }>();
 
     if (userError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load user for deletion: ${userError.message}`);

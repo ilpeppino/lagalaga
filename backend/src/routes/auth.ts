@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RobloxOAuthService } from '../services/robloxOAuth.js';
 import { AppleAuthService } from '../services/apple-auth.service.js';
+import { GoogleAuthService } from '../services/google-auth.service.js';
 import { UserService } from '../services/userService.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { TokenService } from '../services/tokenService.js';
@@ -17,6 +18,7 @@ import { logAuthEvent } from '../lib/logger.js';
 export async function authRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
   const appleAuth = new AppleAuthService();
+  const googleAuth = new GoogleAuthService();
   const robloxConnectionService = new RobloxConnectionService(fastify);
   const userService = new UserService();
   const tokenService = new TokenService(fastify);
@@ -271,6 +273,85 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * POST /auth/google
+   * Verify Google identity token and issue app JWTs.
+   */
+  fastify.post<{
+    Body: {
+      identityToken: string;
+    };
+  }>('/google', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['identityToken'],
+        properties: {
+          identityToken: { type: 'string' },
+        },
+      },
+    },
+  }, async (request) => {
+    const audiences = request.server.config.GOOGLE_AUDIENCE
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    try {
+      const payload = await googleAuth.verifyIdentityToken(request.body.identityToken, audiences);
+      const user = await userService.upsertGoogleUser({
+        googleSub: payload.sub,
+        email: payload.email ?? null,
+        fullName: payload.fullName ?? null,
+        emailVerified: payload.emailVerified,
+      });
+
+      if (user.status === 'PENDING_DELETION') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is pending deletion');
+      }
+      if (user.status === 'DELETED') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is unavailable');
+      }
+
+      const tokens = tokenService.generateTokens({
+        userId: user.id,
+        robloxUserId: user.robloxUserId,
+        robloxUsername: user.robloxUsername,
+        tokenVersion: user.tokenVersion,
+      });
+
+      logAuthEvent('login', user.id, {
+        provider: 'google',
+        hasEmail: Boolean(payload.email),
+        emailVerified: payload.emailVerified,
+      });
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: user.id,
+          robloxUserId: user.robloxUserId,
+          robloxUsername: user.robloxUsername,
+          robloxDisplayName: user.robloxDisplayName,
+          robloxProfileUrl: user.robloxProfileUrl,
+        },
+      };
+    } catch (error) {
+      logAuthEvent('auth_failed', undefined, {
+        provider: 'google',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  });
+
+  /**
    * POST /auth/refresh
    * Refresh expired JWT
    */
@@ -375,7 +456,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       avatarHeadshotUrl,
       robloxConnected: user.authProvider === 'ROBLOX',
       authProvider: user.authProvider,
-      email: user.appleEmail,
+      email: user.authProvider === 'APPLE' ? user.appleEmail : user.googleEmail,
     };
   });
 }

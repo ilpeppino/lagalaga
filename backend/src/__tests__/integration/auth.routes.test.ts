@@ -6,9 +6,11 @@ const mockGenerateAuthorizationUrl = jest.fn<any>();
 const mockExchangeCode = jest.fn<any>();
 const mockGetUserInfo = jest.fn<any>();
 const mockVerifyAppleIdentityToken = jest.fn<any>();
+const mockVerifyGoogleIdentityToken = jest.fn<any>();
 
 const mockUpsertUser = jest.fn<any>();
 const mockUpsertAppleUser = jest.fn<any>();
+const mockUpsertGoogleUser = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
 
 const mockSaveConnection = jest.fn<any>();
@@ -34,10 +36,17 @@ jest.unstable_mockModule('../../services/apple-auth.service.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../../services/google-auth.service.js', () => ({
+  GoogleAuthService: class {
+    verifyIdentityToken = mockVerifyGoogleIdentityToken;
+  },
+}));
+
 jest.unstable_mockModule('../../services/userService.js', () => ({
   UserService: class {
     upsertUser = mockUpsertUser;
     upsertAppleUser = mockUpsertAppleUser;
+    upsertGoogleUser = mockUpsertGoogleUser;
     getUserById = mockGetUserById;
   },
 }));
@@ -83,6 +92,7 @@ function buildConfig() {
     ROBLOX_CLIENT_SECRET: 'roblox-client-secret',
     ROBLOX_REDIRECT_URI: 'lagalaga://oauth/callback',
     APPLE_AUDIENCE: 'com.ilpeppino.lagalaga,com.ilpeppino.lagalaga.dev',
+    GOOGLE_AUDIENCE: 'android-client.apps.googleusercontent.com,web-client.apps.googleusercontent.com',
   };
 }
 
@@ -311,6 +321,49 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('AUTH_001');
     expect(mockUpsertAppleUser).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/google returns tokens + user for valid payload', async () => {
+    mockVerifyGoogleIdentityToken.mockResolvedValue({
+      sub: 'google-sub-1',
+      email: 'user@example.com',
+      emailVerified: true,
+      fullName: 'Google User',
+      audience: 'android-client.apps.googleusercontent.com',
+    });
+    mockUpsertGoogleUser.mockResolvedValue({
+      id: 'google-user-1',
+      robloxUserId: 'google:google-sub-1',
+      robloxUsername: 'google_user',
+      robloxDisplayName: 'Google User',
+      robloxProfileUrl: null,
+      tokenVersion: 5,
+      status: 'ACTIVE',
+    });
+    mockGenerateTokens.mockReturnValue({
+      accessToken: 'google-access-token',
+      refreshToken: 'google-refresh-token',
+    });
+
+    const response = await request(app.server)
+      .post('/auth/google')
+      .send({
+        identityToken: 'google-id-token',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.accessToken).toBe('google-access-token');
+    expect(response.body.refreshToken).toBe('google-refresh-token');
+    expect(mockVerifyGoogleIdentityToken).toHaveBeenCalledWith('google-id-token', [
+      'android-client.apps.googleusercontent.com',
+      'web-client.apps.googleusercontent.com',
+    ]);
+    expect(mockUpsertGoogleUser).toHaveBeenCalledWith({
+      googleSub: 'google-sub-1',
+      email: 'user@example.com',
+      fullName: 'Google User',
+      emailVerified: true,
+    });
   });
 
   it('POST /auth/refresh returns token expired error for invalid refresh token', async () => {

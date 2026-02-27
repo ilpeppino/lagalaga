@@ -19,9 +19,10 @@ export default function SignInScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const { signInWithApple } = useAuth();
+  const { signInWithApple, signInWithGoogle } = useAuth();
   const { handleError } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const canSignIn = acceptedTerms && acceptedPrivacy && !loading;
 
   useEffect(() => {
     if (Platform.OS !== "ios") {
@@ -39,7 +40,7 @@ export default function SignInScreen() {
   }, []);
 
   async function handleAppleSignIn() {
-    if (loading) return;
+    if (!canSignIn) return;
     try {
       setLoading(true);
       const signedIn = await signInWithApple();
@@ -48,6 +49,21 @@ export default function SignInScreen() {
       }
     } catch (error) {
       handleError(error, { fallbackMessage: "Failed to sign in with Apple. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    if (!canSignIn) return;
+    try {
+      setLoading(true);
+      const signedIn = await signInWithGoogle();
+      if (signedIn) {
+        router.replace("/");
+      }
+    } catch (error) {
+      handleError(error, { fallbackMessage: "Failed to sign in with Google. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -73,18 +89,38 @@ export default function SignInScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          {Platform.OS === "ios" && appleAvailable ? (
-            <AppleAuthentication.AppleAuthenticationButton
-              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-              buttonStyle={
-                colorScheme === "dark"
-                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-              }
-              cornerRadius={8}
-              style={styles.appleButton}
-              onPress={handleAppleSignIn}
+          {Platform.OS === "android" ? (
+            <AnimatedButton
+              title="Continue with Google"
+              variant="filled"
+              onPress={handleGoogleSignIn}
+              loading={loading}
+              disabled={!canSignIn}
+              enableHaptics
+              buttonColor="#FFFFFF"
+              style={styles.button}
+              contentStyle={styles.buttonContent}
+              labelStyle={styles.googleButtonLabel}
             />
+          ) : null}
+
+          {Platform.OS === "ios" && appleAvailable ? (
+            <View
+              pointerEvents={canSignIn ? "auto" : "none"}
+              style={!canSignIn ? styles.buttonDisabled : undefined}
+            >
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonStyle={
+                  colorScheme === "dark"
+                    ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                    : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                }
+                cornerRadius={8}
+                style={styles.appleButton}
+                onPress={handleAppleSignIn}
+              />
+            </View>
           ) : (
             <AnimatedButton
               title="Continue with Apple"
@@ -202,8 +238,16 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 52,
   },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
   buttonLabel: {
     color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  googleButtonLabel: {
+    color: "#1a1a1a",
     fontSize: 16,
     fontWeight: "600",
   },

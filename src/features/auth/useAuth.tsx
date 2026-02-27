@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Google from 'expo-auth-session/providers/google';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -22,7 +23,7 @@ interface User {
   robloxProfileUrl?: string;
   avatarHeadshotUrl?: string | null;
   robloxConnected?: boolean;
-  authProvider?: 'ROBLOX' | 'APPLE';
+  authProvider?: 'ROBLOX' | 'APPLE' | 'GOOGLE';
   email?: string | null;
 }
 
@@ -31,6 +32,7 @@ interface AuthContextValue {
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
   signInWithApple: () => Promise<boolean>;
+  signInWithGoogle: () => Promise<boolean>;
   signOut: () => Promise<void>;
   reloadUser: () => Promise<void>;
 }
@@ -40,6 +42,12 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email'],
+    responseType: 'id_token',
+  });
 
   useEffect(() => {
     loadUser();
@@ -200,6 +208,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithGoogle = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+      logger.warn('Google sign-in requested on unsupported platform', {
+        platform: Platform.OS,
+      });
+      return false;
+    }
+
+    if (!googleRequest) {
+      logger.warn('Google sign-in request is not ready');
+      return false;
+    }
+
+    try {
+      const result = await promptGoogleAsync();
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        logger.info('Google sign-in cancelled by user');
+        return false;
+      }
+
+      if (result.type !== 'success') {
+        logger.warn('Google sign-in failed to complete', { type: result.type });
+        return false;
+      }
+
+      const identityToken = result.params.id_token;
+      if (!identityToken) {
+        throw new Error('Google identity token missing');
+      }
+
+      const authResponse = await apiClient.auth.signInWithGoogle({
+        identityToken,
+      });
+
+      await tokenStorage.setToken(authResponse.accessToken);
+      await tokenStorage.setRefreshToken(authResponse.refreshToken);
+      await loadUser();
+      logger.info('Google sign-in completed successfully');
+      return true;
+    } catch (error) {
+      logger.error('Google sign-in failed', {
+        error: error instanceof Error ? error.message : String(error),
+        lastGoogleResponseType: googleResponse?.type ?? null,
+      });
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     try {
       await apiClient.auth.revoke();
@@ -219,7 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithApple, signOut, reloadUser: loadUser }}>
+    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithApple, signInWithGoogle, signOut, reloadUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -113,6 +113,7 @@ export default function RootLayout() {
                 />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications' }} />
+                <Stack.Screen name="connect-roblox" options={{ headerShown: true, title: 'Connect Roblox' }} />
                 <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
                 <Stack.Screen name="settings" options={{ headerShown: true, title: 'Settings' }} />
                 <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />

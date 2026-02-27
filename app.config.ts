@@ -31,6 +31,7 @@ const config: ExpoConfig = {
   ios: {
     buildNumber: "11",
     supportsTablet: true,
+    usesAppleSignIn: true,
     bundleIdentifier: iosBundleIdentifier,
     associatedDomains: ["applinks:ilpeppino.github.io"],
     infoPlist: {
@@ -119,6 +120,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-apple-authentication",
     ...(isDevVariant ? ["expo-dev-client"] : []),
     [
       "expo-splash-screen",

@@ -122,6 +122,22 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
     },
   }, async (request) => handleCallback(request));
 
+  fastify.post<{
+    Body: { code: string; state: string };
+  }>('/roblox/exchange', {
+    preHandler: authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['code', 'state'],
+        properties: {
+          code: { type: 'string' },
+          state: { type: 'string' },
+        },
+      },
+    },
+  }, async (request) => handleCallback(request));
+
   fastify.get<{
     Querystring: { code: string; state: string };
   }>('/roblox/callback', {

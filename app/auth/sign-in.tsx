@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { useEffect, useState } from "react";
+import { View, StyleSheet, Platform } from "react-native";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
+import { useRouter } from "expo-router";
 import { Checkbox } from "react-native-paper";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
@@ -12,20 +14,40 @@ const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
 const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
 
 export default function SignInScreen() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const { signInWithRoblox } = useAuth();
+  const { signInWithApple } = useAuth();
   const { handleError } = useErrorHandler();
   const colorScheme = useColorScheme();
-  const canSignIn = acceptedTerms && acceptedPrivacy && !loading;
 
-  async function handleRobloxSignIn() {
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      setAppleAvailable(false);
+      return;
+    }
+
+    void AppleAuthentication.isAvailableAsync()
+      .then((available) => {
+        setAppleAvailable(available);
+      })
+      .catch(() => {
+        setAppleAvailable(false);
+      });
+  }, []);
+
+  async function handleAppleSignIn() {
+    if (loading) return;
     try {
       setLoading(true);
-      await signInWithRoblox();
+      const signedIn = await signInWithApple();
+      if (signedIn) {
+        router.replace("/");
+      }
     } catch (error) {
-      handleError(error, { fallbackMessage: "Failed to sign in with Roblox. Please try again." });
+      handleError(error, { fallbackMessage: "Failed to sign in with Apple. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -51,18 +73,28 @@ export default function SignInScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          <AnimatedButton
-            title="Sign in with Roblox"
-            variant="filled"
-            onPress={handleRobloxSignIn}
-            loading={loading}
-            disabled={!canSignIn}
-            enableHaptics
-            buttonColor="#007AFF"
-            style={styles.button}
-            contentStyle={styles.buttonContent}
-            labelStyle={styles.buttonLabel}
-          />
+          {Platform.OS === "ios" && appleAvailable ? (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={
+                colorScheme === "dark"
+                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+              }
+              cornerRadius={8}
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+            />
+          ) : (
+            <AnimatedButton
+              title="Continue with Apple"
+              variant="outlined"
+              onPress={() => {}}
+              disabled
+              style={styles.button}
+              contentStyle={styles.buttonContent}
+            />
+          )}
 
           <View style={styles.ackContainer}>
             <View style={styles.ackRow}>
@@ -108,7 +140,7 @@ export default function SignInScreen() {
             darkColor="#9a9aa1"
             style={styles.hint}
           >
-            Requires a 13+ Roblox account.
+            You can connect Roblox after signing in.
           </ThemedText>
 
           <ThemedText
@@ -165,6 +197,10 @@ const styles = StyleSheet.create({
   },
   buttonContent: {
     minHeight: 52,
+  },
+  appleButton: {
+    width: "100%",
+    height: 52,
   },
   buttonLabel: {
     color: "#fff",

@@ -32,6 +32,17 @@ interface CreateDeletionRequestInput {
   reason?: string;
 }
 
+interface ImmediateDeleteInput {
+  userId: string;
+  initiator: DeletionInitiator;
+  reason?: string;
+}
+
+export interface ImmediateDeleteResponse {
+  deletedAt: string;
+  authProvider: 'ROBLOX' | 'APPLE' | 'UNKNOWN';
+}
+
 interface ServiceOptions {
   gracePeriodDays?: number;
   maxRequestsPerHour?: number;
@@ -323,6 +334,51 @@ export class AccountDeletionService {
     }
 
     return { processed, failed };
+  }
+
+  async deleteAccountNow(input: ImmediateDeleteInput): Promise<ImmediateDeleteResponse> {
+    const supabase = getSupabase();
+    const nowIso = new Date().toISOString();
+
+    const { data: userRow, error: userError } = await supabase
+      .from('app_users')
+      .select('id, auth_provider')
+      .eq('id', input.userId)
+      .maybeSingle<{ id: string; auth_provider: 'ROBLOX' | 'APPLE' | null }>();
+
+    if (userError) {
+      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load user for deletion: ${userError.message}`);
+    }
+    if (!userRow) {
+      throw new NotFoundError('User', input.userId);
+    }
+
+    const { data: deletionRow, error: insertError } = await supabase
+      .from('account_deletion_requests')
+      .insert({
+        user_id: input.userId,
+        requested_at: nowIso,
+        scheduled_purge_at: nowIso,
+        status: 'PENDING',
+        initiator: input.initiator,
+        reason: input.reason ?? 'Immediate in-app account deletion',
+      })
+      .select('id, user_id, requested_at, scheduled_purge_at, status, initiator, reason')
+      .single<AccountDeletionRequestRow>();
+
+    if (insertError) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to create immediate deletion request: ${insertError.message}`
+      );
+    }
+
+    await this.executePurge(deletionRow);
+
+    return {
+      deletedAt: nowIso,
+      authProvider: userRow.auth_provider ?? 'UNKNOWN',
+    };
   }
 
   private async getPendingRequest(userId: string): Promise<AccountDeletionRequestRow | null> {

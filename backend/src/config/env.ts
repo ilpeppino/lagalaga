@@ -9,6 +9,7 @@ export const envSchema = {
     'ROBLOX_CLIENT_ID',
     'ROBLOX_CLIENT_SECRET',
     'ROBLOX_REDIRECT_URI',
+    'APPLE_AUDIENCE',
     'JWT_SECRET',
     'REFRESH_TOKEN_SECRET',
   ],
@@ -39,6 +40,10 @@ export const envSchema = {
     },
     ROBLOX_REDIRECT_URI: {
       type: 'string',
+    },
+    APPLE_AUDIENCE: {
+      type: 'string',
+      default: '',
     },
     JWT_SECRET: {
       type: 'string',
@@ -168,6 +173,7 @@ declare module 'fastify' {
       ROBLOX_CLIENT_ID: string;
       ROBLOX_CLIENT_SECRET: string;
       ROBLOX_REDIRECT_URI: string;
+      APPLE_AUDIENCE: string;
       JWT_SECRET: string;
       JWT_EXPIRY: string;
       REFRESH_TOKEN_SECRET: string;

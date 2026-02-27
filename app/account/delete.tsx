@@ -54,7 +54,7 @@ export default function DeleteAccountInfoScreen() {
 
         <View style={[styles.card, { backgroundColor: cardBackground }]}> 
           <ThemedText type="titleMedium" style={styles.cardTitle}>Timeline</ThemedText>
-          <ThemedText style={styles.lead}>Deletion is initiated immediately and completed within 30 days.</ThemedText>
+          <ThemedText style={styles.lead}>Deletion starts immediately after confirmation and cannot be undone.</ThemedText>
         </View>
 
         <Button

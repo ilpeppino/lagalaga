@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 const mockGenerateAuthorizationUrl = jest.fn<any>();
 const mockExchangeCode = jest.fn<any>();
 const mockGetUserInfo = jest.fn<any>();
+const mockVerifyAppleIdentityToken = jest.fn<any>();
 
 const mockUpsertUser = jest.fn<any>();
+const mockUpsertAppleUser = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
 
 const mockSaveConnection = jest.fn<any>();
@@ -26,9 +28,16 @@ jest.unstable_mockModule('../../services/robloxOAuth.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../../services/apple-auth.service.js', () => ({
+  AppleAuthService: class {
+    verifyIdentityToken = mockVerifyAppleIdentityToken;
+  },
+}));
+
 jest.unstable_mockModule('../../services/userService.js', () => ({
   UserService: class {
     upsertUser = mockUpsertUser;
+    upsertAppleUser = mockUpsertAppleUser;
     getUserById = mockGetUserById;
   },
 }));
@@ -61,6 +70,7 @@ jest.unstable_mockModule('../../utils/crypto.js', () => ({
 const { authRoutes } = await import('../../routes/auth.js');
 const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
 const { rateLimitPlugin } = await import('../../plugins/rate-limit.js');
+const { AuthError, ErrorCodes } = await import('../../utils/errors.js');
 
 function buildConfig() {
   return {
@@ -72,6 +82,7 @@ function buildConfig() {
     ROBLOX_CLIENT_ID: 'roblox-client-id',
     ROBLOX_CLIENT_SECRET: 'roblox-client-secret',
     ROBLOX_REDIRECT_URI: 'lagalaga://oauth/callback',
+    APPLE_AUDIENCE: 'com.ilpeppino.lagalaga,com.ilpeppino.lagalaga.dev',
   };
 }
 
@@ -228,6 +239,78 @@ describe('auth routes', () => {
     });
     expect(mockVerifyRefreshToken).toHaveBeenCalledWith('valid-refresh-token');
     expect(mockGetUserById).toHaveBeenCalledWith('user-1');
+  });
+
+  it('POST /auth/apple returns tokens + user for valid payload', async () => {
+    mockVerifyAppleIdentityToken.mockResolvedValue({
+      sub: 'apple-sub-1',
+      aud: 'com.ilpeppino.lagalaga',
+      iss: 'https://appleid.apple.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      email: 'relay@privaterelay.appleid.com',
+      is_private_email: true,
+    });
+    mockUpsertAppleUser.mockResolvedValue({
+      id: 'apple-user-1',
+      robloxUserId: 'apple:apple-sub-1',
+      robloxUsername: 'relay',
+      robloxDisplayName: 'Relay User',
+      robloxProfileUrl: null,
+      tokenVersion: 1,
+      status: 'ACTIVE',
+      appleEmailIsPrivate: true,
+    });
+    mockGenerateTokens.mockReturnValue({
+      accessToken: 'apple-access-token',
+      refreshToken: 'apple-refresh-token',
+    });
+
+    const response = await request(app.server)
+      .post('/auth/apple')
+      .send({
+        identityToken: 'identity-token',
+        authorizationCode: 'auth-code',
+        fullName: {
+          givenName: 'Relay',
+          familyName: 'User',
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.accessToken).toBe('apple-access-token');
+    expect(response.body.refreshToken).toBe('apple-refresh-token');
+    expect(mockVerifyAppleIdentityToken).toHaveBeenCalledWith('identity-token', [
+      'com.ilpeppino.lagalaga',
+      'com.ilpeppino.lagalaga.dev',
+    ]);
+    expect(mockUpsertAppleUser).toHaveBeenCalledWith({
+      appleSub: 'apple-sub-1',
+      email: 'relay@privaterelay.appleid.com',
+      fullName: 'Relay User',
+      isPrivateEmail: true,
+    });
+    expect(mockGenerateTokens).toHaveBeenCalledWith({
+      userId: 'apple-user-1',
+      robloxUserId: 'apple:apple-sub-1',
+      robloxUsername: 'relay',
+      tokenVersion: 1,
+    });
+  });
+
+  it('POST /auth/apple rejects invalid token', async () => {
+    mockVerifyAppleIdentityToken.mockRejectedValue(
+      new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'invalid')
+    );
+
+    const response = await request(app.server)
+      .post('/auth/apple')
+      .send({
+        identityToken: 'bad-token',
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('AUTH_001');
+    expect(mockUpsertAppleUser).not.toHaveBeenCalled();
   });
 
   it('POST /auth/refresh returns token expired error for invalid refresh token', async () => {

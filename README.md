@@ -42,6 +42,15 @@ To learn more about developing your project with Expo, look at the following res
 - [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
 - [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
+## Account deletion
+
+Users can permanently delete their account directly in-app:
+
+- Path: `Me -> Account -> Delete Account`
+- Friction: user must acknowledge permanence and type `DELETE`
+- API: `DELETE /v1/account` (authenticated)
+- Behavior: account data is purged/anonymized per backend service policy, sessions/tokens are revoked, and user is signed out immediately
+
 ## Join the community
 
 Join our community of developers creating universal apps.

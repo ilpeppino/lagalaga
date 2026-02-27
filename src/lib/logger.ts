@@ -28,6 +28,7 @@ interface LogTransport {
 const SENSITIVE_KEYS = new Set([
   'password', 'token', 'accesstoken', 'access_token',
   'refreshtoken', 'refresh_token', 'secret', 'authorization',
+  'identitytoken', 'identity_token', 'authorizationcode', 'authorization_code',
   'codeverifier', 'code_verifier', 'codechallenge', 'code_challenge',
   'cookie', 'apikey', 'api_key', 'privatekey', 'private_key',
   'sessionid', 'session_id',

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AppState, Linking, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -21,12 +22,15 @@ interface User {
   robloxProfileUrl?: string;
   avatarHeadshotUrl?: string | null;
   robloxConnected?: boolean;
+  authProvider?: 'ROBLOX' | 'APPLE';
+  email?: string | null;
 }
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
+  signInWithApple: () => Promise<boolean>;
   signOut: () => Promise<void>;
   reloadUser: () => Promise<void>;
 }
@@ -68,6 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         robloxDisplayName: me.robloxDisplayName,
         avatarHeadshotUrl: me.avatarHeadshotUrl,
         robloxConnected: me.robloxConnected,
+        authProvider: me.authProvider,
+        email: me.email ?? null,
       };
       setUser(userData);
       void warmFavorites(me.id);
@@ -103,15 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authUrl: authorizationUrl.substring(0, 100)
       });
 
-      // iOS dev-client can route auth sessions through Expo pages.
-      // Opening URL directly in browser preserves custom scheme callback handling.
-      if (Platform.OS === 'ios') {
-        await Linking.openURL(authorizationUrl);
-        logger.info('Opened OAuth URL in iOS browser');
-        return;
-      }
-
-      // Android: keep auth session flow.
+      // Use in-app auth session on both iOS and Android.
       const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
       logger.info('OAuth session finished', {
         type: result.type,
@@ -123,6 +121,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // The code exchange happens in `app/auth/roblox.tsx`
     } catch (error) {
       logger.error('Failed to start OAuth flow', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
+  const signInWithApple = async (): Promise<boolean> => {
+    if (Platform.OS !== 'ios') {
+      logger.warn('Apple sign-in requested on unsupported platform', {
+        platform: Platform.OS,
+      });
+      return false;
+    }
+
+    const isAvailable = await AppleAuthentication.isAvailableAsync();
+    if (!isAvailable) {
+      logger.warn('Apple sign-in is not available on this iOS device');
+      return false;
+    }
+
+    try {
+      logger.info('Starting Apple sign-in flow');
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        throw new Error('Apple identity token missing');
+      }
+
+      const fullNamePayload = credential.fullName
+        ? {
+            givenName: credential.fullName.givenName ?? undefined,
+            middleName: credential.fullName.middleName ?? undefined,
+            familyName: credential.fullName.familyName ?? undefined,
+            nickname: credential.fullName.nickname ?? undefined,
+          }
+        : undefined;
+      const hasFullName = Boolean(
+        fullNamePayload?.givenName ||
+        fullNamePayload?.middleName ||
+        fullNamePayload?.familyName ||
+        fullNamePayload?.nickname
+      );
+
+      const authResponse = await apiClient.auth.signInWithApple({
+        identityToken: credential.identityToken,
+        ...(credential.authorizationCode ? { authorizationCode: credential.authorizationCode } : {}),
+        ...(credential.email ? { email: credential.email } : {}),
+        ...(hasFullName ? { fullName: fullNamePayload } : {}),
+      });
+
+      await tokenStorage.setToken(authResponse.accessToken);
+      await tokenStorage.setRefreshToken(authResponse.refreshToken);
+      await loadUser();
+
+      logger.info('Apple sign-in completed successfully');
+      return true;
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code?: string }).code === 'ERR_REQUEST_CANCELED'
+      ) {
+        logger.info('Apple sign-in cancelled by user');
+        return false;
+      }
+
+      logger.error('Apple sign-in failed', {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -148,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signOut, reloadUser: loadUser }}>
+    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithApple, signOut, reloadUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -107,4 +107,67 @@ describe('Account deletion routes', () => {
 
     await app.close();
   });
+
+  it('DELETE /v1/account validates confirmation text', async () => {
+    const serviceMock: Pick<AccountDeletionService, 'deleteAccountNow'> = {
+      deleteAccountNow: async () => ({
+        deletedAt: '2026-02-27T00:00:00.000Z',
+        authProvider: 'APPLE',
+      }),
+    };
+
+    await app.register(buildAccountRoutes({
+      accountDeletionService: serviceMock as AccountDeletionService,
+      authPreHandler: async (req: any) => {
+        req.user = {
+          userId: 'user-1',
+          robloxUserId: '123',
+          robloxUsername: 'Tester',
+          tokenVersion: 0,
+        };
+      },
+    }), { prefix: '/v1/account' });
+    await app.ready();
+
+    const response = await request(app.server)
+      .delete('/v1/account')
+      .send({ confirmationText: 'remove' });
+
+    expect(response.status).toBe(400);
+    expect(response.body?.error?.code).toBe('VAL_003');
+
+    await app.close();
+  });
+
+  it('DELETE /v1/account deletes account immediately with valid confirmation text', async () => {
+    const deleteAccountNow = async () => ({
+      deletedAt: '2026-02-27T00:00:00.000Z',
+      authProvider: 'ROBLOX' as const,
+    });
+
+    await app.register(buildAccountRoutes({
+      accountDeletionService: { deleteAccountNow } as unknown as AccountDeletionService,
+      authPreHandler: async (req: any) => {
+        req.user = {
+          userId: 'user-1',
+          robloxUserId: '123',
+          robloxUsername: 'Tester',
+          tokenVersion: 0,
+        };
+      },
+    }), { prefix: '/v1/account' });
+    await app.ready();
+
+    const response = await request(app.server)
+      .delete('/v1/account')
+      .send({ confirmationText: 'DELETE' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      deletedAt: '2026-02-27T00:00:00.000Z',
+    });
+
+    await app.close();
+  });
 });

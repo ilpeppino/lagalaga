@@ -21,11 +21,12 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { apiClient } from '@/src/lib/api';
 import { refreshFavorites } from '@/src/features/favorites/service';
 import { refreshFriends } from '@/src/features/friends/service';
-import { DangerZone } from '@/src/components/settings/DangerZone';
+import { robloxConnectionService } from '@/src/features/auth/robloxConnectionService';
 import { SettingsRow } from '@/src/components/settings/SettingsRow';
 import { SettingsSection } from '@/src/components/settings/SettingsSection';
 import { StatusIndicator } from '@/src/components/settings/StatusIndicator';
 import { settingsTypography, spacing } from '@/src/components/settings/tokens';
+import { logger } from '@/src/lib/logger';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -93,6 +94,11 @@ export default function MeScreen() {
       }
       const json: MeResponse = await response.json();
       setData(json.data);
+      logger.info('Auth debug status', {
+        robloxConnected: json.data.roblox.connected,
+        robloxUserId: json.data.roblox.robloxUserId,
+        robloxUsername: json.data.roblox.username,
+      });
       setLastSyncedAt((current) => current ?? new Date().toISOString());
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to load profile' });
@@ -129,7 +135,20 @@ export default function MeScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
     if (!data?.roblox.connected) {
-      router.push('/roblox');
+      try {
+        setRefreshing(true);
+        const result = await robloxConnectionService.connect();
+        if (result.status === 'connected') {
+          await fetchMeData();
+          await refreshFavorites(user.id, { force: true }).catch(() => {});
+          await refreshFriends(user.id, { force: true }).catch(() => {});
+          showSyncSuccess();
+        }
+      } catch (error) {
+        handleError(error, { fallbackMessage: 'Failed to connect Roblox' });
+      } finally {
+        setRefreshing(false);
+      }
       return;
     }
 
@@ -167,7 +186,7 @@ export default function MeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [data?.roblox.connected, handleError, router, showSyncSuccess, user?.id]);
+  }, [data?.roblox.connected, fetchMeData, handleError, showSyncSuccess, user?.id]);
 
   const openDeleteAccount = useCallback(async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -273,6 +292,11 @@ export default function MeScreen() {
 
             <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
             <StatusIndicator label={data.roblox.connected ? 'Roblox connected' : 'Roblox not connected'} />
+            {data.roblox.connected && data.roblox.username ? (
+              <Text style={[styles.connectedAsText, { color: secondaryTextColor }]}>
+                Connected as @{data.roblox.username}
+              </Text>
+            ) : null}
 
             <SettingsRow
               label={data.roblox.connected ? 'Sync data' : 'Connect Roblox'}
@@ -297,6 +321,7 @@ export default function MeScreen() {
             <SettingsSection title="Account">
               <SettingsRow label="Settings" onPress={openSettings} />
               <SettingsRow label="Safety & Report" onPress={openSafetyReport} />
+              <SettingsRow label="Delete Account" onPress={() => { void openDeleteAccount(); }} destructive />
             </SettingsSection>
           </View>
 
@@ -318,10 +343,6 @@ export default function MeScreen() {
                 Lagalaga is not affiliated with Roblox.
               </Text>
             </SettingsSection>
-          </View>
-
-          <View style={styles.dangerBlock}>
-            <DangerZone onDelete={() => { void openDeleteAccount(); }} />
           </View>
         </ScrollView>
       </Animated.View>
@@ -393,6 +414,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  connectedAsText: {
+    textAlign: 'center',
+    marginTop: -10,
+    marginBottom: 2,
+    fontSize: 13,
+  },
   sectionBlock: {
     marginTop: spacing.lg,
   },
@@ -400,8 +427,5 @@ const styles = StyleSheet.create({
     ...settingsTypography.caption,
     lineHeight: 18,
     opacity: 0.75,
-  },
-  dangerBlock: {
-    marginTop: spacing.xl,
   },
 });

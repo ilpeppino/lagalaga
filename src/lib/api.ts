@@ -17,9 +17,32 @@ interface AuthResponse {
   };
 }
 
+interface AppleAuthRequest {
+  identityToken: string;
+  authorizationCode?: string | null;
+  email?: string | null;
+  fullName?: {
+    givenName?: string | null;
+    middleName?: string | null;
+    familyName?: string | null;
+    nickname?: string | null;
+  } | null;
+}
+
 interface RefreshResponse {
   accessToken: string;
   refreshToken: string;
+}
+
+interface RobloxConnectStartResponse {
+  authorizationUrl: string;
+  state: string;
+}
+
+interface RobloxConnectExchangeResponse {
+  connected: boolean;
+  robloxUserId?: string;
+  verifiedAt?: string;
 }
 
 export interface AccountDeletionStatusResponse {
@@ -330,6 +353,13 @@ class ApiClient {
       });
     },
 
+    signInWithApple: async (payload: AppleAuthRequest): Promise<AuthResponse> => {
+      return this.request('/auth/apple', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     refresh: async (): Promise<RefreshResponse> => {
       const refreshToken = await tokenStorage.getRefreshToken();
       if (!refreshToken) {
@@ -358,9 +388,26 @@ class ApiClient {
       robloxDisplayName?: string;
       avatarHeadshotUrl: string | null;
       robloxConnected: boolean;
+      authProvider?: 'ROBLOX' | 'APPLE';
+      email?: string | null;
     }> => {
       return this.request('/auth/me', {
         method: 'GET',
+      });
+    },
+  };
+
+  roblox = {
+    startConnect: async (): Promise<RobloxConnectStartResponse> => {
+      return this.request('/api/auth/roblox/start', {
+        method: 'GET',
+      });
+    },
+
+    exchangeConnect: async (code: string, state: string): Promise<RobloxConnectExchangeResponse> => {
+      return this.request('/api/auth/roblox/exchange', {
+        method: 'POST',
+        body: JSON.stringify({ code, state }),
       });
     },
   };
@@ -408,6 +455,13 @@ class ApiClient {
     cancelDeletionRequest: async (): Promise<AccountDeletionStatusResponse> => {
       return this.request('/v1/account/deletion-cancel', {
         method: 'POST',
+      });
+    },
+
+    deleteAccount: async (input: { confirmationText: string }): Promise<{ success: boolean; deletedAt: string }> => {
+      return this.request('/v1/account', {
+        method: 'DELETE',
+        body: JSON.stringify(input),
       });
     },
   };

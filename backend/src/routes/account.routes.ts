@@ -5,6 +5,8 @@ import {
   type DeletionInitiator,
   type DeletionStatusResponse,
 } from '../services/account-deletion.service.js';
+import { AppError, ErrorCodes } from '../utils/errors.js';
+import { monitoring } from '../lib/monitoring.js';
 
 interface AccountRoutesDeps {
   accountDeletionService?: AccountDeletionService;
@@ -65,6 +67,51 @@ export function buildAccountRoutes(deps: AccountRoutesDeps = {}) {
     fastify.post('/deletion-cancel', { preHandler: authPreHandler }, async (request, reply) => {
       const result = await accountDeletionService.cancelDeletionRequest(request.user.userId);
       return reply.send(toResponsePayload(result));
+    });
+
+    fastify.delete<{
+      Body: { confirmationText: string };
+    }>('/', {
+      preHandler: authPreHandler,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['confirmationText'],
+          properties: {
+            confirmationText: { type: 'string', minLength: 1, maxLength: 32 },
+          },
+        },
+      },
+    }, async (request, reply) => {
+      const normalized = request.body.confirmationText.trim().toUpperCase();
+      if (normalized !== 'DELETE') {
+        throw new AppError(
+          ErrorCodes.VALIDATION_INVALID_FORMAT,
+          'Invalid confirmation text. Type DELETE to continue.',
+          400
+        );
+      }
+
+      const result = await accountDeletionService.deleteAccountNow({
+        userId: request.user.userId,
+        initiator: 'IN_APP',
+      });
+
+      monitoring.captureMessage('account_deleted', 'info');
+      request.log.info(
+        {
+          event: 'account_deleted',
+          authProvider: result.authProvider,
+          initiator: 'IN_APP',
+          type: 'account',
+        },
+        'Account deleted'
+      );
+
+      return reply.send({
+        success: true,
+        deletedAt: result.deletedAt,
+      });
     });
   };
 }

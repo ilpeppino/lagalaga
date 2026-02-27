@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import { tokenStorage } from "@/src/lib/tokenStorage";
 import { LagaLoadingSpinner } from "@/components/ui/LagaLoadingSpinner";
 import { logger } from "@/src/lib/logger";
+import { hasDismissedRobloxConnectPrompt } from "@/src/features/auth/robloxConnectionPrompt";
 
 export default function Index() {
   const { user, loading } = useAuth();
   const [hasToken, setHasToken] = useState<boolean | null>(null);
+  const [showRobloxPrompt, setShowRobloxPrompt] = useState<boolean | null>(null);
 
   useEffect(() => {
     // Check if token exists as fallback
@@ -24,7 +26,31 @@ export default function Index() {
       });
   }, []);
 
-  if (loading || hasToken === null) {
+  useEffect(() => {
+    if (!user) {
+      setShowRobloxPrompt(false);
+      return;
+    }
+
+    if (user.robloxConnected || user.authProvider !== "APPLE") {
+      setShowRobloxPrompt(false);
+      return;
+    }
+
+    setShowRobloxPrompt(null);
+    void hasDismissedRobloxConnectPrompt()
+      .then((dismissed) => {
+        setShowRobloxPrompt(!dismissed);
+      })
+      .catch((error) => {
+        logger.warn("Failed to read Roblox connect prompt state", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        setShowRobloxPrompt(true);
+      });
+  }, [user]);
+
+  if (loading || hasToken === null || (user && showRobloxPrompt === null)) {
     return (
       <View style={styles.container}>
         <LagaLoadingSpinner size={56} label="Loading..." />
@@ -40,6 +66,10 @@ export default function Index() {
 
   if (!user) {
     return <Redirect href="/auth/sign-in" />;
+  }
+
+  if (showRobloxPrompt) {
+    return <Redirect href="/connect-roblox" />;
   }
 
   return <Redirect href="/sessions" />;

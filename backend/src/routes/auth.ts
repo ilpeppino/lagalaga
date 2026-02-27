@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { RobloxOAuthService } from '../services/robloxOAuth.js';
+import { AppleAuthService } from '../services/apple-auth.service.js';
 import { UserService } from '../services/userService.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { TokenService } from '../services/tokenService.js';
@@ -11,9 +12,11 @@ import {
 } from '../utils/crypto.js';
 import { AuthError, ErrorCodes } from '../utils/errors.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { logAuthEvent } from '../lib/logger.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
+  const appleAuth = new AppleAuthService();
   const robloxConnectionService = new RobloxConnectionService(fastify);
   const userService = new UserService();
   const tokenService = new TokenService(fastify);
@@ -157,6 +160,117 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * POST /auth/apple
+   * Verify Apple identity token and issue app JWTs.
+   */
+  fastify.post<{
+    Body: {
+      identityToken: string;
+      authorizationCode?: string;
+      email?: string | null;
+      fullName?: {
+        givenName?: string | null;
+        middleName?: string | null;
+        familyName?: string | null;
+        nickname?: string | null;
+      } | null;
+    };
+  }>('/apple', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['identityToken'],
+        properties: {
+          identityToken: { type: 'string' },
+          authorizationCode: { type: 'string' },
+          email: { type: 'string' },
+          fullName: {
+            type: 'object',
+            properties: {
+              givenName: { type: 'string' },
+              middleName: { type: 'string' },
+              familyName: { type: 'string' },
+              nickname: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const { identityToken, authorizationCode, email: requestEmail, fullName } = request.body;
+    const audiences = request.server.config.APPLE_AUDIENCE
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (audiences.length === 0) {
+      fastify.log.error('APPLE_AUDIENCE is not configured');
+      throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'Apple sign-in is not configured');
+    }
+
+    try {
+      const appleIdentity = await appleAuth.verifyIdentityToken(identityToken, audiences);
+      const computedFullName = fullName
+        ? [fullName.givenName, fullName.middleName, fullName.familyName].filter(Boolean).join(' ').trim() || null
+        : null;
+
+      const user = await userService.upsertAppleUser({
+        appleSub: appleIdentity.sub,
+        email: requestEmail || appleIdentity.email || null,
+        fullName: computedFullName,
+        isPrivateEmail:
+          appleIdentity.is_private_email === true ||
+          appleIdentity.is_private_email === 'true',
+      });
+
+      if (user.status === 'PENDING_DELETION') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is pending deletion');
+      }
+      if (user.status === 'DELETED') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is unavailable');
+      }
+
+      const tokens = tokenService.generateTokens({
+        userId: user.id,
+        robloxUserId: user.robloxUserId,
+        robloxUsername: user.robloxUsername,
+        tokenVersion: user.tokenVersion,
+      });
+
+      logAuthEvent('login', user.id, {
+        provider: 'apple',
+        hasAuthorizationCode: Boolean(authorizationCode),
+        hasEmail: Boolean(requestEmail || appleIdentity.email),
+        isPrivateEmail: Boolean(user.appleEmailIsPrivate),
+      });
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: user.id,
+          robloxUserId: user.robloxUserId,
+          robloxUsername: user.robloxUsername,
+          robloxDisplayName: user.robloxDisplayName,
+          robloxProfileUrl: user.robloxProfileUrl,
+        },
+      };
+    } catch (error) {
+      logAuthEvent('auth_failed', undefined, {
+        provider: 'apple',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  });
+
+  /**
    * POST /auth/refresh
    * Refresh expired JWT
    */
@@ -239,16 +353,18 @@ export async function authRoutes(fastify: FastifyInstance) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
     }
 
-    // Fetch avatar with caching (non-blocking on failure)
+    // Fetch avatar only for Roblox-auth users (non-blocking on failure)
     let avatarHeadshotUrl: string | null = null;
-    try {
-      avatarHeadshotUrl = await userService.getAvatarHeadshotUrl(
-        user.id,
-        user.robloxUserId
-      );
-    } catch (error) {
-      // Log but don't fail the request if avatar fetch fails
-      fastify.log.warn(`Failed to fetch avatar for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`);
+    if (user.authProvider === 'ROBLOX') {
+      try {
+        avatarHeadshotUrl = await userService.getAvatarHeadshotUrl(
+          user.id,
+          user.robloxUserId
+        );
+      } catch (error) {
+        // Log but don't fail the request if avatar fetch fails
+        fastify.log.warn(`Failed to fetch avatar for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
 
     return {
@@ -257,7 +373,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       robloxUsername: user.robloxUsername,
       robloxDisplayName: user.robloxDisplayName,
       avatarHeadshotUrl,
-      robloxConnected: true,
+      robloxConnected: user.authProvider === 'ROBLOX',
+      authProvider: user.authProvider,
+      email: user.appleEmail,
     };
   });
 }

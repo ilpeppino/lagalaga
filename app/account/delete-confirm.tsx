@@ -16,6 +16,7 @@ import { apiClient } from '@/src/lib/api';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { isApiError } from '@/src/lib/errors';
+import { monitoring } from '@/src/lib/monitoring';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 
 export default function DeleteAccountConfirmScreen() {
@@ -60,23 +61,17 @@ export default function DeleteAccountConfirmScreen() {
   const submitDeletion = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.account.createDeletionRequest({ initiator: 'IN_APP' });
+      await apiClient.account.deleteAccount({ confirmationText: 'DELETE' });
+      monitoring.captureMessage('account_deleted', 'info');
       await signOut();
-
-      router.replace({
-        pathname: '/account/delete-done',
-        params: {
-          requestedAt: result.requestedAt ?? undefined,
-          scheduledPurgeAt: result.scheduledPurgeAt ?? undefined,
-        },
-      });
+      router.replace('/auth/sign-in');
     } catch (error) {
       if (isApiError(error) && error.statusCode === 429) {
         handleError(error, { fallbackMessage: 'Too many requests. Please try again later.' });
         return;
       }
 
-      handleError(error, { fallbackMessage: 'Failed to submit deletion request. Please try again.' });
+      handleError(error, { fallbackMessage: 'Failed to delete account. Please try again.' });
     } finally {
       setLoading(false);
     }
@@ -99,7 +94,7 @@ export default function DeleteAccountConfirmScreen() {
         <View style={[styles.card, { backgroundColor: cardBackground }]}> 
           <ThemedText type="titleMedium" style={styles.cardTitle}>Before you continue</ThemedText>
           <ThemedText style={styles.paragraph}>
-            This action is permanent. To continue, acknowledge the statement below and type DELETE.
+            This action permanently deletes your account. To continue, acknowledge the statement below and type DELETE.
           </ThemedText>
 
           <View style={styles.row}>

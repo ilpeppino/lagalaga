@@ -48,7 +48,9 @@ export const envSchema = {
     },
     GOOGLE_AUDIENCE: {
       type: 'string',
-      default: '',
+      // Comma-separated OAuth client IDs from Google Cloud Console.
+      pattern:
+        '^[^\\s,]+\\.apps\\.googleusercontent\\.com(,[^\\s,]+\\.apps\\.googleusercontent\\.com)*$',
     },
     JWT_SECRET: {
       type: 'string',

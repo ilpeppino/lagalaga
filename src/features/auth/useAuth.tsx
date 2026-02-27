@@ -42,9 +42,16 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim();
+  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+  const isGoogleClientId = (value?: string): value is string =>
+    Boolean(value && value.endsWith('.apps.googleusercontent.com'));
+  const hasValidGoogleAndroidClientId = isGoogleClientId(googleAndroidClientId);
+  const hasValidGoogleWebClientId = isGoogleClientId(googleWebClientId);
+
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId: hasValidGoogleAndroidClientId ? googleAndroidClientId : undefined,
+    webClientId: hasValidGoogleWebClientId ? googleWebClientId : undefined,
     scopes: ['openid', 'profile', 'email'],
     responseType: 'id_token',
   });
@@ -214,6 +221,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         platform: Platform.OS,
       });
       return false;
+    }
+
+    if (!hasValidGoogleAndroidClientId) {
+      logger.error('Google sign-in is misconfigured: expected OAuth client IDs', {
+        hasAndroidClientId: Boolean(googleAndroidClientId),
+        hasWebClientId: Boolean(googleWebClientId),
+        androidClientIdLooksLikeOAuthClientId: hasValidGoogleAndroidClientId,
+        webClientIdLooksLikeOAuthClientId: hasValidGoogleWebClientId,
+      });
+      throw new Error(
+        'Google sign-in is not configured correctly. EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID must be an OAuth client ID ending with .apps.googleusercontent.com.'
+      );
     }
 
     if (!googleRequest) {

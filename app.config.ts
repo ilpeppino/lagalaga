@@ -112,7 +112,7 @@ const config: ExpoConfig = {
     ],
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
-    package: androidPackage,
+    package: androidPackage
   },
   web: {
     output: "static",

@@ -48,9 +48,10 @@ export const envSchema = {
     },
     GOOGLE_AUDIENCE: {
       type: 'string',
-      // Comma-separated OAuth client IDs from Google Cloud Console.
+      // Comma-separated OAuth client IDs from Google Cloud Console. Allows optional
+      // whitespace around commas and at string edges (stripped by runtime code).
       pattern:
-        '^[^\\s,]+\\.apps\\.googleusercontent\\.com(,[^\\s,]+\\.apps\\.googleusercontent\\.com)*$',
+        '^\\s*[^\\s,]+\\.apps\\.googleusercontent\\.com(\\s*,\\s*[^\\s,]+\\.apps\\.googleusercontent\\.com)*\\s*$',
     },
     JWT_SECRET: {
       type: 'string',

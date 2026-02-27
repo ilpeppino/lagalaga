@@ -158,6 +158,8 @@ const config: ExpoConfig = {
   },
   ...(isDevVariant ? {} : { autolinking: { exclude: ["expo-dev-client"] } }),
   extra: {
+    googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? "",
+    googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "",
     router: {},
     eas: {
       projectId: "36b14711-e62b-452d-82bf-e8e7f9128fe6",

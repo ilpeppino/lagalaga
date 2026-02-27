@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
+import Constants from 'expo-constants';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -42,8 +43,18 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim();
-  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+  const extra = (Constants.expoConfig?.extra ?? {}) as {
+    googleAndroidClientId?: string;
+    googleWebClientId?: string;
+  };
+  const googleAndroidClientId = (
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
+    extra.googleAndroidClientId
+  )?.trim();
+  const googleWebClientId = (
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ??
+    extra.googleWebClientId
+  )?.trim();
   const isGoogleClientId = (value?: string): value is string =>
     Boolean(value && value.endsWith('.apps.googleusercontent.com'));
   const hasValidGoogleAndroidClientId = isGoogleClientId(googleAndroidClientId);

@@ -1,6 +1,6 @@
 # Database Schema — LagaLaga (Supabase / PostgreSQL)
 
-> Last updated: 2026-02-18
+> Last updated: 2026-02-27
 > Project: `zbsvxhwilhkpabyybjdk` (Lagalaga, eu-west-1)
 > PostgreSQL 17.6
 
@@ -20,13 +20,13 @@
 ## Tables
 
 ### `app_users`
-Stores user accounts linked to Roblox OAuth. RLS enabled.
+Stores user accounts, optionally linked to Roblox. RLS enabled.
 
 | Column | Type | Nullable | Default | Notes |
 |--------|------|----------|---------|-------|
 | `id` | uuid | NOT NULL | `gen_random_uuid()` | PK |
-| `roblox_user_id` | varchar | NOT NULL | — | UNIQUE |
-| `roblox_username` | varchar | NOT NULL | — | |
+| `roblox_user_id` | varchar | NULL | — | UNIQUE (when present) |
+| `roblox_username` | varchar | NULL | — | NULL until Roblox linked |
 | `roblox_display_name` | varchar | NULL | — | |
 | `roblox_profile_url` | text | NULL | — | |
 | `avatar_headshot_url` | text | NULL | — | Cached Roblox avatar headshot URL |
@@ -163,7 +163,7 @@ Supported gaming platforms (e.g., Roblox). RLS enabled.
 
 | Column | Type | Nullable | Default | Notes |
 |--------|------|----------|---------|-------|
-| `id` | text | NOT NULL | — | PK (e.g., `'roblox'`) |
+| `id` | text | NOT NULL | — | PK (e.g., `'roblox'`, `'google'`) |
 | `name` | text | NOT NULL | — | |
 | `icon_url` | text | NULL | — | |
 | `deep_link_scheme` | text | NULL | — | |
@@ -487,3 +487,4 @@ User account deletion requests with lifecycle tracking. RLS enabled.
 | 20260216144120 | seasons_and_match_history |
 | 20260217203258 | account_deletion |
 | 20260217221455 | rls_account_deletion_experience_favorites |
+| 20260227193000 | google_first_users |

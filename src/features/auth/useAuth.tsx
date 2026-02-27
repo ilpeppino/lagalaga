@@ -53,7 +53,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     androidClientId: hasValidGoogleAndroidClientId ? googleAndroidClientId : undefined,
     webClientId: hasValidGoogleWebClientId ? googleWebClientId : undefined,
     scopes: ['openid', 'profile', 'email'],
-    responseType: 'id_token',
   });
 
   useEffect(() => {

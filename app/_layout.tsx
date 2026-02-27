@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -21,6 +21,8 @@ import {
   configureNotificationHandler,
   setupNotificationListeners,
 } from '@/src/features/notifications/notificationHandlers';
+import { setRobloxNotConnectedHandler } from '@/src/lib/api';
+import { handleRobloxNotConnectedError } from '@/src/lib/robloxGateController';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -34,6 +36,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const paperTheme = colorScheme === 'dark' ? DarkPaperTheme : LightPaperTheme;
   const router = useRouter();
+  const pathname = usePathname();
   const [fontsLoaded, fontError] = useFonts({
     'BitcountSingle-Regular': require('@/assets/fonts/BitcountSingle-Regular.ttf'),
     'BitcountSingle-Bold': require('@/assets/fonts/BitcountSingle-Bold.ttf'),
@@ -74,6 +77,18 @@ export default function RootLayout() {
       subscription.remove();
     };
   }, [router]);
+
+  useEffect(() => {
+    setRobloxNotConnectedHandler(() => {
+      handleRobloxNotConnectedError('ROBLOX_NOT_CONNECTED', pathname, (path) => {
+        router.replace(path as '/me');
+      });
+    });
+
+    return () => {
+      setRobloxNotConnectedHandler(null);
+    };
+  }, [pathname, router]);
 
   useEffect(() => {
     configureNotificationHandler();

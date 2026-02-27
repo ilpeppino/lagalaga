@@ -54,6 +54,7 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
             error.statusCode,
             error.severity,
             requestId,
+            Object.keys(error.metadata || {}).length > 0 ? error.metadata : undefined,
           )
         );
       }

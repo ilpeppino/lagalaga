@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { requireRobloxConnected } from '../middleware/requireRobloxConnected.js';
 import { RobloxFavoritesService } from '../services/roblox-favorites.service.js';
 import { FavoriteExperiencesService } from '../services/favorite-experiences.service.js';
 import { RobloxFriendsCacheService } from '../services/roblox-friends-cache.service.js';
@@ -10,6 +11,7 @@ import { AppError, ValidationError, ErrorCodes } from '../utils/errors.js';
 import { AchievementService } from '../services/achievementService.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+type RobloxConnectedPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 interface MeRoutesDeps {
   favoritesService?: RobloxFavoritesService;
@@ -17,6 +19,7 @@ interface MeRoutesDeps {
   friendsCacheService?: RobloxFriendsCacheService;
   matchHistoryService?: MatchHistoryService;
   authPreHandler?: AuthPreHandler;
+  robloxConnectedPreHandler?: RobloxConnectedPreHandler;
 }
 
 export function buildMeRoutes(deps: MeRoutesDeps = {}) {
@@ -26,6 +29,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     const friendsCacheService = deps.friendsCacheService ?? new RobloxFriendsCacheService();
     const matchHistoryService = deps.matchHistoryService ?? new MatchHistoryService();
     const authPreHandler = deps.authPreHandler ?? authenticate;
+    const robloxConnectedPreHandler = deps.robloxConnectedPreHandler ?? requireRobloxConnected;
 
     /**
      * GET /api/me
@@ -112,7 +116,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     }>(
       '/roblox/favorites',
       {
-        preHandler: authPreHandler,
+        preHandler: [authPreHandler, robloxConnectedPreHandler],
         schema: {
           querystring: {
             type: 'object',
@@ -143,7 +147,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     fastify.get(
       '/roblox/friends',
       {
-        preHandler: authPreHandler,
+        preHandler: [authPreHandler, robloxConnectedPreHandler],
       },
       async (request, reply) => {
         const data = await friendsCacheService.getFriendsForUser(request.user.userId);
@@ -159,7 +163,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     fastify.post(
       '/roblox/friends/refresh',
       {
-        preHandler: authPreHandler,
+        preHandler: [authPreHandler, robloxConnectedPreHandler],
       },
       async (request, reply) => {
         const data = await friendsCacheService.getFriendsForUser(request.user.userId, {
@@ -181,7 +185,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
     }>(
       '/favorite-experiences',
       {
-        preHandler: authPreHandler,
+        preHandler: [authPreHandler, robloxConnectedPreHandler],
       },
       async (request, reply) => {
         const service = favoriteExperiencesService ?? new FavoriteExperiencesService();
@@ -194,7 +198,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
 
         const result = await service.getFavoriteExperiences(
           request.user.userId,
-          request.user.robloxUserId,
+          request.robloxConnection!.robloxUserId,
           ifNoneMatchHeader,
           { forceRefresh }
         );

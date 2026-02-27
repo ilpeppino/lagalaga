@@ -2,8 +2,8 @@ import { FastifyInstance } from 'fastify';
 
 export interface TokenPayload {
   userId: string;
-  robloxUserId: string;
-  robloxUsername: string;
+  robloxUserId: string | null;
+  robloxUsername: string | null;
   tokenVersion: number;
 }
 
@@ -49,17 +49,17 @@ export class TokenService {
     const payload = this.fastify.jwt.verify(token) as any;
     return {
       userId: payload.userId as string,
-      robloxUserId: payload.robloxUserId as string,
-      robloxUsername: payload.robloxUsername as string,
+      robloxUserId: (payload.robloxUserId ?? null) as string | null,
+      robloxUsername: (payload.robloxUsername ?? null) as string | null,
       tokenVersion: Number(payload.tokenVersion ?? 0),
     };
   }
 
-  verifyRefreshToken(token: string): { userId: string; robloxUserId: string; tokenVersion: number } {
+  verifyRefreshToken(token: string): { userId: string; robloxUserId: string | null; tokenVersion: number } {
     const payload = (this.fastify.jwt as any).refresh.verify(token);
     return {
       userId: payload.userId,
-      robloxUserId: payload.robloxUserId,
+      robloxUserId: payload.robloxUserId ?? null,
       tokenVersion: Number(payload.tokenVersion ?? 0),
     };
   }

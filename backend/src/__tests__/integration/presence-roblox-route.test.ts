@@ -15,6 +15,7 @@ describe('GET /api/presence/roblox/users', () => {
       authPreHandler: async (req) => {
         (req as any).user = { userId: 'viewer-1' };
       },
+      robloxConnectedPreHandler: async () => {},
       presenceService: {
         getPresenceForUsers: jest.fn(async () => ({
           available: true,
@@ -42,6 +43,7 @@ describe('GET /api/presence/roblox/users', () => {
       authPreHandler: async (req) => {
         (req as any).user = { userId: 'viewer-1' };
       },
+      robloxConnectedPreHandler: async () => {},
       presenceService: {
         getPresenceForUsers: jest.fn(async () => ({
           available: false,
@@ -71,6 +73,7 @@ describe('POST /api/roblox/presence', () => {
       authPreHandler: async (req) => {
         (req as any).user = { userId: 'test-user' };
       },
+      robloxConnectedPreHandler: async () => {},
       presenceService: {
         getPresenceForUsers: jest.fn(async () => ({ available: true, statuses: [] })),
         getPresenceByRobloxIds: jest.fn(async (_uid: string, ids: number[]) => ({
@@ -169,6 +172,36 @@ describe('POST /api/roblox/presence', () => {
     expect(res.status).toBe(429);
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('ROBLOX_RATE_LIMIT');
+
+    await app.close();
+  });
+
+  it('returns 409 ROBLOX_NOT_CONNECTED when guard blocks access', async () => {
+    const app = Fastify({ logger: false });
+    (app as any).config = { NODE_ENV: 'test' };
+
+    await app.register(errorHandlerPlugin);
+    await app.register(buildPresenceRoutes({
+      authPreHandler: async (req) => {
+        (req as any).user = { userId: 'test-user' };
+      },
+      robloxConnectedPreHandler: async () => {
+        throw new AppError('ROBLOX_NOT_CONNECTED', 'Connect Roblox to continue', 409, {
+          severity: 'warning',
+        });
+      },
+      presenceService: {
+        getPresenceByRobloxIds: jest.fn(),
+      } as any,
+    }));
+    await app.ready();
+
+    const res = await request(app.server)
+      .post('/api/roblox/presence')
+      .send({ userIds: [111] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('ROBLOX_NOT_CONNECTED');
 
     await app.close();
   });

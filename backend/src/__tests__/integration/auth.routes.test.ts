@@ -6,8 +6,11 @@ const mockGenerateAuthorizationUrl = jest.fn<any>();
 const mockExchangeCode = jest.fn<any>();
 const mockGetUserInfo = jest.fn<any>();
 
-const mockUpsertUser = jest.fn<any>();
+const mockCreateUser = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
+const mockTouchLastLogin = jest.fn<any>();
+const mockFindUserIdByPlatform = jest.fn<any>();
+const mockLinkPlatformToUser = jest.fn<any>();
 
 const mockSaveConnection = jest.fn<any>();
 const mockGenerateTokens = jest.fn<any>();
@@ -28,8 +31,16 @@ jest.unstable_mockModule('../../services/robloxOAuth.js', () => ({
 
 jest.unstable_mockModule('../../services/userService.js', () => ({
   UserService: class {
-    upsertUser = mockUpsertUser;
+    createUser = mockCreateUser;
     getUserById = mockGetUserById;
+    touchLastLogin = mockTouchLastLogin;
+  },
+}));
+
+jest.unstable_mockModule('../../services/platform-identity.service.js', () => ({
+  PlatformIdentityService: class {
+    findUserIdByPlatform = mockFindUserIdByPlatform;
+    linkPlatformToUser = mockLinkPlatformToUser;
   },
 }));
 
@@ -83,6 +94,9 @@ describe('auth routes', () => {
 
     mockGenerateSignedOAuthState.mockReturnValue('signed-state');
     mockGenerateAuthorizationUrl.mockReturnValue('https://apis.roblox.com/oauth/v1/authorize?x=1');
+    mockFindUserIdByPlatform.mockResolvedValue(null);
+    mockLinkPlatformToUser.mockResolvedValue(undefined);
+    mockTouchLastLogin.mockResolvedValue(undefined);
 
     app = Fastify({ logger: false });
     (app as any).config = buildConfig();
@@ -154,7 +168,16 @@ describe('auth routes', () => {
       nickname: 'Roblox Display',
       profile: 'https://www.roblox.com/users/12345/profile',
     });
-    mockUpsertUser.mockResolvedValue({
+    mockCreateUser.mockResolvedValue({
+      id: 'user-1',
+      robloxUserId: '12345',
+      robloxUsername: 'roblox-username',
+      robloxDisplayName: 'Roblox Display',
+      robloxProfileUrl: 'https://www.roblox.com/users/12345/profile',
+      tokenVersion: 3,
+      status: 'ACTIVE',
+    });
+    mockGetUserById.mockResolvedValue({
       id: 'user-1',
       robloxUserId: '12345',
       robloxUsername: 'roblox-username',
@@ -188,7 +211,10 @@ describe('auth routes', () => {
 
     expect(mockExchangeCode).toHaveBeenCalledWith('code-123', 'v'.repeat(43));
     expect(mockGetUserInfo).toHaveBeenCalledWith('roblox-access-token');
-    expect(mockUpsertUser).toHaveBeenCalledTimes(1);
+    expect(mockCreateUser).toHaveBeenCalledTimes(1);
+    expect(mockLinkPlatformToUser).toHaveBeenCalledTimes(1);
+    expect(mockTouchLastLogin).toHaveBeenCalledWith('user-1');
+    expect(mockGetUserById).toHaveBeenCalledWith('user-1');
     expect(mockSaveConnection).toHaveBeenCalledTimes(1);
     expect(mockSyncRobloxCacheBestEffort).toHaveBeenCalledWith('user-1');
     expect(mockGenerateTokens).toHaveBeenCalledWith({

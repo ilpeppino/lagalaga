@@ -25,14 +25,14 @@ declare module '@fastify/jwt' {
   interface FastifyJWT {
     payload: {
       userId: string;
-      robloxUserId: string;
-      robloxUsername: string;
+      robloxUserId: string | null;
+      robloxUsername: string | null;
       tokenVersion: number;
     };
     user: {
       userId: string;
-      robloxUserId: string;
-      robloxUsername: string;
+      robloxUserId: string | null;
+      robloxUsername: string | null;
       tokenVersion: number;
     };
   }

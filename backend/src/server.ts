@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import fastifyEnv from '@fastify/env';
-import { envSchema } from './config/env.js';
+import { envSchema, validateEnvForRuntime } from './config/env.js';
 import { initSupabase } from './config/supabase.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
@@ -51,6 +51,7 @@ export async function buildServer() {
     schema: envSchema,
     dotenv: true,
   });
+  validateEnvForRuntime(fastify.config);
 
   // Initialize Supabase
   initSupabase(fastify);

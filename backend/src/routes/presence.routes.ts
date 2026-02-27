@@ -1,18 +1,22 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/authenticate.js';
+import { requireRobloxConnected } from '../middleware/requireRobloxConnected.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { RobloxPresenceService } from '../services/roblox-presence.service.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+type RobloxConnectedPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 interface PresenceRoutesDeps {
   presenceService?: RobloxPresenceService;
   authPreHandler?: AuthPreHandler;
+  robloxConnectedPreHandler?: RobloxConnectedPreHandler;
 }
 
 export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
   return async function presenceRoutes(fastify: FastifyInstance) {
     const authPreHandler = deps.authPreHandler ?? authenticate;
+    const robloxConnectedPreHandler = deps.robloxConnectedPreHandler ?? requireRobloxConnected;
     const presenceService = deps.presenceService ?? new RobloxPresenceService({
       connectionService: new RobloxConnectionService(fastify),
     });
@@ -20,7 +24,7 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
     fastify.post<{
       Body: { userIds: number[] };
     }>('/api/roblox/presence', {
-      preHandler: authPreHandler,
+      preHandler: [authPreHandler, robloxConnectedPreHandler],
       schema: {
         body: {
           type: 'object',
@@ -52,7 +56,7 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
     fastify.get<{
       Querystring: { userIds: string };
     }>('/api/presence/roblox/users', {
-      preHandler: authPreHandler,
+      preHandler: [authPreHandler, robloxConnectedPreHandler],
       schema: {
         querystring: {
           type: 'object',

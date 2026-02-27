@@ -4,6 +4,8 @@ import { UserService } from '../services/userService.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { TokenService } from '../services/tokenService.js';
 import { FriendshipService } from '../services/friendship.service.js';
+import { getRobloxConnectionForUser } from '../middleware/requireRobloxConnected.js';
+import { PlatformIdentityService } from '../services/platform-identity.service.js';
 import {
   generateSignedOAuthState,
   isValidCodeVerifier,
@@ -16,6 +18,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
   const robloxConnectionService = new RobloxConnectionService(fastify);
   const userService = new UserService();
+  const platformIdentityService = new PlatformIdentityService();
   const tokenService = new TokenService(fastify);
   const friendshipService = new FriendshipService();
 
@@ -101,13 +104,36 @@ export async function authRoutes(fastify: FastifyInstance) {
     // Get user info
     const userInfo = await robloxOAuth.getUserInfo(tokenResponse.access_token);
 
-    // Upsert user in database
-    const user = await userService.upsertUser({
-      robloxUserId: userInfo.sub,
-      robloxUsername: userInfo.preferred_username || userInfo.name,
-      robloxDisplayName: userInfo.nickname,
-      robloxProfileUrl: userInfo.profile,
+    const robloxUserId = userInfo.sub;
+    const robloxUsername = userInfo.preferred_username || userInfo.name;
+    let linkedUserId = await platformIdentityService.findUserIdByPlatform('roblox', robloxUserId);
+
+    if (!linkedUserId) {
+      const created = await userService.createUser({
+        robloxUserId,
+        robloxUsername,
+        robloxDisplayName: userInfo.nickname ?? null,
+        robloxProfileUrl: userInfo.profile ?? null,
+      });
+      linkedUserId = created.id;
+    }
+
+    await platformIdentityService.linkPlatformToUser({
+      userId: linkedUserId,
+      platformId: 'roblox',
+      platformUserId: robloxUserId,
+      platformUsername: robloxUsername,
+      platformDisplayName: userInfo.nickname ?? null,
+      platformAvatarUrl: userInfo.picture ?? null,
+      robloxProfileUrl: userInfo.profile ?? null,
     });
+
+    await userService.touchLastLogin(linkedUserId);
+
+    const user = await userService.getUserById(linkedUserId);
+    if (!user) {
+      throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
+    }
 
     // Best-effort Roblox connection persistence for Presence APIs.
     // Login should still succeed even if token persistence fails.
@@ -239,25 +265,29 @@ export async function authRoutes(fastify: FastifyInstance) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
     }
 
+    const robloxConnection = await getRobloxConnectionForUser(user.id);
+
     // Fetch avatar with caching (non-blocking on failure)
     let avatarHeadshotUrl: string | null = null;
-    try {
-      avatarHeadshotUrl = await userService.getAvatarHeadshotUrl(
-        user.id,
-        user.robloxUserId
-      );
-    } catch (error) {
-      // Log but don't fail the request if avatar fetch fails
-      fastify.log.warn(`Failed to fetch avatar for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`);
+    if (robloxConnection?.robloxUserId) {
+      try {
+        avatarHeadshotUrl = await userService.getAvatarHeadshotUrl(
+          user.id,
+          robloxConnection.robloxUserId
+        );
+      } catch (error) {
+        // Log but don't fail the request if avatar fetch fails
+        fastify.log.warn(`Failed to fetch avatar for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
 
     return {
       id: user.id,
-      robloxUserId: user.robloxUserId,
-      robloxUsername: user.robloxUsername,
+      robloxUserId: robloxConnection?.robloxUserId ?? null,
+      robloxUsername: robloxConnection?.robloxUsername ?? null,
       robloxDisplayName: user.robloxDisplayName,
       avatarHeadshotUrl,
-      robloxConnected: true,
+      robloxConnected: Boolean(robloxConnection),
     };
   });
 }

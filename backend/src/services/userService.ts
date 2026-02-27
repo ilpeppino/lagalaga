@@ -5,8 +5,8 @@ import { RobloxThumbnailService } from './robloxThumbnail.js';
 
 export interface AppUser {
   id: string;
-  robloxUserId: string;
-  robloxUsername: string;
+  robloxUserId: string | null;
+  robloxUsername: string | null;
   robloxDisplayName: string | null;
   robloxProfileUrl: string | null;
   status: 'ACTIVE' | 'PENDING_DELETION' | 'DELETED';
@@ -23,6 +23,13 @@ export interface UpsertUserInput {
   robloxUsername: string;
   robloxDisplayName?: string;
   robloxProfileUrl?: string;
+}
+
+export interface CreateUserInput {
+  robloxUserId?: string | null;
+  robloxUsername?: string | null;
+  robloxDisplayName?: string | null;
+  robloxProfileUrl?: string | null;
 }
 
 export class UserService {
@@ -71,6 +78,59 @@ export class UserService {
       avatarHeadshotUrl: data.avatar_headshot_url,
       avatarCachedAt: data.avatar_cached_at,
     };
+  }
+
+  async createUser(input: CreateUserInput = {}): Promise<AppUser> {
+    const supabase = getSupabase();
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .insert({
+        roblox_user_id: input.robloxUserId ?? null,
+        roblox_username: input.robloxUsername ?? null,
+        roblox_display_name: input.robloxDisplayName ?? null,
+        roblox_profile_url: input.robloxProfileUrl ?? null,
+        last_login_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create user: ${error.message}`);
+    }
+
+    return {
+      id: data.id,
+      robloxUserId: data.roblox_user_id,
+      robloxUsername: data.roblox_username,
+      robloxDisplayName: data.roblox_display_name,
+      robloxProfileUrl: data.roblox_profile_url,
+      status: data.status,
+      tokenVersion: data.token_version ?? 0,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      lastLoginAt: data.last_login_at,
+      avatarHeadshotUrl: data.avatar_headshot_url,
+      avatarCachedAt: data.avatar_cached_at,
+    };
+  }
+
+  async touchLastLogin(userId: string): Promise<void> {
+    const supabase = getSupabase();
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('app_users')
+      .update({
+        last_login_at: now,
+        updated_at: now,
+      })
+      .eq('id', userId);
+
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update last login: ${error.message}`);
+    }
   }
 
   async getUserById(id: string): Promise<AppUser | null> {

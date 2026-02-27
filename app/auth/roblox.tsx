@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert, Linking } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { apiClient } from '../../src/lib/api';
 import { tokenStorage } from '../../src/lib/tokenStorage';
@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
+import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
 
 // Module-level guard prevents duplicate processing across StrictMode remounts.
 const processedCallbackKeys = new Set<string>();
@@ -95,6 +96,25 @@ export default function RobloxCallback() {
       // Redirect to sessions
       router.replace('/sessions');
     } catch (callbackError) {
+      const conflictResolution = resolveAccountLinkConflict(callbackError, 'roblox');
+      if (conflictResolution.handled) {
+        Alert.alert(conflictResolution.title, conflictResolution.message, [
+          {
+            text: 'Log in with original method',
+            onPress: () => {
+              router.replace('/auth/sign-in');
+            },
+          },
+          {
+            text: 'Contact support',
+            onPress: () => {
+              void Linking.openURL('mailto:lagalaga@gtemp1.com?subject=Account%20Link%20Conflict');
+            },
+          },
+        ]);
+        return;
+      }
+
       logger.error('Failed to complete OAuth flow', {
         error: callbackError instanceof Error ? callbackError.message : String(callbackError),
       });

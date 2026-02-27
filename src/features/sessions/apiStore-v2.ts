@@ -21,6 +21,7 @@ import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, isApiError, parseApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
 import { API_URL } from '@/src/lib/runtimeConfig';
+import { notifyRobloxNotConnected } from '@/src/lib/api';
 
 export interface RobloxExperienceResolution {
   placeId?: string;
@@ -92,6 +93,9 @@ async function fetchWithAuth<T>(endpoint: string, options: FetchWithAuthOptions 
 
   if (!response.ok) {
     const apiError = await parseApiError(response);
+    if (apiError.code === 'ROBLOX_NOT_CONNECTED') {
+      notifyRobloxNotConnected({ endpoint, statusCode: response.status });
+    }
     const shouldSuppressLog = Array.isArray(suppressErrorStatusCodes) &&
       suppressErrorStatusCodes.includes(response.status);
 

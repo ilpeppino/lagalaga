@@ -15,8 +15,8 @@ if (Platform.OS === 'web') {
 
 interface User {
   id: string;
-  robloxUserId: string;
-  robloxUsername?: string;
+  robloxUserId: string | null;
+  robloxUsername?: string | null;
   robloxDisplayName?: string;
   robloxProfileUrl?: string;
   avatarHeadshotUrl?: string | null;

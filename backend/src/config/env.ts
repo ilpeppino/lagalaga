@@ -1,3 +1,5 @@
+import type { FastifyInstance } from 'fastify';
+
 export const envSchema = {
   type: 'object',
   required: [
@@ -39,6 +41,26 @@ export const envSchema = {
     },
     ROBLOX_REDIRECT_URI: {
       type: 'string',
+    },
+    GOOGLE_CLIENT_ID: {
+      type: 'string',
+      default: '',
+    },
+    GOOGLE_CLIENT_SECRET: {
+      type: 'string',
+      default: '',
+    },
+    GOOGLE_REDIRECT_URI: {
+      type: 'string',
+      default: '',
+    },
+    GOOGLE_ISSUER: {
+      type: 'string',
+      default: 'https://accounts.google.com',
+    },
+    GOOGLE_JWKS_URI: {
+      type: 'string',
+      default: '',
     },
     JWT_SECRET: {
       type: 'string',
@@ -136,6 +158,11 @@ declare module 'fastify' {
       ROBLOX_CLIENT_ID: string;
       ROBLOX_CLIENT_SECRET: string;
       ROBLOX_REDIRECT_URI: string;
+      GOOGLE_CLIENT_ID: string;
+      GOOGLE_CLIENT_SECRET: string;
+      GOOGLE_REDIRECT_URI: string;
+      GOOGLE_ISSUER: string;
+      GOOGLE_JWKS_URI: string;
       JWT_SECRET: string;
       JWT_EXPIRY: string;
       REFRESH_TOKEN_SECRET: string;
@@ -158,5 +185,22 @@ declare module 'fastify' {
       METRICS_BEARER_TOKEN: string;
       SAFETY_ESCALATE_GROOMING: boolean;
     };
+  }
+}
+
+export function validateEnvForRuntime(config: FastifyInstance['config']): void {
+  if (config.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const requiredInProduction: Array<keyof FastifyInstance['config']> = [
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_REDIRECT_URI',
+  ];
+
+  for (const key of requiredInProduction) {
+    if (typeof config[key] !== 'string' || config[key].trim().length === 0) {
+      throw new Error(`${String(key)} must be configured in production`);
+    }
   }
 }

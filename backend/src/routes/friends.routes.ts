@@ -1,19 +1,23 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../middleware/authenticate.js';
+import { requireRobloxConnected } from '../middleware/requireRobloxConnected.js';
 import { FriendshipService } from '../services/friendship.service.js';
 import { NotFoundError } from '../utils/errors.js';
 
 type AuthPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+type RobloxConnectedPreHandler = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
 interface FriendsRoutesDeps {
   friendshipService?: FriendshipService;
   authPreHandler?: AuthPreHandler;
+  robloxConnectedPreHandler?: RobloxConnectedPreHandler;
 }
 
 export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
   return async function friendsRoutes(fastify: FastifyInstance) {
     const friendshipService = deps.friendshipService ?? new FriendshipService();
     const authPreHandler = deps.authPreHandler ?? authenticate;
+    const robloxConnectedPreHandler = deps.robloxConnectedPreHandler ?? requireRobloxConnected;
 
     const ensureFeatureEnabled = () => {
       if (!fastify.config.FEATURE_FRIENDS_ENABLED) {
@@ -26,7 +30,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
     }>(
       '/api/user/friends',
       {
-        preHandler: authPreHandler,
+        preHandler: [authPreHandler, robloxConnectedPreHandler],
         schema: {
           querystring: {
             type: 'object',
@@ -50,7 +54,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       }
     );
 
-    fastify.post('/api/user/friends/refresh', { preHandler: authPreHandler }, async (request, reply) => {
+    fastify.post('/api/user/friends/refresh', { preHandler: [authPreHandler, robloxConnectedPreHandler] }, async (request, reply) => {
       ensureFeatureEnabled();
       const data = await friendshipService.refreshRobloxCache(request.user.userId);
       return reply.send({

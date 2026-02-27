@@ -5,13 +5,24 @@ import { monitoring } from './monitoring';
 import { API_URL } from './runtimeConfig';
 import type { Session, CreateSessionInput, SessionParticipant } from '../features/sessions/types';
 
+type RobloxNotConnectedHandler = (context: { endpoint: string; statusCode: number }) => void;
+let robloxNotConnectedHandler: RobloxNotConnectedHandler | null = null;
+
+export function setRobloxNotConnectedHandler(handler: RobloxNotConnectedHandler | null): void {
+  robloxNotConnectedHandler = handler;
+}
+
+export function notifyRobloxNotConnected(context: { endpoint: string; statusCode: number }): void {
+  robloxNotConnectedHandler?.(context);
+}
+
 interface AuthResponse {
   accessToken: string;
   refreshToken: string;
   user: {
     id: string;
-    robloxUserId: string;
-    robloxUsername: string;
+    robloxUserId: string | null;
+    robloxUsername: string | null;
     robloxDisplayName?: string;
     robloxProfileUrl?: string;
   };
@@ -203,6 +214,9 @@ class ApiClient {
 
         if (!retryResponse.ok) {
           const apiError = await parseApiError(retryResponse);
+          if (apiError.code === 'ROBLOX_NOT_CONNECTED') {
+            notifyRobloxNotConnected({ endpoint, statusCode: retryResponse.status });
+          }
           logger.error(`API error after token refresh: ${apiError.code}`, {
             endpoint, statusCode: retryResponse.status, requestId,
           });
@@ -218,6 +232,9 @@ class ApiClient {
 
     if (!response.ok) {
       const apiError = await parseApiError(response);
+      if (apiError.code === 'ROBLOX_NOT_CONNECTED') {
+        notifyRobloxNotConnected({ endpoint, statusCode: response.status });
+      }
       logger.error(`API error: ${apiError.code} - ${apiError.message}`, {
         endpoint,
         statusCode: response.status,
@@ -338,8 +355,8 @@ class ApiClient {
 
     me: async (): Promise<{
       id: string;
-      robloxUserId: string;
-      robloxUsername?: string;
+      robloxUserId: string | null;
+      robloxUsername?: string | null;
       robloxDisplayName?: string;
       avatarHeadshotUrl: string | null;
       robloxConnected: boolean;

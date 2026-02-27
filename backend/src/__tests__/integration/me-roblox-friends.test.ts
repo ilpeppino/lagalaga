@@ -108,6 +108,7 @@ describe('GET /api/me/roblox/friends', () => {
           getFavoritesForUser: jest.fn(),
         } as any,
         friendsCacheService: service,
+        robloxConnectedPreHandler: async () => {},
         authPreHandler: async (req) => {
           (req as any).user = { userId: 'user-1' };
         },

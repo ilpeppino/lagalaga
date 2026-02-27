@@ -60,10 +60,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasValidGoogleAndroidClientId = isGoogleClientId(googleAndroidClientId);
   const hasValidGoogleWebClientId = isGoogleClientId(googleWebClientId);
 
+  // Google's Android OAuth clients require the reversed-client-ID URI scheme.
+  // expo-auth-session defaults to Application.applicationId which Google rejects with 400.
+  const googleRedirectUri = hasValidGoogleAndroidClientId
+    ? `com.googleusercontent.apps.${googleAndroidClientId!.replace('.apps.googleusercontent.com', '')}:/oauth2redirect`
+    : undefined;
+
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
     androidClientId: hasValidGoogleAndroidClientId ? googleAndroidClientId : undefined,
     webClientId: hasValidGoogleWebClientId ? googleWebClientId : undefined,
     scopes: ['openid', 'profile', 'email'],
+    redirectUri: googleRedirectUri,
   });
 
   useEffect(() => {

@@ -48,9 +48,9 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <!-- expo-auth-session Google OAuth callback: makeRedirectUri uses Application.applicationId
-             as the scheme, producing com.ilpeppino.lagalaga:/oauthredirect -->
-        <data android:scheme="com.ilpeppino.lagalaga" android:path="/oauthredirect"/>
+        <!-- Google OAuth callback using reversed client ID scheme, as required by Google's
+             Android OAuth clients for browser-based flows -->
+        <data android:scheme="com.googleusercontent.apps.697006480494-ijg20hit5lgl1idj9lu839a7lptrvam4"/>
       </intent-filter>
     </activity>
   </application>

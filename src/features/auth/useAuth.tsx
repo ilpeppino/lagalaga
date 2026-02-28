@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '../../lib/oauthTransientStorage';
 import { warmFavorites } from '../favorites/service';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
+import { API_URL } from '../../lib/runtimeConfig';
 
 if (Platform.OS === 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -132,9 +133,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
+      logger.info('Initiating Google sign-in', {
+        apiUrl: API_URL,
+        platform: Platform.OS,
+      });
       const { url } = await apiClient.auth.startGoogleAuth();
       const returnUrl =
         process.env.EXPO_PUBLIC_GOOGLE_REDIRECT_URI?.trim() || 'lagalaga://auth/google';
+      let providerHost = 'invalid-url';
+      try {
+        providerHost = new URL(url).host;
+      } catch {
+        providerHost = 'invalid-url';
+      }
+
+      logger.info('Launching Google OAuth browser flow', {
+        apiUrl: API_URL,
+        providerHost,
+        returnUrl,
+      });
 
       if (Platform.OS === 'ios') {
         await Linking.openURL(url);

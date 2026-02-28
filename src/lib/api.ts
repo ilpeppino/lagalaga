@@ -334,9 +334,25 @@ class ApiClient {
 
     startGoogleAuth: async (): Promise<{ url: string }> => {
       try {
-        return await this.request('/api/auth/google/start', {
+        logger.info('Starting Google OAuth via primary backend route', {
+          apiUrl: API_URL,
+          endpoint: '/api/auth/google/start',
+        });
+        const response = await this.request('/api/auth/google/start', {
           method: 'GET',
         });
+        logger.info('Google OAuth start URL received from primary backend route', {
+          apiUrl: API_URL,
+          endpoint: '/api/auth/google/start',
+          providerUrlHost: (() => {
+            try {
+              return new URL(response.url).host;
+            } catch {
+              return 'invalid-url';
+            }
+          })(),
+        });
+        return response;
       } catch (error) {
         const apiError = error as ApiError | undefined;
         if (apiError?.statusCode !== 404) {
@@ -344,9 +360,25 @@ class ApiClient {
         }
 
         // Compatibility fallback for environments exposing Google auth under /auth/*
-        return this.request('/auth/google/start', {
+        logger.warn('Primary Google OAuth route returned 404, using fallback route', {
+          apiUrl: API_URL,
+          endpoint: '/auth/google/start',
+        });
+        const response = await this.request('/auth/google/start', {
           method: 'GET',
         });
+        logger.info('Google OAuth start URL received from fallback backend route', {
+          apiUrl: API_URL,
+          endpoint: '/auth/google/start',
+          providerUrlHost: (() => {
+            try {
+              return new URL(response.url).host;
+            } catch {
+              return 'invalid-url';
+            }
+          })(),
+        });
+        return response;
       }
     },
 

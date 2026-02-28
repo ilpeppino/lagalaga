@@ -17,38 +17,53 @@ interface HealthCheckResult {
 
 export async function healthCheckPlugin(fastify: FastifyInstance) {
   // Lightweight health check
-  fastify.get('/health', async (_request, reply) => {
-    return reply.send({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  fastify.get(
+    '/health',
+    {
+      config: {
+        rateLimit: false,
+      },
+    },
+    async (_request, reply) => {
+      return reply.send({ status: 'ok', timestamp: new Date().toISOString() });
+    }
+  );
 
   // Detailed health check
-  fastify.get('/health/detailed', async (_request, reply) => {
-    const checks: HealthCheckResult[] = [];
+  fastify.get(
+    '/health/detailed',
+    {
+      config: {
+        rateLimit: false,
+      },
+    },
+    async (_request, reply) => {
+      const checks: HealthCheckResult[] = [];
 
-    // Database check
-    const dbCheck = await checkDatabase();
-    checks.push(dbCheck);
+      // Database check
+      const dbCheck = await checkDatabase();
+      checks.push(dbCheck);
 
-    // Memory check
-    const memCheck = checkMemory();
-    checks.push(memCheck);
+      // Memory check
+      const memCheck = checkMemory();
+      checks.push(memCheck);
 
-    // Determine overall status
-    const hasUnhealthy = checks.some((c) => c.status === 'unhealthy');
-    const hasDegraded = checks.some((c) => c.status === 'degraded');
-    const overallStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy';
+      // Determine overall status
+      const hasUnhealthy = checks.some((c) => c.status === 'unhealthy');
+      const hasDegraded = checks.some((c) => c.status === 'degraded');
+      const overallStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy';
 
-    const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
+      const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
 
-    return reply.status(statusCode).send({
-      status: overallStatus,
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: fastify.config.NODE_ENV,
-      version: process.env.npm_package_version || '1.0.0',
-      checks,
+      return reply.status(statusCode).send({
+        status: overallStatus,
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: fastify.config.NODE_ENV,
+        version: process.env.npm_package_version || '1.0.0',
+        checks,
+      });
     });
-  });
 }
 
 const DB_CHECK_TTL_MS = 10_000;

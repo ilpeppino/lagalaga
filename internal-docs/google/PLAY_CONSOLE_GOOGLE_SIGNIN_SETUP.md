@@ -317,7 +317,17 @@ eas submit --platform android --profile production
    ./gradlew assembleRelease
    adb install -r app/build/outputs/apk/release/app-release.apk
    ```
-2. **Note:** This option is for device functional testing only and does **not** validate Play App Signing behavior. For uploading the .aab use the following procedure:
+2. **Note:** This option is for device functional testing only and does **not** validate Play App Signing behavior. 
+
+3. **RELEASE TO GOOGLE PLAY** For uploading the .aab use the following procedure:
+
+   1. Update android/app/build.gradle app version. **IMPORTANT** For same versionName, it is needed to change versionCode, otherwise it won't work: 
+   ```bash
+      versionCode 6
+      versionName "1.0.0"
+   ```
+
+   2. Generate .aab bundle file to upload:
    ```bash
    cd android
    ./gradlew clean bundleRelease

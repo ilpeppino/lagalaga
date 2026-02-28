@@ -7,6 +7,7 @@ import { GoogleOAuthService } from '../services/googleOAuth.js';
 import { GoogleAuthService } from '../services/google-auth.service.js';
 import { TokenService } from '../services/tokenService.js';
 import { PlatformIdentityService } from '../services/platform-identity.service.js';
+import { completeGoogleOAuth } from '../services/google-oauth-completion.service.js';
 import {
   generateSignedOAuthState,
   generateCodeChallenge,
@@ -32,7 +33,7 @@ interface GoogleOAuthStateEntry {
 
 const googleOauthStateStore = new Map<string, GoogleOAuthStateEntry>();
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-const DEFAULT_DEEP_LINK_REDIRECT_URI = 'lagalaga://auth';
+const DEFAULT_DEEP_LINK_REDIRECT_URI = 'lagalaga://auth/google';
 
 function generateCodeVerifier(): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -68,6 +69,40 @@ function consumeGoogleStateEntry(state: string): GoogleOAuthStateEntry | null {
   }
   googleOauthStateStore.delete(state);
   return entry;
+}
+
+function getGoogleStateEntry(state: string): GoogleOAuthStateEntry | null {
+  cleanupGoogleStateStore();
+  const entry = googleOauthStateStore.get(state);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    googleOauthStateStore.delete(state);
+    return null;
+  }
+  return entry;
+}
+
+function buildGoogleAuthRedirectUrl(
+  redirectUri: string | undefined,
+  params: Record<string, string>
+): string {
+  const baseUri = redirectUri?.trim() || DEFAULT_DEEP_LINK_REDIRECT_URI;
+
+  const appendParams = (url: URL) => {
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+  };
+
+  try {
+    const url = new URL(baseUri);
+    appendParams(url);
+    return url.toString();
+  } catch {
+    const fallback = new URL(DEFAULT_DEEP_LINK_REDIRECT_URI);
+    appendParams(fallback);
+    return fallback.toString();
+  }
 }
 
 function getValidStateEntry(state: string, userId: string): OAuthStateEntry | null {
@@ -266,64 +301,53 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const { code, state } = request.body;
-
-    if (!verifySignedOAuthState(state, request.server.config.JWT_SECRET)) {
-      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
-      throw new AuthError(ErrorCodes.AUTH_INVALID_STATE, 'Invalid or expired state parameter');
-    }
-
-    const entry = consumeGoogleStateEntry(state);
-    if (!entry) {
-      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
-      throw new AuthError(ErrorCodes.AUTH_INVALID_STATE, 'Invalid or expired state parameter');
-    }
-
-    fastify.log.info({ provider: 'google' }, 'Google OAuth callback processing started');
-
     try {
-      const tokenResponse = await googleOAuth.exchangeCode(code, entry.codeVerifier);
-      const claims = await googleOAuth.validateIdToken(tokenResponse.id_token, entry.nonce);
-      const user = await googleAuthService.resolveUserForGoogleLogin(claims);
-
-      if (user.status === 'PENDING_DELETION') {
-        metrics.incrementCounter('auth_google_callback_total', { status: 'forbidden' });
-        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is pending deletion');
-      }
-
-      if (user.status === 'DELETED') {
-        metrics.incrementCounter('auth_google_callback_total', { status: 'forbidden' });
-        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is unavailable');
-      }
-
-      const tokens = tokenService.generateTokens({
-        userId: user.id,
-        robloxUserId: user.robloxUserId,
-        robloxUsername: user.robloxUsername,
-        tokenVersion: user.tokenVersion,
-      });
+      const result = await completeGoogleOAuth(
+        {
+          code: request.body.code,
+          state: request.body.state,
+        },
+        {
+          jwtSecret: request.server.config.JWT_SECRET,
+          googleOAuth,
+          googleAuthService,
+          tokenService,
+          consumeStateEntry: consumeGoogleStateEntry,
+        }
+      );
 
       metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
       fastify.log.info(
         {
           provider: 'google',
-          userId: user.id,
+          userId: result.user.id,
         },
         'Google OAuth callback succeeded'
       );
 
       return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
         user: {
-          id: user.id,
-          robloxUserId: user.robloxUserId,
-          robloxUsername: user.robloxUsername,
-          robloxDisplayName: user.robloxDisplayName,
+          id: result.user.id,
+          robloxUserId: result.user.robloxUserId,
+          robloxUsername: result.user.robloxUsername,
+          robloxDisplayName: result.user.robloxDisplayName,
         },
       };
     } catch (error) {
-      metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+      if (error instanceof AppError) {
+        if (error.code === ErrorCodes.AUTH_INVALID_STATE) {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
+        } else if (error.code === ErrorCodes.AUTH_FORBIDDEN) {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'forbidden' });
+        } else {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+        }
+      } else {
+        metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+      }
+
       fastify.log.error(
         {
           provider: 'google',
@@ -333,5 +357,61 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       );
       throw error;
     }
+  });
+
+  fastify.get<{
+    Querystring: { code?: string; state?: string };
+  }>('/google/callback', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          state: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const code = request.query?.code?.trim();
+    const state = request.query?.state?.trim();
+
+    if (!code || !state) {
+      metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+      return reply
+        .code(400)
+        .type('text/plain; charset=utf-8')
+        .send('Sign-in failed, return to app and try again.');
+    }
+
+    if (!verifySignedOAuthState(state, request.server.config.JWT_SECRET)) {
+      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
+      return reply
+        .code(400)
+        .type('text/plain; charset=utf-8')
+        .send('Sign-in failed, return to app and try again.');
+    }
+
+    const entry = getGoogleStateEntry(state);
+    if (!entry) {
+      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
+      return reply
+        .code(400)
+        .type('text/plain; charset=utf-8')
+        .send('Sign-in failed, return to app and try again.');
+    }
+
+    const redirectUrl = buildGoogleAuthRedirectUrl(entry.redirectUri, {
+      code,
+      state,
+    });
+
+    metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
+    return reply.code(302).redirect(redirectUrl);
   });
 }

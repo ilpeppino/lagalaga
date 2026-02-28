@@ -216,4 +216,65 @@ describe('google auth routes', () => {
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('ACCOUNT_LINK_CONFLICT');
   });
+
+  it('GET /api/auth/google/callback redirects to deep link on success', async () => {
+    const start = await request(app.server)
+      .get('/api/auth/google/start')
+      .query({ redirectUri: 'lagalaga://auth/google' });
+    const state = parseStateFromUrl(start.body.url);
+
+    const response = await request(app.server)
+      .get('/api/auth/google/callback')
+      .query({ code: 'oauth-code', state });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBeDefined();
+    const redirectUrl = new URL(response.headers.location as string);
+    expect(`${redirectUrl.protocol}//${redirectUrl.host}${redirectUrl.pathname}`).toBe('lagalaga://auth/google');
+    expect(redirectUrl.searchParams.get('code')).toBe('oauth-code');
+    expect(redirectUrl.searchParams.get('state')).toBe(state);
+    expect(mockGoogleExchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/auth/google/callback preserves state for POST completion', async () => {
+    const start = await request(app.server)
+      .get('/api/auth/google/start')
+      .query({ redirectUri: 'lagalaga://auth/google' });
+    const state = parseStateFromUrl(start.body.url);
+
+    const getResponse = await request(app.server)
+      .get('/api/auth/google/callback')
+      .query({ code: 'oauth-code', state });
+
+    expect(getResponse.status).toBe(302);
+
+    mockGoogleExchangeCode.mockResolvedValue({ id_token: 'id-token' });
+    mockGoogleValidateIdToken.mockResolvedValue({ sub: 'google-sub-1' });
+    mockResolveUserForGoogleLogin.mockResolvedValue({
+      id: 'user-existing',
+      robloxUserId: null,
+      robloxUsername: null,
+      robloxDisplayName: null,
+      status: 'ACTIVE',
+      tokenVersion: 2,
+    });
+    mockGenerateTokens.mockReturnValue({
+      accessToken: 'access-token-existing',
+      refreshToken: 'refresh-token-existing',
+    });
+
+    const postResponse = await request(app.server)
+      .post('/api/auth/google/callback')
+      .send({ code: 'oauth-code', state });
+
+    expect(postResponse.status).toBe(200);
+    expect(postResponse.body.accessToken).toBe('access-token-existing');
+  });
+
+  it('GET /api/auth/google/callback returns 400 when code/state are missing', async () => {
+    const response = await request(app.server).get('/api/auth/google/callback');
+
+    expect(response.status).toBe(400);
+    expect(response.text).toContain('Sign-in failed');
+  });
 });

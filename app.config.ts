@@ -136,6 +136,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "./plugins/withAndroidNativeBuildFixes",
     ...(isDevVariant ? ["expo-dev-client"] : []),
     [
       "expo-splash-screen",

@@ -9,6 +9,7 @@ import { AppleOAuthService } from '../services/appleOAuth.js';
 import { AppleAuthService } from '../services/apple-auth.service.js';
 import { TokenService } from '../services/tokenService.js';
 import { PlatformIdentityService } from '../services/platform-identity.service.js';
+import { UserService } from '../services/userService.js';
 import { completeGoogleOAuth } from '../services/google-oauth-completion.service.js';
 import {
   generateSignedOAuthState,
@@ -134,6 +135,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
   const appleAuthService = new AppleAuthService(fastify);
   const tokenService = new TokenService(fastify);
   const platformIdentityService = new PlatformIdentityService();
+  const userService = new UserService();
 
   fastify.get('/roblox/start', {
     preHandler: authenticate,
@@ -451,12 +453,34 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
     },
   }, async (request) => {
     try {
+      let currentUserId: string | null = null;
+      const authorization = request.headers.authorization;
+      if (authorization?.startsWith('Bearer ')) {
+        const bearer = authorization.slice('Bearer '.length).trim();
+        if (bearer) {
+          try {
+            const payload = tokenService.verifyAccessToken(bearer);
+            const currentUser = await userService.getUserById(payload.userId);
+            if (
+              currentUser &&
+              currentUser.status === 'ACTIVE' &&
+              Number(currentUser.tokenVersion ?? 0) === Number(payload.tokenVersion ?? 0)
+            ) {
+              currentUserId = payload.userId;
+            }
+          } catch {
+            currentUserId = null;
+          }
+        }
+      }
+
       const claims = await appleOAuth.validateIdentityToken(
         request.body.identityToken,
         request.body.nonce
       );
       const user = await appleAuthService.resolveUserForAppleLogin({
         claims,
+        currentUserId,
         profile: {
           email: request.body.email ?? null,
           givenName: request.body.givenName ?? null,

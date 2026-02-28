@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedButton } from '@/components/ui/paper';
@@ -8,11 +8,13 @@ import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useAuth } from '@/src/features/auth/useAuth';
 
 export default function ConnectRobloxScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const { handleError } = useErrorHandler();
+  const { signOut } = useAuth();
   const [connecting, setConnecting] = useState(false);
 
   const handleConnect = async () => {
@@ -50,13 +52,13 @@ export default function ConnectRobloxScreen() {
           style={styles.button}
           contentStyle={styles.buttonContent}
         />
-
         <AnimatedButton
-          title="Skip for now"
+          title="Sign out"
           variant="text"
           onPress={() => {
-            Alert.alert('Roblox not connected', 'You can connect Roblox later from the Me tab.');
-            router.replace('/me');
+            void signOut().finally(() => {
+              router.replace('/auth/sign-in');
+            });
           }}
           disabled={connecting}
           style={styles.secondaryButton}

@@ -122,7 +122,7 @@ describe('roblox connect routes', () => {
     expect(mockLinkPlatformToUser).toHaveBeenCalledTimes(1);
   });
 
-  it('returns ACCOUNT_LINK_CONFLICT when roblox identity belongs to another account', async () => {
+  it('returns CONFLICT_ACCOUNT_PROVIDER when roblox identity belongs to another account', async () => {
     mockRobloxExchangeCode.mockResolvedValue({ access_token: 'roblox-access-token' });
     mockRobloxGetUserInfo.mockResolvedValue({
       sub: '777',
@@ -133,7 +133,7 @@ describe('roblox connect routes', () => {
       picture: null,
     });
     mockLinkPlatformToUser.mockRejectedValue(
-      new AppError('ACCOUNT_LINK_CONFLICT', 'Roblox account already linked', 409, {
+      new AppError('CONFLICT_ACCOUNT_PROVIDER', 'Roblox account already linked', 409, {
         metadata: { platformId: 'roblox', action: 'use_original_login' },
       })
     );
@@ -148,7 +148,7 @@ describe('roblox connect routes', () => {
       .send({ code: 'oauth-code', state: start.body.state });
 
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('ACCOUNT_LINK_CONFLICT');
+    expect(response.body.error.code).toBe('CONFLICT_ACCOUNT_PROVIDER');
   });
 
   it('returns ACCOUNT_LINK_INVALID_STATE for expired or invalid state', async () => {

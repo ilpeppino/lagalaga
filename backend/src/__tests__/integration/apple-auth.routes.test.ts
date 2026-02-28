@@ -145,14 +145,14 @@ describe('apple auth routes', () => {
     expect(mockResolveUserForAppleLogin).not.toHaveBeenCalled();
   });
 
-  it('POST /api/auth/apple/callback returns ACCOUNT_LINK_CONFLICT when provider is linked elsewhere', async () => {
+  it('POST /api/auth/apple/callback returns CONFLICT_ACCOUNT_PROVIDER when provider is linked elsewhere', async () => {
     mockAppleValidateIdentityToken.mockResolvedValue({
       sub: 'apple-sub-conflict',
       iss: 'https://appleid.apple.com',
       aud: 'com.ilpeppino.lagalaga',
     });
     mockResolveUserForAppleLogin.mockRejectedValue(
-      new AppError('ACCOUNT_LINK_CONFLICT', 'Apple account already linked', 409, {
+      new AppError('CONFLICT_ACCOUNT_PROVIDER', 'Apple account already linked', 409, {
         metadata: { platformId: 'apple', action: 'use_original_login' },
       })
     );
@@ -162,7 +162,7 @@ describe('apple auth routes', () => {
       .send({ identityToken: 'identity-token' });
 
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('ACCOUNT_LINK_CONFLICT');
+    expect(response.body.error.code).toBe('CONFLICT_ACCOUNT_PROVIDER');
   });
 
   it('POST /api/auth/apple/callback blocks pending deletion users', async () => {

@@ -160,7 +160,7 @@ describe('PlatformIdentityService', () => {
     expect(linkedRobloxUser).toBe('user-google');
   });
 
-  it('returns ACCOUNT_LINK_CONFLICT when roblox identity is already linked to another user', async () => {
+  it('returns CONFLICT_ACCOUNT_PROVIDER when roblox identity is already linked to another user', async () => {
     await service.linkPlatformToUser({
       userId: 'user-a',
       platformId: 'roblox',
@@ -175,10 +175,10 @@ describe('PlatformIdentityService', () => {
         platformUserId: 'roblox-111',
         platformUsername: 'UserB',
       })
-    ).rejects.toMatchObject({ code: 'ACCOUNT_LINK_CONFLICT', statusCode: 409 });
+    ).rejects.toMatchObject({ code: 'CONFLICT_ACCOUNT_PROVIDER', statusCode: 409 });
   });
 
-  it('returns ACCOUNT_LINK_CONFLICT when google identity is already linked to another user', async () => {
+  it('returns CONFLICT_ACCOUNT_PROVIDER when google identity is already linked to another user', async () => {
     await service.linkPlatformToUser({
       userId: 'user-a',
       platformId: 'google',
@@ -193,7 +193,7 @@ describe('PlatformIdentityService', () => {
         platformUserId: 'google-sub-a',
         platformUsername: 'b@example.com',
       })
-    ).rejects.toMatchObject({ code: 'ACCOUNT_LINK_CONFLICT', statusCode: 409 });
+    ).rejects.toMatchObject({ code: 'CONFLICT_ACCOUNT_PROVIDER', statusCode: 409 });
   });
 
   it('allows only one concurrent link for same identity under race', async () => {

@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -25,6 +26,7 @@ import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransi
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { ActivityIndicator } from 'react-native-paper';
 import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
+import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -66,13 +68,14 @@ export default function MeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const { handleError } = useErrorHandler();
-  const { user } = useAuth();
+  const { user, signInWithApple } = useAuth();
   
   const [data, setData] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [proViewEnabled, setProViewEnabled] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [linkingApple, setLinkingApple] = useState(false);
 
   const fetchMeData = useCallback(async () => {
     try {
@@ -165,6 +168,23 @@ export default function MeScreen() {
       { text: 'Safety & Report', onPress: openSafetyReport },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  };
+
+  const handleLinkApple = async () => {
+    try {
+      setLinkingApple(true);
+      await signInWithApple();
+      Alert.alert('Apple linked', 'You can now continue with Apple or Roblox on sign in.');
+    } catch (error) {
+      const conflictResolution = resolveAccountLinkConflict(error, 'apple');
+      if (conflictResolution.handled) {
+        Alert.alert(conflictResolution.title, conflictResolution.message);
+        return;
+      }
+      handleError(error, { fallbackMessage: 'Failed to link Apple account.' });
+    } finally {
+      setLinkingApple(false);
+    }
   };
 
   const formatCountdown = (endDate: string | null): string => {
@@ -422,6 +442,22 @@ export default function MeScreen() {
             <Text style={[styles.listRowButtonText, { color: textColor }]}>Settings</Text>
             <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
           </TouchableOpacity>
+
+          {Platform.OS === 'ios' && data.roblox.connected ? (
+            <>
+              <Text style={[styles.notConnectedText, { color: secondaryTextColor }]}>
+                Link your Apple account for easier login.
+              </Text>
+              <TouchableOpacity
+                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor, opacity: linkingApple ? 0.7 : 1 }]}
+                onPress={handleLinkApple}
+                disabled={linkingApple}
+              >
+                <IconSymbol name="apple.logo" size={20} color="#fff" />
+                <Text style={styles.buttonText}>{linkingApple ? 'Linking Apple...' : 'Link Apple Account'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
 
           <TouchableOpacity
             style={[styles.button, styles.dangerButton, styles.primaryButtonSolid]}

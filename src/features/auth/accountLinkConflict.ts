@@ -10,7 +10,7 @@ export interface AccountLinkConflictResolution {
 
 export function resolveAccountLinkConflict(error: unknown, platform: 'roblox' | 'google' | 'apple'): AccountLinkConflictResolution {
   const apiError = error as ApiError | undefined;
-  if (!apiError || apiError.code !== 'ACCOUNT_LINK_CONFLICT') {
+  if (!apiError || (apiError.code !== 'ACCOUNT_LINK_CONFLICT' && apiError.code !== 'CONFLICT_ACCOUNT_PROVIDER')) {
     return {
       handled: false,
       title: '',

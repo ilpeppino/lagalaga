@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { View, StyleSheet, Alert, Platform, Linking as RNLinking } from "react-native";
 import * as Linking from "expo-linking";
-import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
 import { Checkbox } from "react-native-paper";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
-import { AnimatedButton } from "@/components/ui/paper";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { resolveAccountLinkConflict } from "@/src/features/auth/accountLinkConflict";
 import { apiClient } from "@/src/lib/api";
+import { RobloxSignInButton } from "@/components/auth/RobloxSignInButton";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
+import { AppleSignInButton } from "@/components/auth/AppleSignInButton";
 
 const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
 const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
@@ -104,58 +105,43 @@ export default function SignInScreen() {
         <View style={styles.form}>
           {Platform.OS === "ios" ? (
             <>
-              <View style={[styles.appleButtonContainer, (!canSignIn || appleLoading) ? styles.appleButtonDisabled : null]}>
-                <AppleAuthentication.AppleAuthenticationButton
-                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                  buttonStyle={
-                    colorScheme === "dark"
-                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                  }
-                  cornerRadius={8}
-                  style={styles.appleButton}
-                  onPress={() => {
-                    if (!canSignIn || appleLoading) {
-                      return;
-                    }
-                    void handleAppleSignIn();
-                  }}
-                />
-              </View>
-              <AnimatedButton
-                title="Continue with Roblox"
-                variant="outlined"
-                onPress={handleRobloxSignIn}
+              <RobloxSignInButton
+                onPress={() => { void handleRobloxSignIn(); }}
                 loading={robloxLoading}
                 disabled={!canSignIn}
-                enableHaptics
                 style={styles.button}
                 contentStyle={styles.buttonContent}
               />
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <ThemedText type="labelMedium" lightColor="#8e8e93" darkColor="#8e8e93">
+                  OR
+                </ThemedText>
+                <View style={styles.dividerLine} />
+              </View>
+              <AppleSignInButton
+                onPress={() => { void handleAppleSignIn(); }}
+                disabled={!canSignIn}
+                loading={appleLoading}
+              />
+              <ThemedText type="bodySmall" lightColor="#6b6b72" darkColor="#9a9aa1" style={styles.helperText}>
+                If you sign in with Apple, you will need to connect your Roblox account to use Lagalaga.
+              </ThemedText>
             </>
           ) : (
             <>
-              <AnimatedButton
-                title="Sign in with Roblox"
-                variant="filled"
-                onPress={handleRobloxSignIn}
+              <RobloxSignInButton
+                onPress={() => { void handleRobloxSignIn(); }}
                 loading={robloxLoading}
                 disabled={!canSignIn}
-                enableHaptics
-                buttonColor="#007AFF"
                 style={styles.button}
                 contentStyle={styles.buttonContent}
-                labelStyle={styles.buttonLabel}
               />
-              <AnimatedButton
-                title="Sign in with Google"
-                variant="outlined"
-                onPress={handleGoogleSignIn}
+              <GoogleSignInButton
+                onPress={() => { void handleGoogleSignIn(); }}
                 loading={googleLoading}
                 disabled={!canSignIn}
-                enableHaptics
                 style={styles.button}
-                contentStyle={styles.buttonContent}
               />
             </>
           )}
@@ -262,20 +248,20 @@ const styles = StyleSheet.create({
   buttonContent: {
     minHeight: 52,
   },
-  appleButtonContainer: {
-    opacity: 1,
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 2,
   },
-  appleButtonDisabled: {
-    opacity: 0.5,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#d1d1d6",
   },
-  appleButton: {
-    width: "100%",
-    height: 52,
-  },
-  buttonLabel: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  helperText: {
+    lineHeight: 18,
+    marginTop: 2,
   },
   hint: {
     textAlign: "center",

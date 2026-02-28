@@ -42,6 +42,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   INT_001: 'Something went wrong. Please try again later.',
   CONFLICT_001: 'A conflict occurred. Please try again.',
   ACCOUNT_LINK_CONFLICT: 'This account is already linked to another LagaLaga account.',
+  CONFLICT_ACCOUNT_PROVIDER: 'This account is already linked to another LagaLaga account.',
   ACCOUNT_LINK_SAME_PROVIDER_DUPLICATE: 'Duplicate provider link detected. Please try another sign-in method.',
   ACCOUNT_LINK_INVALID_STATE: 'Your connection session expired. Please try linking again.',
 };

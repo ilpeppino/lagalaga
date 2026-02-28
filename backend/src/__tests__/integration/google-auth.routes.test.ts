@@ -197,14 +197,14 @@ describe('google auth routes', () => {
     expect(mockResolveUserForGoogleLogin).toHaveBeenCalledTimes(1);
   });
 
-  it('POST /api/auth/google/callback returns ACCOUNT_LINK_CONFLICT when provider link belongs to another user', async () => {
+  it('POST /api/auth/google/callback returns CONFLICT_ACCOUNT_PROVIDER when provider link belongs to another user', async () => {
     const start = await request(app.server).get('/api/auth/google/start');
     const state = parseStateFromUrl(start.body.url);
 
     mockGoogleExchangeCode.mockResolvedValue({ id_token: 'id-token' });
     mockGoogleValidateIdToken.mockResolvedValue({ sub: 'google-sub-conflict' });
     mockResolveUserForGoogleLogin.mockRejectedValue(
-      new AppError('ACCOUNT_LINK_CONFLICT', 'Google account already linked', 409, {
+      new AppError('CONFLICT_ACCOUNT_PROVIDER', 'Google account already linked', 409, {
         metadata: { platformId: 'google', action: 'use_original_login' },
       })
     );
@@ -214,7 +214,7 @@ describe('google auth routes', () => {
       .send({ code: 'oauth-code', state });
 
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('ACCOUNT_LINK_CONFLICT');
+    expect(response.body.error.code).toBe('CONFLICT_ACCOUNT_PROVIDER');
   });
 
   it('GET /api/auth/google/callback redirects to deep link on success', async () => {

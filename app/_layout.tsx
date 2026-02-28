@@ -134,6 +134,7 @@ export default function RootLayout() {
                   />
                 ) : null}
               </Stack>
+              <RobloxLinkingGuard />
               <StatusBar style="auto" />
             </ThemeProvider>
           </PaperProvider>
@@ -146,5 +147,28 @@ export default function RootLayout() {
 function FavoritesForegroundRefreshBridge() {
   const { user } = useAuth();
   useFavoritesForegroundRefresh(user?.id);
+  return null;
+}
+
+function RobloxLinkingGuard() {
+  const { user, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) return;
+    if (user.robloxConnected) return;
+
+    const allowed =
+      pathname === '/auth/connect-roblox' ||
+      pathname === '/auth/roblox' ||
+      pathname === '/auth/sign-in';
+
+    if (!allowed) {
+      router.replace('/auth/connect-roblox');
+    }
+  }, [loading, pathname, router, user]);
+
   return null;
 }

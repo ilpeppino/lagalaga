@@ -58,7 +58,7 @@ export class PlatformIdentityService {
   }): Promise<void> {
     const linkedUserId = await this.findUserIdByPlatform(input.platformId, input.platformUserId);
     if (linkedUserId && linkedUserId !== input.userId) {
-      throw new AppError('ACCOUNT_LINK_CONFLICT', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
+      throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
         severity: 'warning',
         metadata: {
           platformId: input.platformId,
@@ -166,7 +166,7 @@ export class PlatformIdentityService {
 
     const row = (Array.isArray(data) ? data[0] : data) as LinkPlatformTxResponse | null;
     if (row?.conflict_user_id && row.conflict_user_id !== input.userId) {
-      throw new AppError('ACCOUNT_LINK_CONFLICT', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
+      throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
         severity: 'warning',
         metadata: {
           platformId: input.platformId,
@@ -206,7 +206,7 @@ export class PlatformIdentityService {
       if (error.code === '23505') {
         const linkedUserId = await this.findUserIdByPlatform(input.platformId, input.platformUserId);
         if (linkedUserId && linkedUserId !== input.userId) {
-          throw new AppError('ACCOUNT_LINK_CONFLICT', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
+          throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
             severity: 'warning',
             metadata: {
               platformId: input.platformId,

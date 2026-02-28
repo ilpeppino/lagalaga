@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppleIdTokenClaims } from './appleOAuth.js';
 import { UserService, type AppUser } from './userService.js';
 import { PlatformIdentityService } from './platform-identity.service.js';
+import { AppError } from '../utils/errors.js';
 
 interface AppleAuthDeps {
   supabase?: SupabaseClient;
@@ -10,6 +11,7 @@ interface AppleAuthDeps {
 
 interface ResolveAppleLoginInput {
   claims: AppleIdTokenClaims;
+  currentUserId?: string | null;
   profile?: {
     email?: string | null;
     givenName?: string | null;
@@ -36,7 +38,28 @@ export class AppleAuthService {
   }
 
   async resolveUserForAppleLogin(input: ResolveAppleLoginInput): Promise<AppUser> {
-    let userId = await this.platformIdentityService.findUserIdByPlatform('apple', input.claims.sub);
+    const existingAppleUserId = await this.platformIdentityService.findUserIdByPlatform('apple', input.claims.sub);
+    const currentUserId = input.currentUserId ?? null;
+    let userId = existingAppleUserId;
+
+    if (existingAppleUserId && currentUserId && existingAppleUserId !== currentUserId) {
+      throw new AppError(
+        'CONFLICT_ACCOUNT_PROVIDER',
+        'This Apple account is already linked to another LagaLaga account.',
+        409,
+        {
+          severity: 'warning',
+          metadata: {
+            provider: 'apple',
+            action: 'use_original_login',
+          },
+        }
+      );
+    }
+
+    if (!userId && currentUserId) {
+      userId = currentUserId;
+    }
 
     if (!userId) {
       const created = await this.userService.createUser({

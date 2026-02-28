@@ -20,6 +20,8 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { refreshFavorites } from '@/src/features/favorites/service';
 import { refreshFriends } from '@/src/features/friends/service';
+import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
+import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { ActivityIndicator } from 'react-native-paper';
 
@@ -131,9 +133,14 @@ export default function MeScreen() {
     }
   };
 
-  const handleConnectRoblox = () => {
-    // Navigate to existing Roblox connect flow
-    router.push('/roblox');
+  const handleConnectRoblox = async () => {
+    try {
+      const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
+      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
+      await Linking.openURL(authorizationUrl);
+    } catch (error) {
+      handleError(error, { fallbackMessage: 'Failed to start Roblox connect flow.' });
+    }
   };
 
   const openMatchHistory = () => {

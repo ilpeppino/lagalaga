@@ -39,12 +39,14 @@ Mobile app
   │
   ├─ 2. App opens Google URL in in-app browser (Expo WebBrowser / Linking.openURL)
   │      Google authenticates the user
-  │      Google redirects to GOOGLE_REDIRECT_URI (lagalaga://auth) with code + state
+  │      Google redirects to GOOGLE_REDIRECT_URI (HTTPS backend callback) with code + state
   │
-  ├─ 3. Android OS intercepts lagalaga://auth deep link → opens Lagalaga app
+  ├─ 3. Backend exchanges code and then redirects (302) to the app deep link (e.g., lagalaga://auth/google?...)
+  │
+  ├─ 4. Android OS intercepts the lagalaga:// deep link → opens Lagalaga app
   │      (pending: mobile callback screen reads code + state from URL params)
   │
-  └─ 4. POST /api/auth/google/callback  { code, state }
+  └─ 5. POST /api/auth/google/callback  { code, state }
          Backend:
            - Validates HMAC state
            - Exchanges code for Google tokens (using GOOGLE_CLIENT_ID + GOOGLE_REDIRECT_URI)
@@ -89,7 +91,8 @@ These values were verified by inspecting the repository. Do not substitute.
 |---|---|---|
 | Android package name | `app.config.ts` | `com.ilpeppino.lagalaga` |
 | App deep link scheme | `app.config.ts` | `lagalaga` |
-| Google OAuth redirect URI (production mobile) | `roblox-connect.routes.ts` `DEFAULT_DEEP_LINK_REDIRECT_URI` | `lagalaga://auth` |
+| Google OAuth redirect URI (production) | Render backend domain | https://lagalaga-api.onrender.com/api/auth/google/callback |
+| App deep link scheme (post-auth redirect) | app.config.ts | lagalaga |
 | OAuth scopes requested | `googleOAuth.ts` `generateAuthorizationUrl` | `openid email profile` |
 | Token exchange endpoint | `googleOAuth.ts` | `https://oauth2.googleapis.com/token` (auto-discovered via OIDC) |
 | Expected issuer | `backend/src/config/env.ts` default | `https://accounts.google.com` |
@@ -98,7 +101,7 @@ These values were verified by inspecting the repository. Do not substitute.
 | EAS project ID | `app.config.ts` extra.eas.projectId | `36b14711-e62b-452d-82bf-e8e7f9128fe6` |
 | Backend env var: client ID | `backend/src/config/env.ts` | `GOOGLE_CLIENT_ID` |
 | Backend env var: client secret | `backend/src/config/env.ts` | `GOOGLE_CLIENT_SECRET` |
-| Backend env var: redirect URI | `backend/src/config/env.ts` | `GOOGLE_REDIRECT_URI` (set to `lagalaga://auth` in production) |
+| Backend env var: redirect URI | `backend/src/config/env.ts` | GOOGLE_REDIRECT_URI (must be HTTPS backend callback in production; see Section 4.3) |
 | Backend env var: issuer | `backend/src/config/env.ts` | `GOOGLE_ISSUER` (default: `https://accounts.google.com`) |
 | Backend env var: JWKS override | `backend/src/config/env.ts` | `GOOGLE_JWKS_URI` (leave empty to use OIDC discovery) |
 
@@ -223,14 +226,24 @@ This client is used by the **backend** to exchange the authorization code for to
 4. Name: `Lagalaga Backend (Production)`
 5. Under **"Authorized redirect URIs"**, click **"Add URI"** and add:
    ```
-   lagalaga://auth
+   https://lagalaga-api.onrender.com/api/auth/google/callback
    ```
 6. Click **"Create"**
 7. Copy the **Client ID** and **Client secret** from the dialog
 
-**Why `lagalaga://auth`**: This is the value of `DEFAULT_DEEP_LINK_REDIRECT_URI` in `backend/src/routes/roblox-connect.routes.ts`. The backend includes this URI in the Google authorization URL (`redirect_uri` parameter). Google will only redirect to URIs that are pre-registered. The mobile app intercepts this deep link and extracts the `code` and `state` parameters. The backend also sends this URI during the token exchange (`exchangeCode` in `googleOAuth.ts`); Google rejects the exchange if the URI does not match exactly.
+**Why this must be an HTTPS URL**: Google does not allow custom-scheme redirects (like `lagalaga://...`) for **Web application** OAuth clients. Authorized redirect URIs must be publicly reachable web URLs on a valid domain (HTTPS). The backend-mediated flow must therefore use an HTTPS callback on the backend.
 
-**What breaks if this URI is missing or misspelled**: Google returns `redirect_uri_mismatch` (error 400) and the user cannot complete sign-in.
+**How the deep link still works**: After the backend receives `code` + `state` at `/api/auth/google/callback`, it completes the token exchange and then redirects the browser to the app deep link (e.g. `lagalaga://auth/google?...`). Android intercepts that final deep link and opens the app.
+
+**What breaks if the HTTPS URI is missing or mismatched**: Google returns `redirect_uri_mismatch` and the sign-in cannot complete. The `redirect_uri` used in the authorization request and in the token exchange must match the registered URI **exactly** (character-for-character).
+
+### Common console error
+
+When trying to register a custom scheme like `lagalaga://auth` as a Web Application redirect URI in Google Cloud Console, you may see errors such as:
+- "Invalid Redirect: must end with a public top-level domain"
+- "Invalid Redirect: must use a domain that is a valid top private domain"
+
+These errors occur because Google requires Web client redirect URIs to be HTTPS URLs on a public domain. The fix is to use the backend HTTPS callback URI as shown above.
 
 ### 4.4 Set the Backend Environment Variables
 
@@ -239,7 +252,7 @@ Once the Web Application client is created, set these variables in the productio
 ```bash
 GOOGLE_CLIENT_ID=<Client ID from step 4.3>
 GOOGLE_CLIENT_SECRET=<Client secret from step 4.3>
-GOOGLE_REDIRECT_URI=lagalaga://auth
+GOOGLE_REDIRECT_URI=https://lagalaga-api.onrender.com/api/auth/google/callback
 GOOGLE_ISSUER=https://accounts.google.com
 # Leave GOOGLE_JWKS_URI empty — backend auto-discovers via OIDC
 GOOGLE_JWKS_URI=
@@ -266,16 +279,58 @@ Perform these steps after completing Sections 3 and 4 and after the mobile front
 
 ### Step 1: Internal test track validation
 
-1. Submit a new production build via EAS:
-   ```bash
-   eas build --platform android --profile production
-   eas submit --platform android --profile production
-   ```
-2. In Play Console, create an internal testing release and upload the build
-3. Add your own Google account as a tester
-4. Install via the Play Store internal track link (not sideload — sideload uses a different signature)
+You can validate using either EAS or a local Android build pipeline. If you prefer not to use EAS, follow Option B or Option C below.
 
-> **Why Play Store track, not sideload**: Sideloaded APKs use your local signing key. APKs from the Play Store use the Play App Signing key. Only Play-signed APKs will have the correct SHA-1 for FCM.
+**Option A — EAS (existing)**
+
+Submit a new production build via EAS:
+```bash
+eas build --platform android --profile production
+eas submit --platform android --profile production
+```
+
+**Option B — Local Gradle (recommended if you avoid EAS)**
+
+1. Ensure the `android/` directory exists (Expo prebuild must have been run at least once). If missing, run:
+   ```bash
+   npx expo prebuild --platform android
+   ```
+2. Build a release AAB locally:
+   ```bash
+   cd android
+   ./gradlew clean
+   ./gradlew bundleRelease
+   ```
+3. Locate the AAB output (typical path):
+   `android/app/build/outputs/bundle/release/app-release.aab`
+4. Upload that AAB to Play Console Internal testing release.
+
+**Option C — Expo local run + Gradle output (useful for quick validation)**
+
+1. Build/install a local release APK for device testing (not Play track) using:
+   ```bash
+   APP_VARIANT=prod npx expo run:android --variant release
+   ```
+   If the project does not support `--variant release`, use Gradle assembleRelease instead:
+   ```bash
+   cd android
+   ./gradlew assembleRelease
+   adb install -r app/build/outputs/apk/release/app-release.apk
+   ```
+2. **Note:** This option is for device functional testing only and does **not** validate Play App Signing behavior. For uploading the .aab use the following procedure:
+   ```bash
+   cd android
+   ./gradlew clean bundleRelease
+   ./gradlew :app:signingReport
+   keytool -printcert -jarfile app/build/outputs/bundle/release/app-release.aab | rg "SHA1:"
+   ```
+
+**Important:**  
+- Play Store Internal track installs are signed with **Play App Signing**.  
+- Sideloaded local builds are signed with your local keystore.  
+- Therefore, for final production validation you must install from Play Internal track.
+
+5. Install via the Play Store internal track link (not sideload — sideload uses a different signature). Even if you test locally via Option C, you **still need** to do the Play Internal track test to validate Play App Signing and push notification compatibility.
 
 ### Step 2: Test the Google Sign-In flow
 
@@ -285,10 +340,11 @@ On the test device with the Play-track build installed:
 2. Tap **"Sign in with Google"** (requires frontend implementation to be complete)
 3. **Expected**: An in-app browser opens showing a Google sign-in or account-picker page
 4. Sign in with a Google account
-5. **Expected**: Google redirects to `lagalaga://auth?code=...&state=...`
-6. **Expected**: The Lagalaga app opens automatically (Android intercepts the deep link)
-7. **Expected**: The app navigates the user to the Roblox connection gate (since no Roblox is linked yet)
-8. **Expected**: No crash, no stuck loading state
+5. **Expected**: Google redirects to `https://lagalaga-api.onrender.com/api/auth/google/callback?code=...&state=...`
+6. **Expected**: Backend completes auth and redirects to an app deep link like `lagalaga://auth/google?...`
+7. **Expected**: The Lagalaga app opens automatically (Android intercepts the deep link)
+8. **Expected**: The app navigates the user to the Roblox connection gate (since no Roblox is linked yet)
+9. **Expected**: No crash, no stuck loading state
 
 ### Step 3: Multi-device and multi-account testing
 
@@ -323,11 +379,11 @@ On the test device with the Play-track build installed:
 
 | Symptom | Likely Cause | Where to Fix | How to Verify |
 |---|---|---|---|
-| Browser opens but returns `redirect_uri_mismatch` | `lagalaga://auth` missing from authorized redirect URIs | GCP Console → Credentials → Web client → Authorized redirect URIs | The error message in the browser explicitly states the URI mismatch |
+| Browser opens but returns `redirect_uri_mismatch` | `https://lagalaga-api.onrender.com/api/auth/google/callback` missing from authorized redirect URIs | GCP Console → Credentials → Web client → Authorized redirect URIs | The error message in the browser explicitly states the URI mismatch |
 | App does not open after Google redirects | Android intent filter for `lagalaga://auth` not registered, OR build not from Play track | `app.config.ts` intent filters; rebuild via EAS | Run `adb logcat | grep ActivityManager` and look for unhandled scheme |
 | "This app hasn't been verified" error in browser | OAuth consent screen is in Testing status and the user is not on the test user list | GCP Console → OAuth consent screen → Publish App or add test user | Check consent screen publishing status |
 | `invalid_audience` error in backend logs | `GOOGLE_CLIENT_ID` does not match the client ID in the issued ID token | Render/backend env: set `GOOGLE_CLIENT_ID` to match the Web Application client | Check backend logs for `AUTH_OAUTH_FAILED` with audience message |
-| `invalid_grant` during token exchange | `GOOGLE_REDIRECT_URI` in backend env does not match authorized redirect URI | Set `GOOGLE_REDIRECT_URI=lagalaga://auth` in backend env, and verify it matches GCP Console | Google token endpoint returns `{"error":"invalid_grant","error_description":"Bad Request"}` |
+| `invalid_grant` during token exchange | `GOOGLE_REDIRECT_URI` in backend env does not match authorized redirect URI | Set `GOOGLE_REDIRECT_URI=https://lagalaga-api.onrender.com/api/auth/google/callback` in backend env, and verify it matches GCP Console | Google token endpoint returns `{"error":"invalid_grant","error_description":"Bad Request"}` |
 | Push notifications not working on Play-distributed builds | Firebase SHA-1 not updated with Play App Signing key | Firebase Console → Project settings → SHA-1 fingerprints | Run `adb logcat | grep FCM` and check for registration errors |
 | Same Google account creates two LagaLaga users | Backend resolved user by Roblox ID instead of Google sub on a returning login | Verify `user_platforms` table has `platform_id='google'` row; check `PlatformIdentityService.findUserIdByPlatform()` | Query `SELECT * FROM user_platforms WHERE platform_id='google' AND platform_user_id='<google-sub>'` |
 | Google sign-in succeeds but Roblox features show errors | User is Google-first with no Roblox linked; `ROBLOX_NOT_CONNECTED` errors not routed to gate | Check `robloxGateController.ts` is wired in `app/_layout.tsx`; verify `requireRobloxConnected` middleware is on Roblox-specific routes | Should redirect to `/me` screen with Connect Roblox UI |
@@ -394,14 +450,14 @@ Complete all items before marking Google Sign-In as ready for production.
 - [ ] OAuth consent screen publishing status is **"In production"** (not Testing)
 - [ ] Scopes `openid`, `email`, `profile` are added to the consent screen
 - [ ] A **Web Application** OAuth client named `Lagalaga Backend (Production)` exists in project `lagalaga-19985`
-- [ ] `lagalaga://auth` is listed in the Web client's **Authorized redirect URIs** (exact match, no trailing slash)
+- [ ] `https://lagalaga-api.onrender.com/api/auth/google/callback` is listed in the Web client's **Authorized redirect URIs** (exact match, no trailing slash)
 - [ ] The Web client ID is set as `GOOGLE_CLIENT_ID` in the production backend environment
 - [ ] The Web client secret is set as `GOOGLE_CLIENT_SECRET` in the production backend environment
 
 **Backend environment (Render)**
 - [ ] `GOOGLE_CLIENT_ID` is set to the Web Application client ID
 - [ ] `GOOGLE_CLIENT_SECRET` is set to the Web Application client secret
-- [ ] `GOOGLE_REDIRECT_URI` is set to `lagalaga://auth`
+- [ ] `GOOGLE_REDIRECT_URI` is set to `https://lagalaga-api.onrender.com/api/auth/google/callback`
 - [ ] `GOOGLE_ISSUER` is set to `https://accounts.google.com` (or left to default)
 - [ ] `GOOGLE_JWKS_URI` is empty (to use OIDC discovery)
 - [ ] The old `GOOGLE_AUDIENCE` variable is removed from production env (it has no effect and causes confusion)

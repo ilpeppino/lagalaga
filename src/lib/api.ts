@@ -217,9 +217,12 @@ class ApiClient {
           if (apiError.code === 'ROBLOX_NOT_CONNECTED') {
             notifyRobloxNotConnected({ endpoint, statusCode: retryResponse.status });
           }
-          logger.error(`API error after token refresh: ${apiError.code}`, {
-            endpoint, statusCode: retryResponse.status, requestId,
-          });
+      logger.error(`API error after token refresh: ${apiError.code}`, {
+        endpoint,
+        requestUrl: `${API_URL}${endpoint}`,
+        statusCode: retryResponse.status,
+        requestId,
+      });
           throw apiError;
         }
 
@@ -237,6 +240,7 @@ class ApiClient {
       }
       logger.error(`API error: ${apiError.code} - ${apiError.message}`, {
         endpoint,
+        requestUrl: `${API_URL}${endpoint}`,
         statusCode: response.status,
         requestId,
         correlationId,

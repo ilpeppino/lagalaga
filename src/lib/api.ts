@@ -342,7 +342,7 @@ class ApiClient {
           apiUrl: API_URL,
           endpoint: '/api/auth/google/start',
         });
-        const response = await this.request('/api/auth/google/start', {
+        const response = await this.request<{ url: string }>('/api/auth/google/start', {
           method: 'GET',
         });
         logger.info('Google OAuth start URL received from primary backend route', {
@@ -368,7 +368,7 @@ class ApiClient {
           apiUrl: API_URL,
           endpoint: '/auth/google/start',
         });
-        const response = await this.request('/auth/google/start', {
+        const response = await this.request<{ url: string }>('/auth/google/start', {
           method: 'GET',
         });
         logger.info('Google OAuth start URL received from fallback backend route', {
@@ -407,6 +407,20 @@ class ApiClient {
           body: JSON.stringify({ code, state }),
         });
       }
+    },
+
+    completeAppleAuth: async (input: {
+      identityToken: string;
+      nonce?: string;
+      email?: string | null;
+      givenName?: string | null;
+      familyName?: string | null;
+      isPrivateEmail?: boolean | null;
+    }): Promise<AuthResponse> => {
+      return this.request('/api/auth/apple/callback', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
     },
 
     refresh: async (): Promise<RefreshResponse> => {

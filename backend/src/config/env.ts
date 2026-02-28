@@ -62,6 +62,22 @@ export const envSchema = {
       type: 'string',
       default: '',
     },
+    APPLE_BUNDLE_ID: {
+      type: 'string',
+      default: '',
+    },
+    APPLE_AUDIENCE: {
+      type: 'string',
+      default: '',
+    },
+    APPLE_ISSUER: {
+      type: 'string',
+      default: 'https://appleid.apple.com',
+    },
+    APPLE_JWKS_URI: {
+      type: 'string',
+      default: '',
+    },
     JWT_SECRET: {
       type: 'string',
     },
@@ -163,6 +179,10 @@ declare module 'fastify' {
       GOOGLE_REDIRECT_URI: string;
       GOOGLE_ISSUER: string;
       GOOGLE_JWKS_URI: string;
+      APPLE_BUNDLE_ID: string;
+      APPLE_AUDIENCE: string;
+      APPLE_ISSUER: string;
+      APPLE_JWKS_URI: string;
       JWT_SECRET: string;
       JWT_EXPIRY: string;
       REFRESH_TOKEN_SECRET: string;
@@ -202,5 +222,9 @@ export function validateEnvForRuntime(config: FastifyInstance['config']): void {
     if (typeof config[key] !== 'string' || config[key].trim().length === 0) {
       throw new Error(`${String(key)} must be configured in production`);
     }
+  }
+
+  if (config.APPLE_BUNDLE_ID.trim().length === 0 && config.APPLE_AUDIENCE.trim().length === 0) {
+    throw new Error('APPLE_BUNDLE_ID or APPLE_AUDIENCE must be configured in production');
   }
 }

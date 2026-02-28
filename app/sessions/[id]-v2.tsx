@@ -10,7 +10,6 @@ import {
   Alert,
   Share,
   Image,
-  Linking,
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -37,6 +36,7 @@ import {
   sessionUiColors,
 } from '@/src/ui/sessionStatusUi';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
+import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -189,7 +189,7 @@ export default function SessionDetailScreenV2() {
     try {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await Linking.openURL(authorizationUrl);
+      await openRobloxAuthSession(authorizationUrl);
     } catch {
       Alert.alert('Error', 'Failed to start Roblox connect flow');
     }

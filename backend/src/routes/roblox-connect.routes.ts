@@ -5,6 +5,8 @@ import { RobloxOAuthService } from '../services/robloxOAuth.js';
 import { RobloxConnectionService } from '../services/roblox-connection.service.js';
 import { GoogleOAuthService } from '../services/googleOAuth.js';
 import { GoogleAuthService } from '../services/google-auth.service.js';
+import { AppleOAuthService } from '../services/appleOAuth.js';
+import { AppleAuthService } from '../services/apple-auth.service.js';
 import { TokenService } from '../services/tokenService.js';
 import { PlatformIdentityService } from '../services/platform-identity.service.js';
 import { completeGoogleOAuth } from '../services/google-oauth-completion.service.js';
@@ -128,6 +130,8 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
   const connectionService = new RobloxConnectionService(fastify);
   const googleOAuth = new GoogleOAuthService(fastify);
   const googleAuthService = new GoogleAuthService(fastify);
+  const appleOAuth = new AppleOAuthService(fastify);
+  const appleAuthService = new AppleAuthService(fastify);
   const tokenService = new TokenService(fastify);
   const platformIdentityService = new PlatformIdentityService();
 
@@ -413,5 +417,107 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
 
     metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
     return reply.code(302).redirect(redirectUrl);
+  });
+
+  fastify.post<{
+    Body: {
+      identityToken: string;
+      nonce?: string;
+      email?: string;
+      givenName?: string;
+      familyName?: string;
+      isPrivateEmail?: boolean;
+    };
+  }>('/apple/callback', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['identityToken'],
+        properties: {
+          identityToken: { type: 'string' },
+          nonce: { type: 'string' },
+          email: { type: 'string' },
+          givenName: { type: 'string' },
+          familyName: { type: 'string' },
+          isPrivateEmail: { type: 'boolean' },
+        },
+      },
+    },
+  }, async (request) => {
+    try {
+      const claims = await appleOAuth.validateIdentityToken(
+        request.body.identityToken,
+        request.body.nonce
+      );
+      const user = await appleAuthService.resolveUserForAppleLogin({
+        claims,
+        profile: {
+          email: request.body.email ?? null,
+          givenName: request.body.givenName ?? null,
+          familyName: request.body.familyName ?? null,
+          isPrivateEmail: request.body.isPrivateEmail ?? null,
+        },
+      });
+
+      if (user.status === 'PENDING_DELETION') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is pending deletion');
+      }
+
+      if (user.status === 'DELETED') {
+        throw new AuthError(ErrorCodes.AUTH_FORBIDDEN, 'Account is unavailable');
+      }
+
+      const tokens = tokenService.generateTokens({
+        userId: user.id,
+        robloxUserId: user.robloxUserId,
+        robloxUsername: user.robloxUsername,
+        tokenVersion: user.tokenVersion,
+      });
+
+      metrics.incrementCounter('auth_apple_callback_total', { status: 'success' });
+      fastify.log.info(
+        {
+          provider: 'apple',
+          userId: user.id,
+        },
+        'Apple OAuth callback succeeded'
+      );
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: user.id,
+          robloxUserId: user.robloxUserId,
+          robloxUsername: user.robloxUsername,
+          robloxDisplayName: user.robloxDisplayName,
+        },
+      };
+    } catch (error) {
+      if (error instanceof AppError || error instanceof AuthError) {
+        if (error.code === ErrorCodes.AUTH_FORBIDDEN) {
+          metrics.incrementCounter('auth_apple_callback_total', { status: 'forbidden' });
+        } else {
+          metrics.incrementCounter('auth_apple_callback_total', { status: 'failure' });
+        }
+      } else {
+        metrics.incrementCounter('auth_apple_callback_total', { status: 'failure' });
+      }
+
+      fastify.log.error(
+        {
+          provider: 'apple',
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Apple OAuth callback failed'
+      );
+      throw error;
+    }
   });
 }

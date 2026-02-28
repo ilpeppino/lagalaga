@@ -1,28 +1,17 @@
 import { useMemo } from 'react';
-import { Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/paper';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { DELETE_ACCOUNT_WEB_URL } from '@/src/lib/runtimeConfig';
 
 export default function DeleteAccountInfoScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const { handleError } = useErrorHandler();
   const palette = Colors[colorScheme ?? 'light'];
 
   const cardBackground = useMemo(() => (colorScheme === 'dark' ? '#171717' : '#f4f5f7'), [colorScheme]);
-
-  const openWebFallback = async () => {
-    try {
-      await Linking.openURL(DELETE_ACCOUNT_WEB_URL);
-    } catch (error) {
-      handleError(error, { fallbackMessage: 'Unable to open the web deletion page.' });
-    }
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}> 
@@ -64,12 +53,6 @@ export default function DeleteAccountInfoScreen() {
           buttonColor={palette.tint}
           style={styles.primaryButton}
         />
-
-        <TouchableOpacity onPress={openWebFallback} style={styles.linkButton}>
-          <ThemedText lightColor={palette.tint} darkColor={palette.tint}>
-            Use web page instead
-          </ThemedText>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -107,9 +90,5 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: 8,
-  },
-  linkButton: {
-    alignItems: 'center',
-    paddingVertical: 10,
   },
 });

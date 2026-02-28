@@ -225,6 +225,53 @@ describe('auth routes', () => {
     });
   });
 
+  it('POST /auth/roblox/callback reuses existing linked user identity', async () => {
+    mockVerifySignedOAuthState.mockReturnValue(true);
+    mockIsValidCodeVerifier.mockReturnValue(true);
+    mockExchangeCode.mockResolvedValue({ access_token: 'roblox-access-token' });
+    mockGetUserInfo.mockResolvedValue({
+      sub: '12345',
+      name: 'roblox-name',
+      preferred_username: 'roblox-username',
+      nickname: 'Roblox Display',
+      profile: 'https://www.roblox.com/users/12345/profile',
+    });
+    mockFindUserIdByPlatform.mockResolvedValue('user-apple-first-1');
+    mockGetUserById.mockResolvedValue({
+      id: 'user-apple-first-1',
+      robloxUserId: '12345',
+      robloxUsername: 'roblox-username',
+      robloxDisplayName: 'Roblox Display',
+      robloxProfileUrl: 'https://www.roblox.com/users/12345/profile',
+      tokenVersion: 6,
+      status: 'ACTIVE',
+    });
+    mockGenerateTokens.mockReturnValue({
+      accessToken: 'app-access-token-existing',
+      refreshToken: 'app-refresh-token-existing',
+    });
+
+    const response = await request(app.server)
+      .post('/auth/roblox/callback')
+      .send({
+        code: 'code-123',
+        state: 'signed-state',
+        codeVerifier: 'v'.repeat(43),
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user.id).toBe('user-apple-first-1');
+    expect(mockCreateUser).not.toHaveBeenCalled();
+    expect(mockFindUserIdByPlatform).toHaveBeenCalledWith('roblox', '12345');
+    expect(mockTouchLastLogin).toHaveBeenCalledWith('user-apple-first-1');
+    expect(mockGenerateTokens).toHaveBeenCalledWith({
+      userId: 'user-apple-first-1',
+      robloxUserId: '12345',
+      robloxUsername: 'roblox-username',
+      tokenVersion: 6,
+    });
+  });
+
   it('POST /auth/refresh returns new tokens for valid refresh token', async () => {
     mockVerifyRefreshToken.mockReturnValue({
       userId: 'user-1',

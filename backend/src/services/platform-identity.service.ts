@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../config/supabase.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
-export type SupportedPlatformId = 'roblox' | 'google';
+export type SupportedPlatformId = 'roblox' | 'google' | 'apple';
 
 interface PlatformIdentityServiceDeps {
   supabase?: SupabaseClient;
@@ -175,8 +175,8 @@ export class PlatformIdentityService {
       });
     }
 
-    if (input.platformId === 'google' && input.metadata && this.metadataColumnSupported !== false) {
-      await this.tryUpdateGoogleMetadata(input.userId, input.metadata);
+    if (input.metadata && this.metadataColumnSupported !== false) {
+      await this.tryUpdatePlatformMetadata(input.userId, input.platformId, input.metadata);
     }
 
     return 'linked';
@@ -194,7 +194,7 @@ export class PlatformIdentityService {
       updated_at: new Date().toISOString(),
     };
 
-    if (input.platformId === 'google' && input.metadata && this.metadataColumnSupported !== false) {
+    if (input.metadata && this.metadataColumnSupported !== false) {
       payload.metadata = input.metadata;
     }
 
@@ -220,7 +220,7 @@ export class PlatformIdentityService {
         });
       }
 
-      if (error.code === 'PGRST204' && input.platformId === 'google') {
+      if (error.code === 'PGRST204') {
         this.metadataColumnSupported = false;
         const fallbackPayload = { ...payload };
         delete fallbackPayload.metadata;
@@ -258,7 +258,11 @@ export class PlatformIdentityService {
     }
   }
 
-  private async tryUpdateGoogleMetadata(userId: string, metadata: Record<string, unknown>): Promise<void> {
+  private async tryUpdatePlatformMetadata(
+    userId: string,
+    platformId: SupportedPlatformId,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
     const { error } = await this.getSupabase()
       .from('user_platforms')
       .update({
@@ -266,7 +270,7 @@ export class PlatformIdentityService {
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', userId)
-      .eq('platform_id', 'google');
+      .eq('platform_id', platformId);
 
     if (!error) {
       this.metadataColumnSupported = this.metadataColumnSupported ?? true;

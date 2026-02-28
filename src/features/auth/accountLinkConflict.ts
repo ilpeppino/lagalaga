@@ -8,7 +8,7 @@ export interface AccountLinkConflictResolution {
   shouldStoreTokens: boolean;
 }
 
-export function resolveAccountLinkConflict(error: unknown, platform: 'roblox' | 'google'): AccountLinkConflictResolution {
+export function resolveAccountLinkConflict(error: unknown, platform: 'roblox' | 'google' | 'apple'): AccountLinkConflictResolution {
   const apiError = error as ApiError | undefined;
   if (!apiError || apiError.code !== 'ACCOUNT_LINK_CONFLICT') {
     return {
@@ -20,7 +20,7 @@ export function resolveAccountLinkConflict(error: unknown, platform: 'roblox' | 
     };
   }
 
-  const platformLabel = platform === 'roblox' ? 'Roblox' : 'Google';
+  const platformLabel = platform === 'roblox' ? 'Roblox' : platform === 'google' ? 'Google' : 'Apple';
   return {
     handled: true,
     title: 'Account already linked',

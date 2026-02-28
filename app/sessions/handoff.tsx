@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Image, ScrollView, Alert, Linking } from 'react-native';
+import { View, StyleSheet, Image, ScrollView, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
@@ -11,6 +11,7 @@ import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { logger } from '@/src/lib/logger';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
+import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 
 export default function SessionHandoffScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -134,7 +135,7 @@ export default function SessionHandoffScreen() {
     try {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await Linking.openURL(authorizationUrl);
+      await openRobloxAuthSession(authorizationUrl);
     } catch {
       Alert.alert('Error', 'Failed to start Roblox connect flow.');
     }

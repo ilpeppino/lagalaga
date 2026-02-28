@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AppState, Linking, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
 import * as WebBrowser from 'expo-web-browser';
@@ -9,6 +9,7 @@ import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '../../lib/oauthTransi
 import { warmFavorites } from '../favorites/service';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 import { API_URL } from '../../lib/runtimeConfig';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 if (Platform.OS === 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -29,6 +30,7 @@ interface AuthContextValue {
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   reloadUser: () => Promise<void>;
 }
@@ -105,15 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authUrl: authorizationUrl.substring(0, 100)
       });
 
-      // iOS dev-client can route auth sessions through Expo pages.
-      // Opening URL directly in browser preserves custom scheme callback handling.
-      if (Platform.OS === 'ios') {
-        await Linking.openURL(authorizationUrl);
-        logger.info('Opened OAuth URL in iOS browser');
-        return;
-      }
-
-      // Android: keep auth session flow.
       const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
       logger.info('OAuth session finished', {
         type: result.type,
@@ -152,13 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         providerHost,
         returnUrl,
       });
-
-      if (Platform.OS === 'ios') {
-        await Linking.openURL(url);
-        logger.info('Opened Google OAuth URL in iOS browser');
-        return;
-      }
-
       const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
       logger.info('Google OAuth session finished', {
         type: result.type,
@@ -193,8 +179,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithApple = async () => {
+    if (Platform.OS !== 'ios') {
+      throw new Error('Apple Sign-In is only supported on iOS.');
+    }
+
+    const available = await AppleAuthentication.isAvailableAsync();
+    if (!available) {
+      throw new Error('Apple Sign-In is not available on this device.');
+    }
+
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        throw new Error('Apple did not return an identity token.');
+      }
+
+      const response = await apiClient.auth.completeAppleAuth({
+        identityToken: credential.identityToken,
+        email: credential.email ?? null,
+        givenName: credential.fullName?.givenName ?? null,
+        familyName: credential.fullName?.familyName ?? null,
+        isPrivateEmail: credential.email ? credential.email.endsWith('@privaterelay.appleid.com') : null,
+      });
+
+      await tokenStorage.setToken(response.accessToken);
+      await tokenStorage.setRefreshToken(response.refreshToken);
+      await loadUser();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code?: string }).code === 'ERR_REQUEST_CANCELED'
+      ) {
+        return;
+      }
+      throw error;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithGoogle, signOut, reloadUser: loadUser }}>
+    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithGoogle, signInWithApple, signOut, reloadUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );

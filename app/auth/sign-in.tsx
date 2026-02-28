@@ -1,26 +1,32 @@
 import { useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Alert, Platform, Linking as RNLinking } from "react-native";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
+import { useRouter } from "expo-router";
 import { Checkbox } from "react-native-paper";
 import { useAuth } from "@/src/features/auth/useAuth";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
 import { AnimatedButton } from "@/components/ui/paper";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { resolveAccountLinkConflict } from "@/src/features/auth/accountLinkConflict";
+import { apiClient } from "@/src/lib/api";
 
 const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
 const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
 
 export default function SignInScreen() {
-  const [loadingProvider, setLoadingProvider] = useState<"roblox" | "google" | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<"roblox" | "google" | "apple" | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const { signInWithRoblox, signInWithGoogle } = useAuth();
+  const { signInWithRoblox, signInWithGoogle, signInWithApple } = useAuth();
   const { handleError } = useErrorHandler();
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const canSignIn = acceptedTerms && acceptedPrivacy && !loadingProvider;
   const robloxLoading = loadingProvider === "roblox";
   const googleLoading = loadingProvider === "google";
+  const appleLoading = loadingProvider === "apple";
 
   async function handleRobloxSignIn() {
     try {
@@ -39,6 +45,38 @@ export default function SignInScreen() {
       await signInWithGoogle();
     } catch (error) {
       handleError(error, { fallbackMessage: "Failed to sign in with Google. Please try again." });
+    } finally {
+      setLoadingProvider(null);
+    }
+  }
+
+  async function handleAppleSignIn() {
+    try {
+      setLoadingProvider("apple");
+      await signInWithApple();
+      const me = await apiClient.auth.me();
+      router.replace(me.robloxConnected ? "/sessions" : "/auth/connect-roblox");
+    } catch (error) {
+      const conflictResolution = resolveAccountLinkConflict(error, "apple");
+      if (conflictResolution.handled) {
+        Alert.alert(conflictResolution.title, conflictResolution.message, [
+          {
+            text: "Log in with original method",
+            onPress: () => {
+              router.replace("/auth/sign-in");
+            },
+          },
+          {
+            text: "Contact support",
+            onPress: () => {
+              void RNLinking.openURL("mailto:lagalaga@gtemp1.com?subject=Account%20Link%20Conflict");
+            },
+          },
+        ]);
+        return;
+      }
+
+      handleError(error, { fallbackMessage: "Failed to sign in with Apple. Please try again." });
     } finally {
       setLoadingProvider(null);
     }
@@ -64,28 +102,63 @@ export default function SignInScreen() {
         </ThemedText>
 
         <View style={styles.form}>
-          <AnimatedButton
-            title="Sign in with Roblox"
-            variant="filled"
-            onPress={handleRobloxSignIn}
-            loading={robloxLoading}
-            disabled={!canSignIn}
-            enableHaptics
-            buttonColor="#007AFF"
-            style={styles.button}
-            contentStyle={styles.buttonContent}
-            labelStyle={styles.buttonLabel}
-          />
-          <AnimatedButton
-            title="Sign in with Google"
-            variant="outlined"
-            onPress={handleGoogleSignIn}
-            loading={googleLoading}
-            disabled={!canSignIn}
-            enableHaptics
-            style={styles.button}
-            contentStyle={styles.buttonContent}
-          />
+          {Platform.OS === "ios" ? (
+            <>
+              <View style={[styles.appleButtonContainer, (!canSignIn || appleLoading) ? styles.appleButtonDisabled : null]}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={
+                    colorScheme === "dark"
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={8}
+                  style={styles.appleButton}
+                  onPress={() => {
+                    if (!canSignIn || appleLoading) {
+                      return;
+                    }
+                    void handleAppleSignIn();
+                  }}
+                />
+              </View>
+              <AnimatedButton
+                title="Continue with Roblox"
+                variant="outlined"
+                onPress={handleRobloxSignIn}
+                loading={robloxLoading}
+                disabled={!canSignIn}
+                enableHaptics
+                style={styles.button}
+                contentStyle={styles.buttonContent}
+              />
+            </>
+          ) : (
+            <>
+              <AnimatedButton
+                title="Sign in with Roblox"
+                variant="filled"
+                onPress={handleRobloxSignIn}
+                loading={robloxLoading}
+                disabled={!canSignIn}
+                enableHaptics
+                buttonColor="#007AFF"
+                style={styles.button}
+                contentStyle={styles.buttonContent}
+                labelStyle={styles.buttonLabel}
+              />
+              <AnimatedButton
+                title="Sign in with Google"
+                variant="outlined"
+                onPress={handleGoogleSignIn}
+                loading={googleLoading}
+                disabled={!canSignIn}
+                enableHaptics
+                style={styles.button}
+                contentStyle={styles.buttonContent}
+              />
+            </>
+          )}
 
           <View style={styles.ackContainer}>
             <View style={styles.ackRow}>
@@ -188,6 +261,16 @@ const styles = StyleSheet.create({
   },
   buttonContent: {
     minHeight: 52,
+  },
+  appleButtonContainer: {
+    opacity: 1,
+  },
+  appleButtonDisabled: {
+    opacity: 0.5,
+  },
+  appleButton: {
+    width: "100%",
+    height: 52,
   },
   buttonLabel: {
     color: "#fff",

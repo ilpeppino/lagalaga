@@ -24,6 +24,7 @@ import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { ActivityIndicator } from 'react-native-paper';
+import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -137,7 +138,7 @@ export default function MeScreen() {
     try {
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await Linking.openURL(authorizationUrl);
+      await openRobloxAuthSession(authorizationUrl);
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to start Roblox connect flow.' });
     }

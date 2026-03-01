@@ -8,6 +8,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { logger } from '@/src/lib/logger';
 
 
 export default function TabLayout() {
@@ -16,11 +17,17 @@ export default function TabLayout() {
 
   useEffect(() => {
   const sub = Linking.addEventListener("url", ({ url }) => {
-    console.log("[LINKING] url event:", url);
+    // Log only the URL scheme/path without query parameters to avoid exposing OAuth codes/state tokens
+    const scheme = url.split('?')[0];
+    logger.debug('[LINKING] url event received', { scheme });
   });
 
   Linking.getInitialURL().then((url) => {
-    console.log("[LINKING] initial url:", url);
+    if (url) {
+      // Log only the URL scheme/path without query parameters to avoid exposing OAuth codes/state tokens
+      const scheme = url.split('?')[0];
+      logger.debug('[LINKING] initial url received', { scheme });
+    }
   });
 
   return () => sub.remove();

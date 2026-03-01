@@ -1,8 +1,10 @@
 # Database Schema — LagaLaga (Supabase / PostgreSQL)
 
-> Last updated: 2026-02-27
+> Last updated: 2026-03-01
 > Project: `zbsvxhwilhkpabyybjdk` (Lagalaga, eu-west-1)
 > PostgreSQL 17.6
+>
+> **Generated from actual migration history. Reflects all migrations as of 2026-03-01.**
 
 ---
 
@@ -14,25 +16,27 @@
 | `session_status` | `scheduled`, `active`, `completed`, `cancelled` |
 | `participant_role` | `host`, `member` |
 | `participant_state` | `invited`, `joined`, `left`, `kicked` |
+| `report_category` | `CSAM`, `GROOMING_OR_SEXUAL_EXPLOITATION`, `HARASSMENT_OR_ABUSIVE_BEHAVIOR`, `IMPERSONATION`, `OTHER` |
+| `report_status` | `OPEN`, `UNDER_REVIEW`, `CLOSED`, `ESCALATED` |
 
 ---
 
 ## Tables
 
 ### `app_users`
-Stores user accounts, optionally linked to Roblox. RLS enabled.
+Stores user accounts. Can be linked to Roblox and/or Google and/or Apple via the `user_platforms` table. RLS enabled.
 
 | Column | Type | Nullable | Default | Notes |
 |--------|------|----------|---------|-------|
 | `id` | uuid | NOT NULL | `gen_random_uuid()` | PK |
-| `roblox_user_id` | varchar | NULL | — | UNIQUE (when present) |
-| `roblox_username` | varchar | NULL | — | NULL until Roblox linked |
+| `roblox_user_id` | varchar | NULL | — | UNIQUE (when present); nullable for Google-first accounts |
+| `roblox_username` | varchar | NULL | — | NULL until Roblox linked; supports Google-first sign-up |
 | `roblox_display_name` | varchar | NULL | — | |
 | `roblox_profile_url` | text | NULL | — | |
-| `avatar_headshot_url` | text | NULL | — | Cached Roblox avatar headshot URL |
+| `avatar_headshot_url` | text | NULL | — | Cached avatar URL (from Roblox or linked platform) |
 | `avatar_cached_at` | timestamptz | NULL | — | When avatar was last cached |
 | `status` | text | NOT NULL | `'ACTIVE'` | CHECK: `ACTIVE`, `PENDING_DELETION`, `DELETED` |
-| `token_version` | integer | NOT NULL | `0` | Used for JWT invalidation |
+| `token_version` | integer | NOT NULL | `0` | Used for JWT invalidation on logout |
 | `last_login_at` | timestamptz | NULL | — | |
 | `created_at` | timestamptz | NOT NULL | `now()` | |
 | `updated_at` | timestamptz | NOT NULL | `now()` | |
@@ -159,15 +163,20 @@ Roblox users explicitly invited to a session (by Roblox user ID, before they hav
 ---
 
 ### `platforms`
-Supported gaming platforms (e.g., Roblox). RLS enabled.
+Supported auth platforms (gaming and social). RLS enabled.
 
 | Column | Type | Nullable | Default | Notes |
 |--------|------|----------|---------|-------|
-| `id` | text | NOT NULL | — | PK (e.g., `'roblox'`, `'google'`) |
+| `id` | text | NOT NULL | — | PK (e.g., `'roblox'`, `'google'`, `'apple'`) |
 | `name` | text | NOT NULL | — | |
 | `icon_url` | text | NULL | — | |
 | `deep_link_scheme` | text | NULL | — | |
 | `created_at` | timestamptz | NULL | `now()` | |
+
+**Current platforms:**
+- `roblox` — Roblox gaming platform (primary)
+- `google` — Google OAuth (Google-first sign-up support)
+- `apple` — Apple Sign In
 
 **RLS Policies:**
 - SELECT: everyone (public)
@@ -465,26 +474,62 @@ User account deletion requests with lifecycle tracking. RLS enabled.
 
 ---
 
+### `reports`
+In-app safety reports for child safety compliance (COPPA, Google Play Child Safety). RLS enabled.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| `id` | uuid | NOT NULL | `gen_random_uuid()` | PK |
+| `reporter_id` | uuid | NOT NULL | — | FK → `app_users.id` ON DELETE CASCADE |
+| `target_user_id` | uuid | NULL | — | FK → `app_users.id` ON DELETE SET NULL (who is reported) |
+| `target_session_id` | uuid | NULL | — | FK → `sessions.id` ON DELETE SET NULL (what session is reported) |
+| `category` | report_category | NOT NULL | — | Type of violation (CSAM, grooming, harassment, etc.) |
+| `description` | text | NOT NULL | — | CHECK: non-empty trimmed text |
+| `status` | report_status | NOT NULL | `'OPEN'` | Report lifecycle (OPEN → UNDER_REVIEW → CLOSED or ESCALATED) |
+| `created_at` | timestamptz | NOT NULL | `now()` | |
+| `updated_at` | timestamptz | NOT NULL | `now()` | |
+
+**Constraints:** `target_user_id` OR `target_session_id` must be set; reporter cannot report themselves
+
+**Indexes:** `idx_reports_reporter_created_at`, `idx_reports_status_created_at`, `idx_reports_target_user` (partial: NOT NULL), `idx_reports_target_session` (partial: NOT NULL)
+
+**Triggers:** `update_reports_updated_at` on UPDATE
+
+**RLS Policies:**
+- INSERT: authenticated users can submit reports (`reporter_id = auth.uid()`)
+- SELECT: authenticated users can see own reports
+- UPDATE/DELETE: service_role only (admin moderation)
+
+---
+
 ## Migrations
 
-| Version | Name |
-|---------|------|
-| 20260207172512 | 001_core_schema |
-| 20260211135258 | complete_rls_policies |
-| 20260211135359 | enable_rls_policies |
-| 20260211223803 | add_thumbnail_to_games |
-| 20260214101822 | hybrid_friends_schema |
-| 20260214131531 | 010_enforce_friends_sessions |
-| 20260214135005 | 008_handoff_presence |
-| 20260214135021 | 011_sessions_schema_contract |
-| 20260214140159 | 012_add_avatar_cache_to_app_users |
-| 20260214142007 | 013_align_user_platforms_fk_to_app_users |
-| 20260214181902 | create_user_favorites_cache |
-| 20260214192508 | add_roblox_friends_cache_and_session_invited_roblox |
-| 20260214205053 | add_user_push_tokens |
-| 20260216114056 | user_stats_achievements |
-| 20260216135712 | ranked_sessions_and_ratings |
-| 20260216144120 | seasons_and_match_history |
-| 20260217203258 | account_deletion |
-| 20260217221455 | rls_account_deletion_experience_favorites |
-| 20260227193000 | google_first_users |
+Applied in order (earliest first). Core migrations establish schema; RLS migrations apply authorization policies.
+
+| Version | Name | Purpose |
+|---------|------|---------|
+| 20260207172512 | 001_core_schema | Initial schema: users, sessions, games, friends, leaderboards |
+| 20260211135258 | complete_rls_policies | Add comprehensive RLS policies for data isolation |
+| 20260211135359 | enable_rls_policies | Enable RLS on all tables |
+| 20260211223803 | add_thumbnail_to_games | Cache game thumbnails |
+| 20260214101822 | hybrid_friends_schema | Hybrid friends caching (blob + legacy row-per-friend) |
+| 20260214131531 | 010_enforce_friends_sessions | Add friend constraints to sessions |
+| 20260214135005 | 008_handoff_presence | Add handoff tracking for session participants |
+| 20260214135021 | 011_sessions_schema_contract | Formalize session schema contracts |
+| 20260214140159 | 012_add_avatar_cache_to_app_users | Cache user avatar URLs from linked platforms |
+| 20260214142007 | 013_align_user_platforms_fk_to_app_users | Migrate user_platforms FK to app_users (from auth.users) |
+| 20260214181902 | create_user_favorites_cache | Cache user favorites with ETags |
+| 20260214192508 | add_roblox_friends_cache_and_session_invited_roblox | Add blob cache for Roblox friends, invited Roblox users table |
+| 20260214205053 | add_user_push_tokens | Expo push notification token storage |
+| 20260216114056 | user_stats_achievements | User aggregate stats and achievement tracking |
+| 20260216135712 | ranked_sessions_and_ratings | Competitive ranking system (ELO) |
+| 20260216144120 | seasons_and_match_history | Seasonal rankings and match history |
+| 20260217203258 | account_deletion | Account deletion request tracking |
+| 20260217221455 | rls_account_deletion_experience_favorites | RLS policies for deletion, reports, and favorites |
+| 20260220154000 | create_reports_and_safety_rls | Safety reporting (COPPA/child safety compliance) |
+| 20260220190000 | add_sessions_archival_column_and_filter_rpc | Session archival support |
+| 20260223174000 | track_roblox_experience_cache | Improved experience cache tracking |
+| 20260223184500 | add_games_thumbnail_cached_at | Track when game thumbnails were cached |
+| 20260227193000 | google_first_users | Allow Google sign-up without Roblox; make Roblox fields nullable |
+| 20260227211500 | link_platform_identity_tx | Platform identity linking transaction support |
+| 20260228120000 | add_apple_platform | Add Apple Sign In as supported platform |

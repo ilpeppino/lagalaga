@@ -55,12 +55,17 @@ export async function healthCheckPlugin(fastify: FastifyInstance) {
 
       const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
 
+      const isProduction = fastify.config.NODE_ENV === 'production';
+
       return reply.status(statusCode).send({
         status: overallStatus,
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        environment: fastify.config.NODE_ENV,
-        version: process.env.npm_package_version || '1.0.0',
+        // Only expose version and environment in non-production to avoid information disclosure
+        ...(isProduction ? {} : {
+          environment: fastify.config.NODE_ENV,
+          version: process.env.npm_package_version || '1.0.0',
+        }),
         checks,
       });
     });

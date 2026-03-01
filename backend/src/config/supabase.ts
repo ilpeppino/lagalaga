@@ -25,8 +25,8 @@ export function initSupabase(fastify: FastifyInstance): SupabaseClient {
 
   // Store config for user client creation
   supabaseUrl = fastify.config.SUPABASE_URL;
-  // Note: SUPABASE_ANON_KEY is not required in .env yet, but included for future use
-  supabaseAnonKey = process.env.SUPABASE_ANON_KEY || null;
+  // Use validated config instead of reading process.env directly
+  supabaseAnonKey = fastify.config.SUPABASE_ANON_KEY || null;
 
   supabaseClient = createClient(
     fastify.config.SUPABASE_URL,

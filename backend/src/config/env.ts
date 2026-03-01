@@ -33,6 +33,10 @@ export const envSchema = {
     SUPABASE_SERVICE_ROLE_KEY: {
       type: 'string',
     },
+    SUPABASE_ANON_KEY: {
+      type: 'string',
+      default: '',
+    },
     ROBLOX_CLIENT_ID: {
       type: 'string',
     },
@@ -171,6 +175,7 @@ declare module 'fastify' {
       HOST: string;
       SUPABASE_URL: string;
       SUPABASE_SERVICE_ROLE_KEY: string;
+      SUPABASE_ANON_KEY: string;
       ROBLOX_CLIENT_ID: string;
       ROBLOX_CLIENT_SECRET: string;
       ROBLOX_REDIRECT_URI: string;

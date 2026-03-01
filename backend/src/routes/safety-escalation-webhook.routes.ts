@@ -1,4 +1,5 @@
-import type { FastifyInstance } from 'fastify';
+import { createHmac } from 'crypto';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createSafetyMailer, type SafetyEscalationPayload, type SafetyMailer } from '../services/safetyMailer.js';
 
 interface SafetyEscalationWebhookDeps {
@@ -15,11 +16,24 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getHeaderToken(headers: Record<string, unknown>): string | null {
-  const tokenHeader = headers['x-safety-token'];
-  if (typeof tokenHeader === 'string') return tokenHeader;
-  if (Array.isArray(tokenHeader) && typeof tokenHeader[0] === 'string') return tokenHeader[0];
+function getHeaderValue(headers: Record<string, unknown>, headerName: string): string | null {
+  const value = headers[headerName];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
   return null;
+}
+
+/**
+ * Verify HMAC-SHA256 signature of the request body
+ */
+function verifySignature(body: string, expectedSignature: string, secret: string): boolean {
+  const hmac = createHmac('sha256', secret);
+  hmac.update(body, 'utf-8');
+  const computedSignature = hmac.digest('hex');
+
+  // Constant-time comparison to prevent timing attacks
+  return computedSignature.length === expectedSignature.length &&
+    computedSignature === expectedSignature;
 }
 
 function validatePayload(body: unknown): SafetyEscalationPayload | InvalidPayloadResult {
@@ -71,12 +85,95 @@ export function buildSafetyEscalationWebhookRoutes(deps: SafetyEscalationWebhook
   return async function safetyEscalationWebhookRoutes(fastify: FastifyInstance) {
     const safetyMailer = deps.safetyMailer ?? createSafetyMailer();
 
-    fastify.post('/webhooks/safety-escalation', async (request, reply) => {
-      const expectedToken = process.env.SAFETY_WEBHOOK_TOKEN ?? '';
-      const actualToken = getHeaderToken(request.headers as Record<string, unknown>);
+    fastify.post('/webhooks/safety-escalation', async (request: FastifyRequest, reply) => {
+      const headers = request.headers as Record<string, unknown>;
+      const clientIp = request.ip;
+
+      // Verify bearer token
+      const expectedToken = fastify.config.SAFETY_WEBHOOK_TOKEN;
+      const actualToken = getHeaderValue(headers, 'x-safety-token');
 
       if (!expectedToken || !actualToken || actualToken !== expectedToken) {
+        fastify.log.warn(
+          {
+            event: 'webhook_auth_failed',
+            reason: !expectedToken ? 'token_not_configured' : !actualToken ? 'missing_header' : 'invalid_token',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+          },
+          'Safety webhook authentication failed'
+        );
         return reply.status(401).send({ success: false, error: 'Unauthorized' });
+      }
+
+      // Verify HMAC signature for request body integrity
+      const signatureHeader = getHeaderValue(headers, 'x-webhook-signature');
+      if (!signatureHeader) {
+        fastify.log.warn(
+          {
+            event: 'webhook_signature_missing',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+          },
+          'Safety webhook missing signature header'
+        );
+        return reply.status(401).send({ success: false, error: 'Missing signature' });
+      }
+
+      // Verify signature using the raw body
+      const bodyString = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+      if (!verifySignature(bodyString, signatureHeader, expectedToken)) {
+        fastify.log.warn(
+          {
+            event: 'webhook_signature_invalid',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+          },
+          'Safety webhook signature verification failed'
+        );
+        return reply.status(401).send({ success: false, error: 'Invalid signature' });
+      }
+
+      // Verify timestamp to prevent replay attacks (5 minute window)
+      const timestampHeader = getHeaderValue(headers, 'x-webhook-timestamp');
+      if (!timestampHeader) {
+        fastify.log.warn(
+          {
+            event: 'webhook_timestamp_missing',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+          },
+          'Safety webhook missing timestamp header'
+        );
+        return reply.status(401).send({ success: false, error: 'Missing timestamp' });
+      }
+
+      const requestTimestamp = parseInt(timestampHeader, 10);
+      if (Number.isNaN(requestTimestamp)) {
+        fastify.log.warn(
+          {
+            event: 'webhook_timestamp_invalid',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+          },
+          'Safety webhook invalid timestamp format'
+        );
+        return reply.status(401).send({ success: false, error: 'Invalid timestamp' });
+      }
+
+      const now = Date.now();
+      const MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+      if (Math.abs(now - requestTimestamp) > MAX_AGE_MS) {
+        fastify.log.warn(
+          {
+            event: 'webhook_timestamp_expired',
+            ip: clientIp,
+            timestamp: new Date().toISOString(),
+            age_ms: Math.abs(now - requestTimestamp),
+          },
+          'Safety webhook timestamp outside acceptable window'
+        );
+        return reply.status(401).send({ success: false, error: 'Request expired' });
       }
 
       const validationResult = validatePayload(request.body);

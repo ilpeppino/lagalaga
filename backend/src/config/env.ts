@@ -156,6 +156,10 @@ export const envSchema = {
       type: 'string',
       default: '',
     },
+    SAFETY_WEBHOOK_TOKEN: {
+      type: 'string',
+      default: '',
+    },
     METRICS_BEARER_TOKEN: {
       type: 'string',
       default: '',
@@ -207,6 +211,7 @@ declare module 'fastify' {
       CACHE_CLEANUP_ENABLED: boolean;
       CACHE_CLEANUP_INTERVAL_HOURS: number;
       SAFETY_ALERT_WEBHOOK_URL: string;
+      SAFETY_WEBHOOK_TOKEN: string;
       METRICS_BEARER_TOKEN: string;
       SAFETY_ESCALATE_GROOMING: boolean;
     };

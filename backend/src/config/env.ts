@@ -226,6 +226,8 @@ export function validateEnvForRuntime(config: FastifyInstance['config']): void {
   const requiredInProduction: Array<keyof FastifyInstance['config']> = [
     'GOOGLE_CLIENT_ID',
     'GOOGLE_REDIRECT_URI',
+    'SAFETY_WEBHOOK_TOKEN',
+    'METRICS_BEARER_TOKEN',
   ];
 
   for (const key of requiredInProduction) {

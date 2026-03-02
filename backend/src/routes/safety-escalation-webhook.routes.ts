@@ -90,7 +90,10 @@ export function buildSafetyEscalationWebhookRoutes(deps: SafetyEscalationWebhook
       const clientIp = request.ip;
 
       // Verify bearer token
-      const expectedToken = fastify.config.SAFETY_WEBHOOK_TOKEN;
+      const expectedToken =
+        ((fastify as FastifyInstance & { config?: { SAFETY_WEBHOOK_TOKEN?: string } }).config?.SAFETY_WEBHOOK_TOKEN?.trim()) ||
+        process.env.SAFETY_WEBHOOK_TOKEN?.trim() ||
+        '';
       const actualToken = getHeaderValue(headers, 'x-safety-token');
 
       if (!expectedToken || !actualToken || actualToken !== expectedToken) {

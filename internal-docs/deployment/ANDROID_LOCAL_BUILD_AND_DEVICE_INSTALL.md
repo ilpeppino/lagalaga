@@ -18,6 +18,7 @@
 | Install APK via ADB | `adb install -r app/build/outputs/apk/debug/app-debug.apk` |
 | Get debug SHA-1 | `cd android && ./gradlew signingReport` |
 | Test deep link | `adb shell am start -W -a android.intent.action.VIEW -d "lagalaga://auth/roblox"` |
+| Test Google deep link | `adb shell am start -W -a android.intent.action.VIEW -d "lagalaga://auth/google?code=1&state=2"` |
 | View live logs | `adb logcat -s ReactNativeJS` |
 
 ---
@@ -55,14 +56,14 @@ LagaLaga does **not** use the Android native Google Sign-In SDK (`GoogleSignInCl
 2. Backend returns a Google authorization URL (with PKCE code challenge)
 3. App opens that URL in an in-app browser (`expo-web-browser`)
 4. User authenticates with Google in the browser
-5. Google redirects to `lagalaga://auth` (the custom scheme deep link)
-6. Android intercepts the deep link and opens the app
-7. App sends `code` + `state` to `POST https://lagalaga-api.onrender.com/api/auth/google/callback`
-8. Backend validates the ID token, creates/finds the user, returns JWT
+5. Google redirects to the **HTTPS backend callback**: `https://lagalaga-api.onrender.com/api/auth/google/callback?code=...&state=...`
+6. Backend completes the code exchange and then redirects (302) to an app deep link such as: `lagalaga://auth/google?...`
+7. Android intercepts the `lagalaga://` deep link and opens the app
+8. The app’s Google callback route extracts parameters and completes the in-app session (stores JWTs / routes user)
 
-**Consequence**: The debug SHA-1 is NOT required for Google Sign-In to work. SHA-1 matters only for Firebase services (FCM push notifications). Google Sign-In errors on debug builds are caused by missing redirect URI registration or wrong `GOOGLE_CLIENT_ID` — not SHA-1.
+**Consequence**: The debug SHA-1 is NOT required for Google Sign-In to work. SHA-1 matters only for Firebase services (FCM push notifications). Google Sign-In errors on debug builds are typically caused by: (a) a `redirect_uri_mismatch` due to the Web OAuth client missing `https://lagalaga-api.onrender.com/api/auth/google/callback`, (b) a backend `GOOGLE_REDIRECT_URI` that does not match that HTTPS callback exactly, or (c) a missing/incorrect deep link route for `/auth/google` in the app.
 
-**Status**: The backend is implemented. The mobile "Sign in with Google" button is not yet added to `app/auth/sign-in.tsx`. Google login currently requires the deep link callback handler to also be completed.
+**Status**: Backend is implemented. Mobile must include (a) a "Sign in with Google" button (typically `app/auth/sign-in.tsx`) and (b) a Google callback route handling `lagalaga://auth/google?...`. Android must have an intent filter that matches `/auth/google` deep links.
 
 ### Roblox login method: same browser-based OAuth
 
@@ -256,7 +257,16 @@ adb shell am start -W \
   com.ilpeppino.lagalaga
 ```
 
-Expected: The Lagalaga app opens (or comes to foreground) and attempts to process the `lagalaga://auth/roblox` deep link. You should see the RobloxCallback screen briefly before it fails (since no real `code` parameter is present).
+```bash
+adb shell am start -W \
+  -a android.intent.action.VIEW \
+  -d "lagalaga://auth/google?code=test_code&state=test_state" \
+  com.ilpeppino.lagalaga
+```
+
+Expected: The Lagalaga app opens (or comes to foreground) and attempts to process the `lagalaga://auth/roblox` or `lagalaga://auth/google?...` deep link. You should see the RobloxCallback or Google callback screen briefly before it fails (since no real `code` parameter is present).
+
+If this does not open the app, your Android intent filters likely only match `/auth/roblox`. Update the manifest (or Expo config intentFilters) to also match `/auth/google`.
 
 ---
 
@@ -390,10 +400,10 @@ The backend is fully implemented. The mobile "Sign in with Google" button is pen
 2. App calls `GET https://lagalaga-api.onrender.com/api/auth/google/start`
 3. In-app browser opens a Google OAuth consent screen
 4. User signs in and grants consent
-5. Google redirects to `lagalaga://auth` with `?code=...&state=...`
-6. Android intercepts the deep link (registered via Expo Router's scheme)
-7. App sends the code and state to the backend
-8. Backend returns LagaLaga JWT tokens; user is logged in
+5. Google redirects to `https://lagalaga-api.onrender.com/api/auth/google/callback?code=...&state=...`
+6. Backend completes auth and redirects to `lagalaga://auth/google?...`
+7. Android opens the app; the Google callback route runs
+8. The app stores JWT tokens and routes the user (Roblox gate if not connected)
 
 ### Verify the deep link intercept for Google callback
 
@@ -401,11 +411,11 @@ The backend is fully implemented. The mobile "Sign in with Google" button is pen
 # Simulate Google redirecting back to the app
 adb shell am start -W \
   -a android.intent.action.VIEW \
-  -d "lagalaga://auth?code=test_code&state=test_state" \
+  -d "lagalaga://auth/google?code=test_code&state=test_state" \
   com.ilpeppino.lagalaga
 ```
 
-Expected: The app opens. The callback handler (once implemented) will attempt to exchange the code with the backend and fail with an `AUTH_INVALID_STATE` error (since `test_state` is not a valid HMAC-signed state). This is the correct behavior — it confirms the deep link is being intercepted.
+Expected: the app opens and the Google callback route runs. It should fail with an `AUTH_INVALID_STATE` (or equivalent) because `test_state` is not a valid state. This confirms the deep link routing is wired.
 
 ### Inspect logcat for Google login errors
 
@@ -423,7 +433,7 @@ adb logcat -s ReactNativeJS
 | Error code | Cause | Fix |
 |---|---|---|
 | `AUTH_OAUTH_FAILED` (backend) | `GOOGLE_CLIENT_ID` env var on backend does not match the OAuth client used | Verify `GOOGLE_CLIENT_ID` in backend env matches the Web Application client at [GCP Console](https://console.cloud.google.com/apis/credentials?project=lagalaga-19985) |
-| `redirect_uri_mismatch` (in browser) | `lagalaga://auth` is not registered as an authorized redirect URI in the Web Application OAuth client | Add `lagalaga://auth` to authorized redirect URIs in GCP Console |
+| `redirect_uri_mismatch` (in browser) | HTTPS callback missing or mismatch | Ensure the Web Application OAuth client has `https://lagalaga-api.onrender.com/api/auth/google/callback` in Authorized redirect URIs, and ensure backend `GOOGLE_REDIRECT_URI` matches exactly. |
 | `AUTH_INVALID_STATE` (backend) | OAuth state expired (10-minute TTL) or the user restarted the flow | Normal; user must restart sign-in from scratch |
 | `ACCOUNT_LINK_CONFLICT` (409) | Google account is already linked to a different LagaLaga user | Expected; the app shows a conflict alert |
 | `DEVELOPER_ERROR` | Only occurs with native Android Google Sign-In SDK (not used here) | Not applicable to LagaLaga |
@@ -557,9 +567,11 @@ android/app/build/outputs/apk/release/app-release.apk
 
 ```bash
 cd android
-adb uninstall com.ilpeppino.lagalaga  # Required if debug build is currently installed (different signature)
-adb install app/build/outputs/apk/release/app-release.apk
+adb uninstall com.ilpeppino.lagalaga || true  # Ignore failure if not installed
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+> **Note:** `adb uninstall` returns a non-zero exit code if the package is not present, which would normally cause a shell script to stop when using `set -e` or in CI pipelines. Appending `|| true` ensures the script continues even if the app is not installed.
 
 ### Step 4: What to verify in a release build
 
@@ -604,7 +616,7 @@ For uploading to Play Store, use EAS (`eas build --platform android --profile pr
 | Push notifications not received on debug build | Debug key SHA-1 not registered in Firebase | Run `./gradlew signingReport`, copy debug SHA-1, add to [Firebase Console](https://console.firebase.google.com/project/lagalaga-19985/settings/general) | Push tokens should register in `user_push_tokens` table after login |
 | `./gradlew` command not found | Running from wrong directory or file not executable | `cd android` first; if still fails: `chmod +x gradlew` | `ls -la gradlew` shows `x` permission |
 | Build fails: `SDK location not found` | `local.properties` file missing in `android/` | Create `android/local.properties` with `sdk.dir=/Users/<you>/Library/Android/sdk` | `cat android/local.properties` shows correct path |
-| Google login: `redirect_uri_mismatch` | `lagalaga://auth` not in Web Application OAuth client's authorized redirect URIs | Add `lagalaga://auth` in GCP Console → Credentials → Web Application client | Error message in browser is explicit about the mismatch |
+| Google login: `redirect_uri_mismatch` | HTTPS callback missing or mismatch: `https://lagalaga-api.onrender.com/api/auth/google/callback` | Add the HTTPS callback to the Web OAuth client and set backend `GOOGLE_REDIRECT_URI` to the same value. | Error message in browser is explicit about the mismatch |
 | Build fails with `Duplicate class kotlin.collections` | Kotlin version conflict between project dependencies | Run `./gradlew dependencies | grep kotlin` to identify conflict; update `android/build.gradle` kotlin classpath version | `./gradlew assembleDebug --stacktrace` shows specific class path |
 | `cleartext HTTP traffic not permitted` (release build) | Release build does not allow HTTP; API URL is HTTP | Use `EXPO_PUBLIC_API_URL=https://lagalaga-api.onrender.com` (never HTTP in release) | `adb logcat -s OkHttp,NetworkSecurityConfig` shows blocked URLs |
 
@@ -631,9 +643,9 @@ Complete this checklist before submitting any build to Google Play.
 - [ ] The Play App Signing key SHA-1 (not the upload key SHA-1) is registered in Firebase Console for FCM
 
 **Google OAuth**
-- [ ] The Web Application OAuth client in GCP project `lagalaga-19985` has `lagalaga://auth` as an authorized redirect URI
+- [ ] The Web Application OAuth client in GCP project `lagalaga-19985` has `https://lagalaga-api.onrender.com/api/auth/google/callback` in Authorized redirect URIs
 - [ ] `GOOGLE_CLIENT_ID` is set in the production backend environment (Render)
-- [ ] `GOOGLE_REDIRECT_URI=lagalaga://auth` is set in the production backend environment
+- [ ] `GOOGLE_REDIRECT_URI=https://lagalaga-api.onrender.com/api/auth/google/callback` is set in the production backend environment
 - [ ] OAuth consent screen is published ("In production" status, not "Testing")
 
 **Testing**

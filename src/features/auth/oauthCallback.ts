@@ -1,3 +1,5 @@
+import { getPostLoginRoute } from './robloxConnectionGate';
+
 export type OAuthProvider = 'roblox' | 'google';
 
 export function parseOAuthCallbackUrl(
@@ -27,6 +29,4 @@ export function parseOAuthCallbackUrl(
   }
 }
 
-export function getPostLoginRoute(robloxConnected: boolean): '/me' | '/sessions' {
-  return robloxConnected ? '/sessions' : '/me';
-}
+export { getPostLoginRoute };

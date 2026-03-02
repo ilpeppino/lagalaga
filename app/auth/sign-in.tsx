@@ -8,10 +8,15 @@ import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { ThemedText } from "@/components/themed-text";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { resolveAccountLinkConflict } from "@/src/features/auth/accountLinkConflict";
-import { apiClient } from "@/src/lib/api";
 import { RobloxSignInButton } from "@/components/auth/RobloxSignInButton";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { AppleSignInButton } from "@/components/auth/AppleSignInButton";
+import { logger } from "@/src/lib/logger";
+import { getPostLoginRoute, shouldRequireRobloxConnection } from "@/src/features/auth/robloxConnectionGate";
+import {
+  getOrCreateAuthFlowCorrelationId,
+  redactUserId,
+} from "@/src/features/auth/authFlowCorrelation";
 
 const TERMS_OF_SERVICE_URL = "https://ilpeppino.github.io/lagalaga/terms.html";
 const PRIVACY_POLICY_URL = "https://ilpeppino.github.io/lagalaga/privacy-policy.html";
@@ -54,9 +59,36 @@ export default function SignInScreen() {
   async function handleAppleSignIn() {
     try {
       setLoadingProvider("apple");
-      await signInWithApple();
-      const me = await apiClient.auth.me();
-      router.replace(me.robloxConnected ? "/sessions" : "/auth/connect-roblox");
+      const flowCorrelationId = await getOrCreateAuthFlowCorrelationId();
+      logger.info("Apple sign-in started", {
+        flowCorrelationId,
+      });
+      const user = await signInWithApple({ flowCorrelationId });
+      if (!user) {
+        logger.info("Apple sign-in canceled or did not return a user", {
+          flowCorrelationId,
+        });
+        return;
+      }
+      logger.info("Apple sign-in success", {
+        flowCorrelationId,
+        userId: redactUserId(user.id),
+      });
+
+      const requiresRobloxConnect = shouldRequireRobloxConnection(user);
+      const nextRoute = getPostLoginRoute(!requiresRobloxConnect);
+      logger.info("Routing decision after Apple sign-in", {
+        flowCorrelationId,
+        nextRoute,
+        reason: requiresRobloxConnect ? "roblox_not_connected" : "roblox_connected",
+      });
+      if (requiresRobloxConnect) {
+        logger.info("Navigating to connect screen after Apple sign-in", {
+          flowCorrelationId,
+          reason: "roblox_not_connected",
+        });
+      }
+      router.replace(nextRoute);
     } catch (error) {
       const conflictResolution = resolveAccountLinkConflict(error, "apple");
       if (conflictResolution.handled) {

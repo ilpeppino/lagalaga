@@ -8,9 +8,12 @@ const mockRobloxExchangeCode = jest.fn<any>();
 const mockRobloxGetUserInfo = jest.fn<any>();
 const mockSaveConnection = jest.fn<any>();
 const mockLinkPlatformToUser = jest.fn<any>();
+const mockMergeProviderShadowUserIntoRobloxUser = jest.fn<any>();
 const mockGenerateSignedOAuthState = jest.fn<any>();
 const mockVerifySignedOAuthState = jest.fn<any>();
 const mockGenerateCodeChallenge = jest.fn<any>();
+const mockGenerateTokens = jest.fn<any>();
+const mockGetUserById = jest.fn<any>();
 
 jest.unstable_mockModule('../../services/robloxOAuth.js', () => ({
   RobloxOAuthService: class {
@@ -42,13 +45,20 @@ jest.unstable_mockModule('../../services/google-auth.service.js', () => ({
 
 jest.unstable_mockModule('../../services/tokenService.js', () => ({
   TokenService: class {
-    generateTokens = jest.fn();
+    generateTokens = mockGenerateTokens;
   },
 }));
 
 jest.unstable_mockModule('../../services/platform-identity.service.js', () => ({
   PlatformIdentityService: class {
     linkPlatformToUser = mockLinkPlatformToUser;
+    mergeProviderShadowUserIntoRobloxUser = mockMergeProviderShadowUserIntoRobloxUser;
+  },
+}));
+
+jest.unstable_mockModule('../../services/userService.js', () => ({
+  UserService: class {
+    getUserById = mockGetUserById;
   },
 }));
 
@@ -78,6 +88,22 @@ describe('roblox connect routes', () => {
     mockGenerateCodeChallenge.mockReturnValue('challenge');
     mockVerifySignedOAuthState.mockReturnValue(true);
     mockRobloxGenerateAuthorizationUrl.mockReturnValue('https://roblox.example/auth');
+    mockMergeProviderShadowUserIntoRobloxUser.mockResolvedValue({
+      merged: false,
+      mergedUserId: null,
+      reasonCode: 'NOT_ATTEMPTED',
+    });
+    mockGenerateTokens.mockReturnValue({
+      accessToken: 'access-after-merge',
+      refreshToken: 'refresh-after-merge',
+    });
+    mockGetUserById.mockResolvedValue({
+      id: 'user-google-1',
+      robloxUserId: '777',
+      robloxUsername: 'roblox-user',
+      tokenVersion: 0,
+      status: 'ACTIVE',
+    });
 
     app = Fastify({ logger: false });
     (app as any).config = {
@@ -161,5 +187,50 @@ describe('roblox connect routes', () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('ACCOUNT_LINK_INVALID_STATE');
+  });
+
+  it('safely merges provider shadow account into existing roblox user and returns replacement tokens', async () => {
+    mockRobloxExchangeCode.mockResolvedValue({ access_token: 'roblox-access-token' });
+    mockRobloxGetUserInfo.mockResolvedValue({
+      sub: '777',
+      preferred_username: 'roblox-user',
+      name: 'roblox-user',
+      nickname: 'Roblox User',
+      profile: 'https://www.roblox.com/users/777/profile',
+      picture: null,
+    });
+    mockLinkPlatformToUser.mockRejectedValue(
+      new AppError('CONFLICT_ACCOUNT_PROVIDER', 'Roblox account already linked', 409)
+    );
+    mockMergeProviderShadowUserIntoRobloxUser.mockResolvedValue({
+      merged: true,
+      mergedUserId: 'user-roblox-existing',
+      reasonCode: 'MERGED',
+    });
+    mockGetUserById.mockResolvedValue({
+      id: 'user-roblox-existing',
+      robloxUserId: '777',
+      robloxUsername: 'roblox-user',
+      tokenVersion: 3,
+      status: 'ACTIVE',
+    });
+
+    const start = await request(app.server)
+      .get('/api/auth/roblox/start')
+      .set('Authorization', 'Bearer fake-token');
+
+    const response = await request(app.server)
+      .post('/api/auth/roblox/callback')
+      .set('Authorization', 'Bearer fake-token')
+      .send({ code: 'oauth-code', state: start.body.state });
+
+    expect(response.status).toBe(200);
+    expect(response.body.connected).toBe(true);
+    expect(response.body.mergedFromUserId).toBe('user-google-1');
+    expect(response.body.mergedToUserId).toBe('user-roblox-existing');
+    expect(response.body.accessToken).toBe('access-after-merge');
+    expect(response.body.refreshToken).toBe('refresh-after-merge');
+    expect(mockGenerateTokens).toHaveBeenCalledTimes(1);
+    expect(mockSaveConnection).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-roblox-existing' }));
   });
 });

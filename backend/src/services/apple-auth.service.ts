@@ -93,6 +93,16 @@ export class AppleAuthService {
       },
     });
 
+    await this.userService.syncProviderIdentity({
+      userId,
+      provider: 'APPLE',
+      sub: input.claims.sub,
+      email: input.profile?.email ?? input.claims.email ?? null,
+      fullName,
+      isPrivateEmail: input.profile?.isPrivateEmail ?? toBoolean(input.claims.is_private_email),
+      emailVerified: toBoolean(input.claims.email_verified),
+    });
+
     await this.userService.touchLastLogin(userId);
 
     const user = await this.userService.getUserById(userId);

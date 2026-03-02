@@ -231,27 +231,81 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
 
     const tokenResponse = await robloxOAuth.exchangeCode(code, entry.codeVerifier);
     const userInfo = await robloxOAuth.getUserInfo(tokenResponse.access_token);
+    let effectiveUserId = request.user.userId;
+    let mergedFromUserId: string | null = null;
 
-    await platformIdentityService.linkPlatformToUser({
-      userId: request.user.userId,
-      platformId: 'roblox',
-      platformUserId: userInfo.sub,
-      platformUsername: userInfo.preferred_username || userInfo.name,
-      platformDisplayName: userInfo.nickname || null,
-      platformAvatarUrl: userInfo.picture || null,
-      robloxProfileUrl: userInfo.profile || null,
-    });
+    try {
+      await platformIdentityService.linkPlatformToUser({
+        userId: request.user.userId,
+        platformId: 'roblox',
+        platformUserId: userInfo.sub,
+        platformUsername: userInfo.preferred_username || userInfo.name,
+        platformDisplayName: userInfo.nickname || null,
+        platformAvatarUrl: userInfo.picture || null,
+        robloxProfileUrl: userInfo.profile || null,
+      });
+    } catch (error) {
+      const appError = error as AppError | undefined;
+      if (appError?.code !== 'CONFLICT_ACCOUNT_PROVIDER') {
+        throw error;
+      }
+
+      const mergeAttempt = await platformIdentityService.mergeProviderShadowUserIntoRobloxUser({
+        sourceUserId: request.user.userId,
+        robloxPlatformUserId: userInfo.sub,
+      });
+
+      if (!mergeAttempt.merged || !mergeAttempt.mergedUserId) {
+        request.log.warn({
+          sourceUserId: request.user.userId,
+          robloxUserId: userInfo.sub,
+          reasonCode: mergeAttempt.reasonCode,
+        }, 'Safe merge attempt was not applied after Roblox conflict');
+        throw error;
+      }
+
+      effectiveUserId = mergeAttempt.mergedUserId;
+      mergedFromUserId = request.user.userId;
+      request.log.info({
+        sourceUserId: mergedFromUserId,
+        targetUserId: effectiveUserId,
+        robloxUserId: userInfo.sub,
+      }, 'Merged provider shadow account into existing Roblox account');
+    }
 
     await connectionService.saveConnection({
-      userId: request.user.userId,
+      userId: effectiveUserId,
       userInfo,
       tokenResponse,
     });
+
+    let sessionTokens: { accessToken: string; refreshToken: string } | null = null;
+    if (effectiveUserId !== request.user.userId) {
+      const mergedUser = await userService.getUserById(effectiveUserId);
+      if (!mergedUser) {
+        throw new AppError('AUTH_USER_NOT_FOUND', 'Merged user account not found after merge.', 500);
+      }
+
+      const generated = tokenService.generateTokens({
+        userId: mergedUser.id,
+        robloxUserId: mergedUser.robloxUserId,
+        robloxUsername: mergedUser.robloxUsername,
+        tokenVersion: mergedUser.tokenVersion,
+      });
+      sessionTokens = {
+        accessToken: generated.accessToken,
+        refreshToken: generated.refreshToken,
+      };
+    }
 
     return {
       connected: true,
       robloxUserId: userInfo.sub,
       verifiedAt: new Date().toISOString(),
+      mergedFromUserId,
+      mergedToUserId: effectiveUserId !== request.user.userId ? effectiveUserId : null,
+      accessToken: sessionTokens?.accessToken,
+      refreshToken: sessionTokens?.refreshToken,
     };
   };
 

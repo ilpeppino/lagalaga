@@ -45,6 +45,15 @@ export class GoogleAuthService {
       },
     });
 
+    await this.userService.syncProviderIdentity({
+      userId,
+      provider: 'GOOGLE',
+      sub: claims.sub,
+      email: claims.email ?? null,
+      fullName: claims.name ?? null,
+      emailVerified: claims.email_verified ?? false,
+    });
+
     await this.userService.touchLastLogin(userId);
 
     const user = await this.userService.getUserById(userId);

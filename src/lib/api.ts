@@ -444,7 +444,7 @@ class ApiClient {
       });
     },
 
-    me: async (): Promise<{
+    me: async (options?: { noCache?: boolean }): Promise<{
       id: string;
       robloxUserId: string | null;
       robloxUsername?: string | null;
@@ -454,6 +454,13 @@ class ApiClient {
     }> => {
       return this.request('/auth/me', {
         method: 'GET',
+        headers: options?.noCache
+          ? {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              Pragma: 'no-cache',
+              Expires: '0',
+            }
+          : undefined,
       });
     },
   };

@@ -400,8 +400,24 @@ class SessionsAPIStoreV2 {
     return fetchWithAuth<{ authorizationUrl: string; state: string }>('/api/auth/roblox/start');
   }
 
-  async completeRobloxConnect(code: string, state: string): Promise<{ connected: boolean }> {
-    return fetchWithAuth<{ connected: boolean }>('/api/auth/roblox/callback', {
+  async completeRobloxConnect(code: string, state: string): Promise<{
+    connected: boolean;
+    robloxUserId?: string;
+    verifiedAt?: string;
+    mergedFromUserId?: string | null;
+    mergedToUserId?: string | null;
+    accessToken?: string;
+    refreshToken?: string;
+  }> {
+    return fetchWithAuth<{
+      connected: boolean;
+      robloxUserId?: string;
+      verifiedAt?: string;
+      mergedFromUserId?: string | null;
+      mergedToUserId?: string | null;
+      accessToken?: string;
+      refreshToken?: string;
+    }>('/api/auth/roblox/callback', {
       method: 'POST',
       body: JSON.stringify({ code, state }),
     });

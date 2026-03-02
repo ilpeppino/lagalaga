@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/src/features/auth/useAuth';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
-import { getPostLoginRoute } from '@/src/features/auth/oauthCallback';
+import { getPostLoginRoute, shouldRequireRobloxConnection } from '@/src/features/auth/robloxConnectionGate';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 const processedGoogleCallbackKeys = new Set<string>();
@@ -52,10 +52,16 @@ export default function GoogleCallback() {
       const response = await apiClient.auth.completeGoogleAuth(code, state);
       await tokenStorage.setToken(response.accessToken);
       await tokenStorage.setRefreshToken(response.refreshToken);
-      await reloadUser();
-
-      const me = await apiClient.auth.me();
-      const nextRoute = getPostLoginRoute(Boolean(me.robloxConnected));
+      const user = await reloadUser({
+        reason: 'google_sign_in_callback',
+        noCache: true,
+      });
+      const requiresRobloxConnect = shouldRequireRobloxConnection(user);
+      const nextRoute = getPostLoginRoute(!requiresRobloxConnect);
+      logger.info('Final routing decision after Google sign-in', {
+        nextRoute,
+        reason: requiresRobloxConnect ? 'roblox_not_connected' : 'roblox_connected',
+      });
       router.replace(nextRoute);
     } catch (callbackError) {
       const conflictResolution = resolveAccountLinkConflict(callbackError, 'google');

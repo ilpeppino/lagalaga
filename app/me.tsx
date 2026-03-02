@@ -27,6 +27,8 @@ import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { ActivityIndicator } from 'react-native-paper';
 import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
+import { logger } from '@/src/lib/logger';
+import { getOrCreateAuthFlowCorrelationId } from '@/src/features/auth/authFlowCorrelation';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -139,9 +141,41 @@ export default function MeScreen() {
 
   const handleConnectRoblox = async () => {
     try {
+      const flowCorrelationId = await getOrCreateAuthFlowCorrelationId();
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await openRobloxAuthSession(authorizationUrl);
+      const authResult = await openRobloxAuthSession(authorizationUrl);
+      logger.info('Roblox connect auth session returned from Me screen', {
+        flowCorrelationId,
+        resultType: authResult.type,
+      });
+
+      if (authResult.type === 'success' && 'url' in authResult) {
+        try {
+          const callbackUrl = new URL(authResult.url);
+          const callbackCode = callbackUrl.searchParams.get('code');
+          const callbackState = callbackUrl.searchParams.get('state');
+          logger.info('Parsed Roblox callback URL from Me screen auth session result', {
+            flowCorrelationId,
+            hasCode: Boolean(callbackCode),
+            hasState: Boolean(callbackState),
+          });
+
+          if (callbackCode && callbackState) {
+            router.replace({
+              pathname: '/auth/roblox',
+              params: {
+                code: callbackCode,
+                state: callbackState,
+              },
+            });
+          }
+        } catch {
+          logger.warn('Failed to parse Roblox callback URL from Me screen auth session result', {
+            flowCorrelationId,
+          });
+        }
+      }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to start Roblox connect flow.' });
     }

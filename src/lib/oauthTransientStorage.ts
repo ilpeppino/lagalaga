@@ -5,6 +5,7 @@ export const OAUTH_STORAGE_KEYS = {
   PKCE_CODE_VERIFIER: 'pkce_code_verifier',
   PKCE_STATE: 'pkce_state',
   ROBLOX_CONNECT_STATE: 'roblox_connect_state',
+  AUTH_FLOW_CORRELATION_ID: 'auth_flow_correlation_id',
 } as const;
 
 type OAuthStorageKey = (typeof OAUTH_STORAGE_KEYS)[keyof typeof OAUTH_STORAGE_KEYS];

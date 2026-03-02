@@ -32,6 +32,16 @@ export interface CreateUserInput {
   robloxProfileUrl?: string | null;
 }
 
+interface SyncProviderIdentityInput {
+  userId: string;
+  provider: 'APPLE' | 'GOOGLE';
+  sub: string;
+  email?: string | null;
+  fullName?: string | null;
+  emailVerified?: boolean | null;
+  isPrivateEmail?: boolean | null;
+}
+
 export class UserService {
   private thumbnailService: RobloxThumbnailService;
 
@@ -130,6 +140,60 @@ export class UserService {
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update last login: ${error.message}`);
+    }
+  }
+
+  async syncProviderIdentity(input: SyncProviderIdentityInput): Promise<void> {
+    const supabase = getSupabase();
+    const { data: current, error: currentError } = await supabase
+      .from('app_users')
+      .select('id, roblox_user_id, auth_provider')
+      .eq('id', input.userId)
+      .maybeSingle<{
+        id: string;
+        roblox_user_id: string | null;
+        auth_provider: 'ROBLOX' | 'APPLE' | 'GOOGLE' | null;
+      }>();
+
+    if (currentError) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to load user before provider sync: ${currentError.message}`);
+    }
+    if (!current) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, 'User not found during provider sync');
+    }
+
+    const nextAuthProvider = current.roblox_user_id
+      ? (current.auth_provider ?? 'ROBLOX')
+      : input.provider;
+
+    const updatePayload: Record<string, unknown> = {
+      auth_provider: nextAuthProvider,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (input.provider === 'APPLE') {
+      updatePayload.apple_sub = input.sub;
+      updatePayload.apple_email = input.email ?? null;
+      updatePayload.apple_full_name = input.fullName ?? null;
+      if (input.isPrivateEmail !== undefined) {
+        updatePayload.apple_email_is_private = input.isPrivateEmail;
+      }
+    } else {
+      updatePayload.google_sub = input.sub;
+      updatePayload.google_email = input.email ?? null;
+      updatePayload.google_full_name = input.fullName ?? null;
+      if (input.emailVerified !== undefined) {
+        updatePayload.google_email_verified = input.emailVerified;
+      }
+    }
+
+    const { error } = await supabase
+      .from('app_users')
+      .update(updatePayload)
+      .eq('id', input.userId);
+
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to sync provider identity fields: ${error.message}`);
     }
   }
 

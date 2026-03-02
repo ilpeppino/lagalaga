@@ -24,6 +24,12 @@ interface LinkPlatformTxResponse {
   conflict_user_id: string | null;
 }
 
+interface SafeMergeTxResponse {
+  merged: boolean;
+  merged_user_id: string | null;
+  reason_code: string | null;
+}
+
 export class PlatformIdentityService {
   private readonly providedSupabase?: SupabaseClient;
   private metadataColumnSupported: boolean | null = null;
@@ -97,6 +103,38 @@ export class PlatformIdentityService {
         500
       );
     }
+  }
+
+  async mergeProviderShadowUserIntoRobloxUser(input: {
+    sourceUserId: string;
+    robloxPlatformUserId: string;
+  }): Promise<{ merged: boolean; mergedUserId: string | null; reasonCode: string | null }> {
+    const { data, error } = await this.getSupabase().rpc('merge_provider_shadow_user_into_roblox_user_tx', {
+      p_source_user_id: input.sourceUserId,
+      p_roblox_platform_user_id: input.robloxPlatformUserId,
+    });
+
+    if (error) {
+      if (error.code === 'PGRST202') {
+        return {
+          merged: false,
+          mergedUserId: null,
+          reasonCode: 'RPC_UNAVAILABLE',
+        };
+      }
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to merge provider shadow user into Roblox user: ${error.message}`,
+        500
+      );
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as SafeMergeTxResponse | null;
+    return {
+      merged: row?.merged === true,
+      mergedUserId: row?.merged_user_id ?? null,
+      reasonCode: row?.reason_code ?? null,
+    };
   }
 
   async syncRobloxFieldsFromPlatformLink(userId: string): Promise<void> {

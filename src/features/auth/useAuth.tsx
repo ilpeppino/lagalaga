@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
@@ -10,6 +10,7 @@ import { warmFavorites } from '../favorites/service';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 import { API_URL } from '../../lib/runtimeConfig';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { redactUserId } from './authFlowCorrelation';
 
 if (Platform.OS === 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -30,9 +31,18 @@ interface AuthContextValue {
   loading: boolean;
   signInWithRoblox: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
+  signInWithApple: (options?: { flowCorrelationId?: string }) => Promise<User | null>;
   signOut: () => Promise<void>;
-  reloadUser: () => Promise<void>;
+  reloadUser: (options?: {
+    reason?: string;
+    noCache?: boolean;
+    preserveRobloxConnectedOnFalse?: boolean;
+  }) => Promise<User | null>;
+  markRobloxConnected: (input: {
+    robloxUserId?: string | null;
+    robloxUsername?: string | null;
+    robloxDisplayName?: string | null;
+  }) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -40,9 +50,24 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const latestLoadRequestRef = useRef(0);
 
-  useEffect(() => {
-    loadUser();
+  const applyUserFromMe = useCallback((me: {
+    id: string;
+    robloxUserId: string | null;
+    robloxUsername?: string | null;
+    robloxDisplayName?: string;
+    avatarHeadshotUrl: string | null;
+    robloxConnected: boolean;
+  }): User => {
+    return {
+      id: me.id,
+      robloxUserId: me.robloxUserId,
+      robloxUsername: me.robloxUsername,
+      robloxDisplayName: me.robloxDisplayName,
+      avatarHeadshotUrl: me.avatarHeadshotUrl,
+      robloxConnected: me.robloxConnected,
+    };
   }, []);
 
   // Re-register push token when app returns to foreground (covers Android background→active transitions)
@@ -56,35 +81,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [user]);
 
-  const loadUser = async () => {
+  const loadUser = useCallback(async (options?: {
+    reason?: string;
+    noCache?: boolean;
+    preserveRobloxConnectedOnFalse?: boolean;
+  }): Promise<User | null> => {
+    const requestId = ++latestLoadRequestRef.current;
+    const reason = options?.reason ?? 'auth_refresh';
+    const noCache = options?.noCache ?? false;
+    setLoading(true);
+
     try {
       const token = await tokenStorage.getToken();
       if (!token) {
-        setLoading(false);
-        return;
+        if (requestId === latestLoadRequestRef.current) {
+          setUser(null);
+        }
+        logger.info('Auth refresh finished without token', {
+          reason,
+          requestId,
+        });
+        return null;
       }
 
-      const me = await apiClient.auth.me();
-      const userData: User = {
-        id: me.id,
-        robloxUserId: me.robloxUserId,
-        robloxUsername: me.robloxUsername,
-        robloxDisplayName: me.robloxDisplayName,
-        avatarHeadshotUrl: me.avatarHeadshotUrl,
-        robloxConnected: me.robloxConnected,
-      };
-      setUser(userData);
+      logger.info('Auth refresh started', {
+        reason,
+        requestId,
+        noCache,
+      });
+
+      const me = await apiClient.auth.me({ noCache });
+      const nextUser = applyUserFromMe(me);
+      const shouldPreserveRobloxConnected =
+        options?.preserveRobloxConnectedOnFalse === true &&
+        nextUser.robloxConnected !== true &&
+        user?.robloxConnected === true;
+
+      if (shouldPreserveRobloxConnected) {
+        nextUser.robloxConnected = true;
+        nextUser.robloxUserId = nextUser.robloxUserId ?? user?.robloxUserId ?? null;
+        nextUser.robloxUsername = nextUser.robloxUsername ?? user?.robloxUsername ?? null;
+        nextUser.robloxDisplayName = nextUser.robloxDisplayName ?? user?.robloxDisplayName;
+        logger.warn('Preserving local robloxConnected=true during auth refresh', {
+          reason,
+          requestId,
+        });
+      }
+      if (requestId !== latestLoadRequestRef.current) {
+        logger.warn('Ignoring stale auth refresh response', {
+          reason,
+          requestId,
+          latestRequestId: latestLoadRequestRef.current,
+          userId: redactUserId(nextUser.id),
+          robloxConnected: nextUser.robloxConnected === true,
+        });
+        return nextUser;
+      }
+
+      setUser(nextUser);
+      logger.info('Auth refresh applied', {
+        reason,
+        requestId,
+        userId: redactUserId(nextUser.id),
+        robloxConnected: nextUser.robloxConnected === true,
+      });
       void warmFavorites(me.id);
       void registerPushToken({ force: true, reason: 'post_login' });
+      return nextUser;
     } catch (error) {
       logger.error('Failed to load user', {
+        reason,
+        requestId,
         error: error instanceof Error ? error.message : String(error),
       });
       await tokenStorage.clearTokens();
+      if (requestId === latestLoadRequestRef.current) {
+        setUser(null);
+      }
+      return null;
     } finally {
-      setLoading(false);
+      if (requestId === latestLoadRequestRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [applyUserFromMe, user?.robloxConnected, user?.robloxDisplayName, user?.robloxUserId, user?.robloxUsername]);
+
+  useEffect(() => {
+    void loadUser({ reason: 'initial_hydration', noCache: true });
+  }, [loadUser]);
 
   const signInWithRoblox = async () => {
     try {
@@ -179,7 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithApple = async () => {
+  const signInWithApple = async (options?: { flowCorrelationId?: string }): Promise<User | null> => {
     if (Platform.OS !== 'ios') {
       throw new Error('Apple Sign-In is only supported on iOS.');
     }
@@ -211,21 +295,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await tokenStorage.setToken(response.accessToken);
       await tokenStorage.setRefreshToken(response.refreshToken);
-      await loadUser();
+      const refreshedUser = await loadUser({
+        reason: options?.flowCorrelationId
+          ? `apple_sign_in:${options.flowCorrelationId}`
+          : 'apple_sign_in',
+        noCache: true,
+      });
+      logger.info('Apple sign-in user hydration completed', {
+        flowCorrelationId: options?.flowCorrelationId ?? null,
+        userId: redactUserId(refreshedUser?.id ?? null),
+        robloxConnected: refreshedUser?.robloxConnected === true,
+      });
+      return refreshedUser;
     } catch (error) {
       if (
         error instanceof Error &&
         'code' in error &&
         (error as { code?: string }).code === 'ERR_REQUEST_CANCELED'
       ) {
-        return;
+        return null;
       }
       throw error;
     }
   };
 
+  const markRobloxConnected = useCallback((input: {
+    robloxUserId?: string | null;
+    robloxUsername?: string | null;
+    robloxDisplayName?: string | null;
+  }) => {
+    setUser((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        robloxConnected: true,
+        robloxUserId: input.robloxUserId ?? prev.robloxUserId ?? null,
+        robloxUsername: input.robloxUsername ?? prev.robloxUsername ?? null,
+        robloxDisplayName: input.robloxDisplayName ?? prev.robloxDisplayName,
+      };
+    });
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithRoblox, signInWithGoogle, signInWithApple, signOut, reloadUser: loadUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signInWithRoblox,
+        signInWithGoogle,
+        signInWithApple,
+        signOut,
+        reloadUser: loadUser,
+        markRobloxConnected,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

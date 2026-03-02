@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockCreateUser = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
 const mockTouchLastLogin = jest.fn<any>();
+const mockSyncProviderIdentity = jest.fn<any>();
 const mockFindUserIdByPlatform = jest.fn<any>();
 const mockLinkPlatformToUser = jest.fn<any>();
 
@@ -11,6 +12,7 @@ jest.unstable_mockModule('../userService.js', () => ({
     createUser = mockCreateUser;
     getUserById = mockGetUserById;
     touchLastLogin = mockTouchLastLogin;
+    syncProviderIdentity = mockSyncProviderIdentity;
   },
 }));
 
@@ -31,6 +33,7 @@ describe('GoogleAuthService', () => {
   it('logs in existing google-linked user', async () => {
     mockFindUserIdByPlatform.mockResolvedValue('existing-user');
     mockLinkPlatformToUser.mockResolvedValue(undefined);
+    mockSyncProviderIdentity.mockResolvedValue(undefined);
     mockTouchLastLogin.mockResolvedValue(undefined);
     mockGetUserById.mockResolvedValue({
       id: 'existing-user',
@@ -54,12 +57,14 @@ describe('GoogleAuthService', () => {
     expect(user.id).toBe('existing-user');
     expect(mockCreateUser).not.toHaveBeenCalled();
     expect(mockLinkPlatformToUser).toHaveBeenCalledTimes(1);
+    expect(mockSyncProviderIdentity).toHaveBeenCalledTimes(1);
   });
 
   it('creates a google-first user when no link exists', async () => {
     mockFindUserIdByPlatform.mockResolvedValue(null);
     mockCreateUser.mockResolvedValue({ id: 'new-user' });
     mockLinkPlatformToUser.mockResolvedValue(undefined);
+    mockSyncProviderIdentity.mockResolvedValue(undefined);
     mockTouchLastLogin.mockResolvedValue(undefined);
     mockGetUserById.mockResolvedValue({
       id: 'new-user',
@@ -83,6 +88,11 @@ describe('GoogleAuthService', () => {
     expect(user.id).toBe('new-user');
     expect(mockCreateUser).toHaveBeenCalledTimes(1);
     expect(mockLinkPlatformToUser).toHaveBeenCalledTimes(1);
+    expect(mockSyncProviderIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'new-user',
+      provider: 'GOOGLE',
+      sub: 'google-sub-new',
+    }));
     expect(mockTouchLastLogin).toHaveBeenCalledWith('new-user');
   });
 });

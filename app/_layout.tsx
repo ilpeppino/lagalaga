@@ -23,6 +23,7 @@ import {
 } from '@/src/features/notifications/notificationHandlers';
 import { setRobloxNotConnectedHandler } from '@/src/lib/api';
 import { handleRobloxNotConnectedError } from '@/src/lib/robloxGateController';
+import { shouldRequireRobloxConnection } from '@/src/features/auth/robloxConnectionGate';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -158,7 +159,7 @@ function RobloxLinkingGuard() {
   useEffect(() => {
     if (loading) return;
     if (!user) return;
-    if (user.robloxConnected) return;
+    if (!shouldRequireRobloxConnection(user)) return;
 
     const allowed =
       pathname === '/auth/connect-roblox' ||
@@ -166,8 +167,17 @@ function RobloxLinkingGuard() {
       pathname === '/auth/sign-in';
 
     if (!allowed) {
+      logger.info('Roblox linking guard redirecting to connect screen', {
+        pathname,
+        reason: 'roblox_not_connected',
+      });
       router.replace('/auth/connect-roblox');
+      return;
     }
+    logger.info('Roblox linking guard allowed route while Roblox is not connected', {
+      pathname,
+      reason: 'allowed_connect_flow_route',
+    });
   }, [loading, pathname, router, user]);
 
   return null;

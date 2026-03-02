@@ -10,7 +10,12 @@ import { useAuth } from '@/src/features/auth/useAuth';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
-import { getPostLoginRoute } from '@/src/features/auth/oauthCallback';
+import { getPostLoginRoute, shouldRequireRobloxConnection } from '@/src/features/auth/robloxConnectionGate';
+import {
+  clearAuthFlowCorrelationId,
+  getOrCreateAuthFlowCorrelationId,
+  summarizeState,
+} from '@/src/features/auth/authFlowCorrelation';
 
 // Module-level guard prevents duplicate processing across StrictMode remounts.
 const processedCallbackKeys = new Set<string>();
@@ -19,41 +24,119 @@ export default function RobloxCallback() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
   const colorScheme = useColorScheme();
-  const { reloadUser } = useAuth();
+  const { reloadUser, markRobloxConnected } = useAuth();
   const { code, state, error } = params;
 
   const handleCallback = useCallback(async () => {
+    const flowCorrelationId = await getOrCreateAuthFlowCorrelationId();
     const callbackKey = `${error ?? ''}|${code ?? ''}|${state ?? ''}`;
     if (processedCallbackKeys.has(callbackKey)) {
       logger.warn('Skipping duplicate OAuth callback processing', {
+        flowCorrelationId,
         hasCode: !!code,
         hasState: !!state,
         hasError: !!error,
       });
+      const existingUser = await reloadUser({
+        reason: 'roblox_callback_duplicate_recovery',
+        noCache: true,
+        preserveRobloxConnectedOnFalse: true,
+      });
+      const existingRoute = getPostLoginRoute(!shouldRequireRobloxConnection(existingUser));
+      logger.info('Recovered route after duplicate Roblox callback', {
+        flowCorrelationId,
+        nextRoute: existingRoute,
+      });
+      router.replace(existingRoute);
       return;
     }
     processedCallbackKeys.add(callbackKey);
 
     try {
+      logger.info('Roblox callback received', {
+        flowCorrelationId,
+        hasCode: !!code,
+        hasState: !!state,
+        hasError: !!error,
+        stateSummary: summarizeState(state ?? null),
+      });
+
       // Check for OAuth error
       if (error) {
-        logger.error('OAuth error from provider', { oauthError: error });
+        logger.error('OAuth error from provider', {
+          flowCorrelationId,
+          hasProviderError: true,
+        });
         router.replace('/auth/sign-in');
         return;
       }
 
       if (!code || !state) {
-        logger.error('Missing code or state parameter in OAuth callback');
+        logger.error('Missing code or state parameter in OAuth callback', {
+          flowCorrelationId,
+        });
         router.replace('/auth/sign-in');
         return;
       }
 
       const connectState = await oauthTransientStorage.getItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE);
       if (connectState && connectState === state) {
-        await sessionsAPIStoreV2.completeRobloxConnect(code, state);
+        logger.info('Exchanging Roblox connect callback with backend', {
+          flowCorrelationId,
+          stateSummary: summarizeState(state),
+        });
+        const connectResponse = await sessionsAPIStoreV2.completeRobloxConnect(code, state);
+        logger.info('Roblox connect exchange completed', {
+          flowCorrelationId,
+          connected: connectResponse.connected === true,
+          robloxUserIdPresent: Boolean(connectResponse.robloxUserId),
+        });
+        if (connectResponse.connected !== true) {
+          throw new Error('Roblox connect did not return connected=true');
+        }
+        if (connectResponse.accessToken && connectResponse.refreshToken) {
+          await tokenStorage.setToken(connectResponse.accessToken);
+          await tokenStorage.setRefreshToken(connectResponse.refreshToken);
+          logger.info('Stored replacement session tokens after account merge', {
+            flowCorrelationId,
+            mergedFromUserId: connectResponse.mergedFromUserId ?? null,
+            mergedToUserId: connectResponse.mergedToUserId ?? null,
+          });
+        }
+
+        markRobloxConnected({
+          robloxUserId: connectResponse.robloxUserId ?? null,
+        });
         await oauthTransientStorage.removeItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE);
-        await reloadUser();
-        router.replace('/sessions');
+        logger.info('Refreshing /auth/me after Roblox link', {
+          flowCorrelationId,
+          beforeConnected: true,
+        });
+        const refreshedUser = await reloadUser({
+          reason: 'roblox_connect_callback',
+          noCache: true,
+          preserveRobloxConnectedOnFalse: true,
+        });
+        const refreshedConnected = refreshedUser?.robloxConnected === true;
+        logger.info('Completed /auth/me refresh after Roblox link', {
+          flowCorrelationId,
+          afterConnected: refreshedConnected,
+        });
+        const nextRoute = '/sessions';
+        if (!refreshedConnected) {
+          logger.warn('Roblox link succeeded but /auth/me did not reflect connection yet; bypassing connect gate', {
+            flowCorrelationId,
+          });
+        }
+        logger.info('Final routing decision after Roblox connect', {
+          flowCorrelationId,
+          nextRoute,
+          reason: refreshedConnected
+            ? 'roblox_connected'
+            : 'roblox_link_verified_backend_refresh_pending',
+        });
+        await clearAuthFlowCorrelationId();
+        router.replace(nextRoute);
         return;
       }
 
@@ -62,7 +145,9 @@ export default function RobloxCallback() {
       const storedState = await oauthTransientStorage.getItem(OAUTH_STORAGE_KEYS.PKCE_STATE);
 
       if (!codeVerifier || !storedState) {
-        logger.error('Missing stored PKCE parameters');
+        logger.error('Missing stored PKCE parameters', {
+          flowCorrelationId,
+        });
         router.replace('/auth/sign-in');
         return;
       }
@@ -70,6 +155,7 @@ export default function RobloxCallback() {
       // Verify state matches
       if (state !== storedState) {
         logger.error('State mismatch - possible CSRF attack', {
+          flowCorrelationId,
           stateMatches: false,
         });
         router.replace('/auth/sign-in');
@@ -87,13 +173,26 @@ export default function RobloxCallback() {
       await tokenStorage.setToken(response.accessToken);
       await tokenStorage.setRefreshToken(response.refreshToken);
 
-      logger.info('Tokens stored, reloading user...');
+      logger.info('Tokens stored, reloading user...', {
+        flowCorrelationId,
+      });
 
       // Reload user to update AuthContext
-      await reloadUser();
+      const reloadedUser = await reloadUser({
+        reason: 'roblox_sign_in_callback',
+        noCache: true,
+      });
 
-      const me = await apiClient.auth.me();
-      const nextRoute = getPostLoginRoute(Boolean(me.robloxConnected));
+      const requiresRobloxConnect = shouldRequireRobloxConnection(reloadedUser);
+      const nextRoute = getPostLoginRoute(!requiresRobloxConnect);
+      logger.info('Final routing decision after Roblox sign-in', {
+        flowCorrelationId,
+        nextRoute,
+        reason: requiresRobloxConnect ? 'roblox_not_connected' : 'roblox_connected',
+      });
+      if (!requiresRobloxConnect) {
+        await clearAuthFlowCorrelationId();
+      }
       router.replace(nextRoute);
     } catch (callbackError) {
       const conflictResolution = resolveAccountLinkConflict(callbackError, 'roblox');
@@ -116,14 +215,16 @@ export default function RobloxCallback() {
       }
 
       logger.error('Failed to complete OAuth flow', {
+        flowCorrelationId: await getOrCreateAuthFlowCorrelationId(),
         error: callbackError instanceof Error ? callbackError.message : String(callbackError),
       });
       router.replace('/auth/sign-in');
     }
-  }, [code, error, reloadUser, router, state]);
+  }, [code, error, markRobloxConnected, reloadUser, router, state]);
 
   useEffect(() => {
     logger.info('RobloxCallback mounted', {
+      callbackPath: '/auth/roblox',
       hasCode: !!code,
       hasState: !!state,
       hasError: !!error,

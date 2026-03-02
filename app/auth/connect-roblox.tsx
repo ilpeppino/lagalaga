@@ -9,6 +9,11 @@ import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransi
 import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useAuth } from '@/src/features/auth/useAuth';
+import { logger } from '@/src/lib/logger';
+import {
+  getOrCreateAuthFlowCorrelationId,
+  summarizeState,
+} from '@/src/features/auth/authFlowCorrelation';
 
 export default function ConnectRobloxScreen() {
   const router = useRouter();
@@ -20,9 +25,55 @@ export default function ConnectRobloxScreen() {
   const handleConnect = async () => {
     try {
       setConnecting(true);
+      const flowCorrelationId = await getOrCreateAuthFlowCorrelationId();
+      logger.info('Starting Roblox connect flow', {
+        flowCorrelationId,
+      });
       const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
       await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await openRobloxAuthSession(authorizationUrl);
+      logger.info('Roblox connect auth session start', {
+        flowCorrelationId,
+        stateSummary: summarizeState(state),
+        authorizationHost: (() => {
+          try {
+            return new URL(authorizationUrl).host;
+          } catch {
+            return 'invalid-url';
+          }
+        })(),
+      });
+      const authResult = await openRobloxAuthSession(authorizationUrl);
+      logger.info('Roblox connect auth session returned', {
+        flowCorrelationId,
+        resultType: authResult.type,
+      });
+
+      if (authResult.type === 'success' && 'url' in authResult) {
+        try {
+          const callbackUrl = new URL(authResult.url);
+          const callbackCode = callbackUrl.searchParams.get('code');
+          const callbackState = callbackUrl.searchParams.get('state');
+          logger.info('Roblox connect callback URL parsed from auth session result', {
+            flowCorrelationId,
+            hasCode: Boolean(callbackCode),
+            hasState: Boolean(callbackState),
+          });
+
+          if (callbackCode && callbackState) {
+            router.replace({
+              pathname: '/auth/roblox',
+              params: {
+                code: callbackCode,
+                state: callbackState,
+              },
+            });
+          }
+        } catch {
+          logger.warn('Failed to parse Roblox callback URL from auth session result', {
+            flowCorrelationId,
+          });
+        }
+      }
     } catch (error) {
       handleError(error, {
         fallbackMessage: 'Failed to start Roblox account connection. Please try again.',

@@ -17,5 +17,5 @@ test('parseOAuthCallbackUrl returns null when code/state are missing', () => {
 test('getPostLoginRoute sends users without Roblox link to connect screen', () => {
   const route = getPostLoginRoute(false);
 
-  assert.equal(route, '/me');
+  assert.equal(route, '/auth/connect-roblox');
 });

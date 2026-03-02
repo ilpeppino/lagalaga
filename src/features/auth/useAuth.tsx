@@ -157,17 +157,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return nextUser;
     } catch (error) {
       const shouldClearTokens = isApiError(error) && (error.statusCode === 401 || error.statusCode === 403);
+      const isLatestRequest = requestId === latestLoadRequestRef.current;
       logger.error('Failed to load user', {
         reason,
         requestId,
+        isLatestRequest,
         error: error instanceof Error ? error.message : String(error),
         shouldClearTokens,
       });
-      if (shouldClearTokens) {
+      if (shouldClearTokens && isLatestRequest) {
         await tokenStorage.clearTokens();
-        if (requestId === latestLoadRequestRef.current) {
-          setUser(null);
-        }
+        setUser(null);
       }
       return null;
     } finally {

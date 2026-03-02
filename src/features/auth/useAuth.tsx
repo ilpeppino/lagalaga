@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AppState, Platform } from 'react-native';
 import { apiClient } from '../../lib/api';
 import { tokenStorage } from '../../lib/tokenStorage';
+import { isApiError } from '../../lib/errors';
 import * as WebBrowser from 'expo-web-browser';
 import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
@@ -149,14 +150,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void registerPushToken({ force: true, reason: 'post_login' });
       return nextUser;
     } catch (error) {
+      const shouldClearTokens = isApiError(error) && (error.statusCode === 401 || error.statusCode === 403);
       logger.error('Failed to load user', {
         reason,
         requestId,
         error: error instanceof Error ? error.message : String(error),
+        shouldClearTokens,
       });
-      await tokenStorage.clearTokens();
-      if (requestId === latestLoadRequestRef.current) {
-        setUser(null);
+      if (shouldClearTokens) {
+        await tokenStorage.clearTokens();
+        if (requestId === latestLoadRequestRef.current) {
+          setUser(null);
+        }
       }
       return null;
     } finally {

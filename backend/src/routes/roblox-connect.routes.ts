@@ -279,24 +279,20 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       tokenResponse,
     });
 
-    let sessionTokens: { accessToken: string; refreshToken: string } | null = null;
-    if (effectiveUserId !== request.user.userId) {
-      const mergedUser = await userService.getUserById(effectiveUserId);
-      if (!mergedUser) {
-        throw new AppError('AUTH_USER_NOT_FOUND', 'Merged user account not found after merge.', 500);
-      }
-
-      const generated = tokenService.generateTokens({
-        userId: mergedUser.id,
-        robloxUserId: mergedUser.robloxUserId,
-        robloxUsername: mergedUser.robloxUsername,
-        tokenVersion: mergedUser.tokenVersion,
-      });
-      sessionTokens = {
-        accessToken: generated.accessToken,
-        refreshToken: generated.refreshToken,
-      };
+    const effectiveUser = await userService.getUserById(effectiveUserId);
+    if (!effectiveUser) {
+      throw new AppError('AUTH_USER_NOT_FOUND', 'User account not found after Roblox link.', 500);
     }
+    const generated = tokenService.generateTokens({
+      userId: effectiveUser.id,
+      robloxUserId: effectiveUser.robloxUserId,
+      robloxUsername: effectiveUser.robloxUsername,
+      tokenVersion: effectiveUser.tokenVersion,
+    });
+    const sessionTokens = {
+      accessToken: generated.accessToken,
+      refreshToken: generated.refreshToken,
+    };
 
     return {
       connected: true,
@@ -304,8 +300,8 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       verifiedAt: new Date().toISOString(),
       mergedFromUserId,
       mergedToUserId: effectiveUserId !== request.user.userId ? effectiveUserId : null,
-      accessToken: sessionTokens?.accessToken,
-      refreshToken: sessionTokens?.refreshToken,
+      accessToken: sessionTokens.accessToken,
+      refreshToken: sessionTokens.refreshToken,
     };
   };
 

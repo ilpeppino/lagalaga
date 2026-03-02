@@ -24,7 +24,7 @@ export default function RobloxCallback() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string; state?: string; error?: string }>();
   const colorScheme = useColorScheme();
-  const { reloadUser, markRobloxConnected } = useAuth();
+  const { reloadUser, markRobloxConnected, setAuthenticatedUser } = useAuth();
   const { code, state, error } = params;
 
   const handleCallback = useCallback(async () => {
@@ -37,17 +37,6 @@ export default function RobloxCallback() {
         hasState: !!state,
         hasError: !!error,
       });
-      const existingUser = await reloadUser({
-        reason: 'roblox_callback_duplicate_recovery',
-        noCache: true,
-        preserveRobloxConnectedOnFalse: true,
-      });
-      const existingRoute = getPostLoginRoute(!shouldRequireRobloxConnection(existingUser));
-      logger.info('Recovered route after duplicate Roblox callback', {
-        flowCorrelationId,
-        nextRoute: existingRoute,
-      });
-      router.replace(existingRoute);
       return;
     }
     processedCallbackKeys.add(callbackKey);
@@ -102,6 +91,12 @@ export default function RobloxCallback() {
             mergedFromUserId: connectResponse.mergedFromUserId ?? null,
             mergedToUserId: connectResponse.mergedToUserId ?? null,
           });
+          if (connectResponse.mergedToUserId) {
+            setAuthenticatedUser({
+              id: connectResponse.mergedToUserId,
+              robloxUserId: connectResponse.robloxUserId ?? null,
+            });
+          }
         }
 
         markRobloxConnected({
@@ -172,6 +167,12 @@ export default function RobloxCallback() {
       // Store tokens
       await tokenStorage.setToken(response.accessToken);
       await tokenStorage.setRefreshToken(response.refreshToken);
+      setAuthenticatedUser({
+        id: response.user.id,
+        robloxUserId: response.user.robloxUserId,
+        robloxUsername: response.user.robloxUsername,
+        robloxDisplayName: response.user.robloxDisplayName ?? null,
+      });
 
       logger.info('Tokens stored, reloading user...', {
         flowCorrelationId,
@@ -220,7 +221,7 @@ export default function RobloxCallback() {
       });
       router.replace('/auth/sign-in');
     }
-  }, [code, error, markRobloxConnected, reloadUser, router, state]);
+  }, [code, error, markRobloxConnected, reloadUser, router, setAuthenticatedUser, state]);
 
   useEffect(() => {
     logger.info('RobloxCallback mounted', {

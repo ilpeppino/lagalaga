@@ -44,6 +44,12 @@ interface AuthContextValue {
     robloxUsername?: string | null;
     robloxDisplayName?: string | null;
   }) => void;
+  setAuthenticatedUser: (input: {
+    id: string;
+    robloxUserId: string | null;
+    robloxUsername?: string | null;
+    robloxDisplayName?: string | null;
+  }) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -344,6 +350,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const setAuthenticatedUser = useCallback((input: {
+    id: string;
+    robloxUserId: string | null;
+    robloxUsername?: string | null;
+    robloxDisplayName?: string | null;
+  }) => {
+    setUser((prev) => ({
+      id: input.id,
+      robloxUserId: input.robloxUserId,
+      robloxUsername: input.robloxUsername ?? prev?.robloxUsername ?? null,
+      robloxDisplayName: input.robloxDisplayName ?? prev?.robloxDisplayName,
+      avatarHeadshotUrl: prev?.avatarHeadshotUrl ?? null,
+      robloxConnected: input.robloxUserId != null,
+    }));
+    setLoading(false);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -355,6 +378,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         reloadUser: loadUser,
         markRobloxConnected,
+        setAuthenticatedUser,
       }}
     >
       {children}

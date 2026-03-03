@@ -37,7 +37,28 @@ export default function SignInScreen() {
   async function handleRobloxSignIn() {
     try {
       setLoadingProvider("roblox");
-      await signInWithRoblox();
+      const result = await signInWithRoblox();
+      // On iOS, ASWebAuthenticationSession may not deliver the callback URL to the
+      // app's Linking handler (particularly when the user is already authenticated
+      // with Roblox and gets redirected without a login UI). Explicitly navigate to
+      // the callback screen so sign-in works reliably for returning users.
+      // The processedCallbackKeys guard in /auth/roblox.tsx prevents double-processing
+      // if Expo Router also delivers the URL via deep link.
+      if (result.type === 'success' && 'url' in result && result.url) {
+        try {
+          const callbackUrl = new URL(result.url);
+          const code = callbackUrl.searchParams.get('code');
+          const state = callbackUrl.searchParams.get('state');
+          if (code && state) {
+            router.replace({
+              pathname: '/auth/roblox',
+              params: { code, state },
+            });
+          }
+        } catch {
+          // URL parsing failed — rely on Expo Router deep link handling as fallback
+        }
+      }
     } catch (error) {
       handleError(error, { fallbackMessage: "Failed to sign in with Roblox. Please try again." });
     } finally {

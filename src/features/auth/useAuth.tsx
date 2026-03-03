@@ -30,7 +30,7 @@ interface User {
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  signInWithRoblox: () => Promise<void>;
+  signInWithRoblox: () => Promise<WebBrowser.WebBrowserAuthSessionResult>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: (options?: { flowCorrelationId?: string }) => Promise<User | null>;
   signOut: () => Promise<void>;
@@ -181,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void loadUser({ reason: 'initial_hydration', noCache: true });
   }, [loadUser]);
 
-  const signInWithRoblox = async () => {
+  const signInWithRoblox = async (): Promise<WebBrowser.WebBrowserAuthSessionResult> => {
     try {
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = await generateCodeChallenge(codeVerifier);
@@ -208,9 +208,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         url: result.type === 'success' ? (result as any).url : undefined
       });
 
-      // Note: The deep link callback will be handled by expo-router automatically
-      // when the OAuth provider redirects back
-      // The code exchange happens in `app/auth/roblox.tsx`
+      // Return the result so callers can explicitly handle the callback URL.
+      // On iOS, ASWebAuthenticationSession may not deliver the URL to the app's
+      // Linking handler (especially when the user is already authenticated with Roblox),
+      // so callers must parse result.url and navigate to /auth/roblox directly.
+      return result;
     } catch (error) {
       logger.error('Failed to start OAuth flow', {
         error: error instanceof Error ? error.message : String(error),

@@ -14,27 +14,11 @@ import { completeGoogleOAuth } from '../services/google-oauth-completion.service
 import {
   generateSignedOAuthState,
   generateCodeChallenge,
-  verifySignedOAuthState,
+  decodeSignedOAuthState,
 } from '../utils/crypto.js';
 import { AppError, AuthError, ErrorCodes } from '../utils/errors.js';
 import { metrics } from '../plugins/metrics.js';
 
-interface OAuthStateEntry {
-  codeVerifier: string;
-  userId: string;
-  expiresAt: number;
-}
-
-const oauthStateStore = new Map<string, OAuthStateEntry>();
-
-interface GoogleOAuthStateEntry {
-  codeVerifier: string;
-  nonce: string;
-  redirectUri: string;
-  expiresAt: number;
-}
-
-const googleOauthStateStore = new Map<string, GoogleOAuthStateEntry>();
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_DEEP_LINK_REDIRECT_URI = 'lagalaga://auth/google';
 
@@ -52,37 +36,6 @@ function generateCodeVerifier(): string {
 
 function generateNonce(): string {
   return randomBytes(32).toString('base64url');
-}
-
-function cleanupGoogleStateStore(nowMs: number = Date.now()): void {
-  for (const [state, entry] of googleOauthStateStore.entries()) {
-    if (entry.expiresAt <= nowMs) {
-      googleOauthStateStore.delete(state);
-    }
-  }
-}
-
-function consumeGoogleStateEntry(state: string): GoogleOAuthStateEntry | null {
-  cleanupGoogleStateStore();
-  const entry = googleOauthStateStore.get(state);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    googleOauthStateStore.delete(state);
-    return null;
-  }
-  googleOauthStateStore.delete(state);
-  return entry;
-}
-
-function getGoogleStateEntry(state: string): GoogleOAuthStateEntry | null {
-  cleanupGoogleStateStore();
-  const entry = googleOauthStateStore.get(state);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    googleOauthStateStore.delete(state);
-    return null;
-  }
-  return entry;
 }
 
 function buildGoogleAuthRedirectUrl(
@@ -108,24 +61,6 @@ function buildGoogleAuthRedirectUrl(
   }
 }
 
-function getValidStateEntry(state: string, userId: string): OAuthStateEntry | null {
-  const entry = oauthStateStore.get(state);
-  if (!entry) return null;
-  if (entry.userId !== userId) return null;
-  if (entry.expiresAt <= Date.now()) {
-    oauthStateStore.delete(state);
-    return null;
-  }
-  return entry;
-}
-
-function consumeValidStateEntry(state: string, userId: string): OAuthStateEntry | null {
-  const entry = getValidStateEntry(state, userId);
-  if (!entry) return null;
-  oauthStateStore.delete(state);
-  return entry;
-}
-
 export async function robloxConnectRoutes(fastify: FastifyInstance) {
   const robloxOAuth = new RobloxOAuthService(fastify);
   const connectionService = new RobloxConnectionService(fastify);
@@ -140,14 +75,11 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
   fastify.get('/roblox/start', {
     preHandler: authenticate,
   }, async (request) => {
-    const state = generateSignedOAuthState(request.server.config.JWT_SECRET);
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-
-    oauthStateStore.set(state, {
+    const state = generateSignedOAuthState(request.server.config.JWT_SECRET, 10 * 60 * 1000, {
       codeVerifier,
       userId: request.user.userId,
-      expiresAt: Date.now() + 10 * 60 * 1000,
     });
 
     const authorizationUrl = robloxOAuth.generateAuthorizationUrl(state, codeChallenge);
@@ -176,18 +108,14 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const state = generateSignedOAuthState(request.server.config.JWT_SECRET, GOOGLE_OAUTH_STATE_TTL_MS);
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
     const nonce = generateNonce();
     const redirectUri = request.query?.redirectUri?.trim() || DEFAULT_DEEP_LINK_REDIRECT_URI;
-
-    cleanupGoogleStateStore();
-    googleOauthStateStore.set(state, {
+    const state = generateSignedOAuthState(request.server.config.JWT_SECRET, GOOGLE_OAUTH_STATE_TTL_MS, {
       codeVerifier,
       nonce,
       redirectUri,
-      expiresAt: Date.now() + GOOGLE_OAUTH_STATE_TTL_MS,
     });
 
     const url = await googleOAuth.generateAuthorizationUrl({
@@ -216,20 +144,17 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'Missing code or state');
     }
 
-    if (!verifySignedOAuthState(state, request.server.config.JWT_SECRET)) {
+    const stateData = decodeSignedOAuthState<{ codeVerifier: string; userId: string }>(
+      state,
+      request.server.config.JWT_SECRET
+    );
+    if (!stateData || stateData.userId !== request.user.userId) {
       throw new AppError('ACCOUNT_LINK_INVALID_STATE', 'OAuth state is invalid or expired.', 401, {
         severity: 'warning',
       });
     }
 
-    const entry = consumeValidStateEntry(state, request.user.userId);
-    if (!entry) {
-      throw new AppError('ACCOUNT_LINK_INVALID_STATE', 'OAuth state is invalid or expired.', 401, {
-        severity: 'warning',
-      });
-    }
-
-    const tokenResponse = await robloxOAuth.exchangeCode(code, entry.codeVerifier);
+    const tokenResponse = await robloxOAuth.exchangeCode(code, stateData.codeVerifier);
     const userInfo = await robloxOAuth.getUserInfo(tokenResponse.access_token);
     let effectiveUserId = request.user.userId;
     let mergedFromUserId: string | null = null;
@@ -368,7 +293,14 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
           googleOAuth,
           googleAuthService,
           tokenService,
-          consumeStateEntry: consumeGoogleStateEntry,
+          consumeStateEntry: (s: string) => {
+          const decoded = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
+            s,
+            request.server.config.JWT_SECRET
+          );
+          if (!decoded) return null;
+          return { codeVerifier: decoded.codeVerifier, nonce: decoded.nonce, redirectUri: decoded.redirectUri, expiresAt: decoded.exp };
+        },
         }
       );
 
@@ -445,7 +377,11 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
         .send('Sign-in failed, return to app and try again.');
     }
 
-    if (!verifySignedOAuthState(state, request.server.config.JWT_SECRET)) {
+    const stateEntry = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
+      state,
+      request.server.config.JWT_SECRET
+    );
+    if (!stateEntry) {
       metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
       return reply
         .code(400)
@@ -453,16 +389,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
         .send('Sign-in failed, return to app and try again.');
     }
 
-    const entry = getGoogleStateEntry(state);
-    if (!entry) {
-      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
-      return reply
-        .code(400)
-        .type('text/plain; charset=utf-8')
-        .send('Sign-in failed, return to app and try again.');
-    }
-
-    const redirectUrl = buildGoogleAuthRedirectUrl(entry.redirectUri, {
+    const redirectUrl = buildGoogleAuthRedirectUrl(stateEntry.redirectUri, {
       code,
       state,
     });

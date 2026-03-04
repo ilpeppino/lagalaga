@@ -24,6 +24,7 @@ export async function robloxRoutes(fastify: FastifyInstance, options: RobloxRout
   }>(
     '/roblox/normalize-link',
     {
+      preHandler: authenticate,
       schema: {
         body: {
           type: 'object',

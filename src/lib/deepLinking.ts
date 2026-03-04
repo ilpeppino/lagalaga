@@ -55,12 +55,20 @@ export function isAppDeepLink(url: string): boolean {
   return url.startsWith(`${DeepLinkScheme}://`);
 }
 
+const INVITE_CODE_RE = /^[A-Z0-9]{6,32}$/;
+
+function validateInviteCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const upper = code.toUpperCase();
+  return INVITE_CODE_RE.test(upper) ? upper : null;
+}
+
 /**
  * Extract invite code from deep link
  */
 export function extractInviteCode(url: string): string | null {
-  const match = url.match(/invite\/([A-Z0-9]+)/i);
-  return match ? match[1] : null;
+  const match = url.match(/invite\/([A-Z0-9]{1,64})/i);
+  return match ? validateInviteCode(match[1]) : null;
 }
 
 /**
@@ -72,14 +80,14 @@ export function extractInviteCode(url: string): string | null {
  */
 export function extractInviteCodeFromUrl(url: string): string | null {
   // Custom scheme (already handled by Expo Router, but kept for completeness)
-  const schemeMatch = url.match(/^lagalaga(?:-dev)?:\/\/invite\/([A-Z0-9]+)/i);
-  if (schemeMatch) return schemeMatch[1];
+  const schemeMatch = url.match(/^lagalaga(?:-dev)?:\/\/invite\/([A-Z0-9]{1,64})/i);
+  if (schemeMatch) return validateInviteCode(schemeMatch[1]);
 
   // HTTPS App Link
   if (url.includes('ilpeppino.github.io/lagalaga/invite')) {
     try {
       const parsed = new URL(url);
-      return parsed.searchParams.get('code');
+      return validateInviteCode(parsed.searchParams.get('code'));
     } catch {
       return null;
     }

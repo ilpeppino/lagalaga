@@ -10,13 +10,16 @@ export function generateState(): string {
 /**
  * Generate a signed OAuth state token that can be validated statelessly.
  * Format: base64url(payload).base64url(signature)
+ * Optional `data` fields are embedded in the payload for stateless retrieval.
  */
 export function generateSignedOAuthState(
   secret: string,
-  ttlMs: number = 10 * 60 * 1000
+  ttlMs: number = 10 * 60 * 1000,
+  data: Record<string, unknown> = {}
 ): string {
   const now = Date.now();
   const payload = {
+    ...data,
     nonce: generateState(),
     iat: now,
     exp: now + ttlMs,
@@ -65,6 +68,48 @@ export function verifySignedOAuthState(state: string, secret: string): boolean {
 
   if (typeof payload.exp !== 'number') return false;
   return Date.now() <= payload.exp;
+}
+
+/**
+ * Verify and decode a signed OAuth state token, returning the embedded payload.
+ * Returns null if the token is invalid, tampered, or expired.
+ */
+export function decodeSignedOAuthState<T extends Record<string, unknown>>(
+  state: string,
+  secret: string
+): (T & { nonce: string; iat: number; exp: number }) | null {
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+
+  const [encodedPayload, signature] = parts;
+  if (!encodedPayload || !signature) return null;
+
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(encodedPayload)
+    .digest();
+
+  let actualSignature: Buffer;
+  try {
+    actualSignature = Buffer.from(signature, 'base64url');
+  } catch {
+    return null;
+  }
+
+  if (actualSignature.length !== expectedSignature.length) return null;
+  if (!crypto.timingSafeEqual(actualSignature, expectedSignature)) return null;
+
+  let payload: T & { nonce?: string; iat?: number; exp?: number };
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf-8'));
+  } catch {
+    return null;
+  }
+
+  if (typeof payload.exp !== 'number') return null;
+  if (Date.now() > payload.exp) return null;
+
+  return payload as T & { nonce: string; iat: number; exp: number };
 }
 
 /**

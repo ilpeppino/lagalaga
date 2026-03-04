@@ -11,6 +11,7 @@ const mockLinkPlatformToUser = jest.fn<any>();
 const mockMergeProviderShadowUserIntoRobloxUser = jest.fn<any>();
 const mockGenerateSignedOAuthState = jest.fn<any>();
 const mockVerifySignedOAuthState = jest.fn<any>();
+const mockDecodeSignedOAuthState = jest.fn<any>();
 const mockGenerateCodeChallenge = jest.fn<any>();
 const mockGenerateTokens = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
@@ -71,6 +72,7 @@ jest.unstable_mockModule('../../middleware/authenticate.js', () => ({
 jest.unstable_mockModule('../../utils/crypto.js', () => ({
   generateSignedOAuthState: mockGenerateSignedOAuthState,
   verifySignedOAuthState: mockVerifySignedOAuthState,
+  decodeSignedOAuthState: mockDecodeSignedOAuthState,
   generateCodeChallenge: mockGenerateCodeChallenge,
 }));
 
@@ -87,6 +89,7 @@ describe('roblox connect routes', () => {
     mockGenerateSignedOAuthState.mockReturnValue('signed-state');
     mockGenerateCodeChallenge.mockReturnValue('challenge');
     mockVerifySignedOAuthState.mockReturnValue(true);
+    mockDecodeSignedOAuthState.mockReturnValue({ codeVerifier: 'test-verifier', userId: 'user-google-1', nonce: 'test-nonce', iat: Date.now(), exp: Date.now() + 600000 });
     mockRobloxGenerateAuthorizationUrl.mockReturnValue('https://roblox.example/auth');
     mockMergeProviderShadowUserIntoRobloxUser.mockResolvedValue({
       merged: false,
@@ -178,7 +181,7 @@ describe('roblox connect routes', () => {
   });
 
   it('returns ACCOUNT_LINK_INVALID_STATE for expired or invalid state', async () => {
-    mockVerifySignedOAuthState.mockReturnValue(false);
+    mockDecodeSignedOAuthState.mockReturnValue(null);
 
     const response = await request(app.server)
       .post('/api/auth/roblox/callback')

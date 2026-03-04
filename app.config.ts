@@ -29,7 +29,7 @@ const config: ExpoConfig = {
     backgroundColor: "#1A2A6C",
   },
   ios: {
-    buildNumber: "11",
+    buildNumber: "12",
     supportsTablet: true,
     usesAppleSignIn: true,
     bundleIdentifier: iosBundleIdentifier,
@@ -41,7 +41,53 @@ const config: ExpoConfig = {
     privacyManifests: {
       NSPrivacyTracking: false,
       NSPrivacyTrackingDomains: [],
-      NSPrivacyCollectedDataTypes: [],
+      NSPrivacyCollectedDataTypes: [
+          {
+            // Email address — collected optionally when user shares it via Apple Sign In
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeEmailAddress",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+          {
+            // Name — Roblox display name and username stored in user profile
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeName",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+          {
+            // User ID — Roblox user ID and internal app user ID
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeUserID",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+          {
+            // Device ID — push notification token stored per user account
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeDeviceID",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+          {
+            // App interactions — sessions created/joined, streaks, activity
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeAppInteractions",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+        ],
       NSPrivacyAccessedAPITypes: [
         {
           // File timestamps — used by expo-sqlite, expo-file-system, and react-native

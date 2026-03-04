@@ -1,13 +1,10 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 // Google Sign-In button styled per Google's branding guidelines for OAuth web flows.
 // Uses expo-web-browser under the hood (not the native Google Sign-In SDK).
-// The Ionicons logo-google icon is the closest available approximation without adding
-// @react-native-google-signin/google-signin, which would provide the official native button.
-// If you switch to the native Google Sign-In SDK, replace this component with
-// GoogleSignin.hasPlayServices() + the native <GoogleSigninButton />.
+// Logo: official Google "G" mark rasterised from the canonical Google SVG paths.
+// Reference: https://developers.google.com/identity/branding-guidelines
 
 interface GoogleSignInButtonProps {
   onPress: () => void;
@@ -37,7 +34,13 @@ export function GoogleSignInButton({
         {loading ? (
           <ActivityIndicator size={18} color="#4285F4" />
         ) : (
-          <Ionicons name="logo-google" size={18} color="#4285F4" />
+          <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('@/assets/images/google-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         )}
         <Text style={styles.label} allowFontScaling={false}>
           Sign in with Google
@@ -64,6 +67,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  logo: {
+    width: 20,
+    height: 20,
   },
   label: {
     color: '#202124',

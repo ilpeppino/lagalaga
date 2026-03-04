@@ -20,7 +20,11 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "APP_VARIANT": "prod"
+        "APP_VARIANT": "prod",
+        "EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH": "false"
+      },
+      "ios": {
+        "image": "latest"
       }
     }
   },

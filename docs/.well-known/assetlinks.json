@@ -1,11 +1,14 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "com.ilpeppino.lagalaga",
       "sha256_cert_fingerprints": [
-        "PASTE_PLAY_APP_SIGNING_SHA256_HERE"
+        "2C:4F:3A:55:84:DB:BA:E0:D4:9F:AE:86:BC:56:6F:67:DF:44:29:ED:0D:55:0B:FD:DB:74:B6:82:0F:E4:60:2F"
       ]
     }
   }

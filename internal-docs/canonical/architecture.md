@@ -17,11 +17,14 @@ The system employs a **backend-mediated architecture** where the mobile app neve
 - Web (via Expo Web)
 
 ### Current Authentication Strategy
-Backend-mediated OAuth 2.0 with PKCE. Two sign-in paths are supported:
+Backend-mediated OAuth 2.0 with PKCE. Three sign-in paths are supported:
 - **Roblox OAuth** (primary): Users authenticate via Roblox; backend issues custom JWT tokens.
-- **Google OAuth** (Google-first users): Users authenticate via Google; Roblox linking is optional and done post-login. Nullable `roblox_user_id` and `roblox_username` on `app_users` enables accounts that have never connected Roblox.
+- **Google OAuth** (Google-first users): Users authenticate via Google; Roblox linking is optional and done post-login.
+- **Apple Sign In** (Apple-first users): Users authenticate via Apple identity token; Roblox linking is optional and done post-login.
 
-The frontend never receives Supabase credentials. Platform identity is tracked in the `user_platforms` table via `PlatformIdentityService`.
+Nullable `roblox_user_id` and `roblox_username` on `app_users` enables accounts that have never connected Roblox. The frontend never receives Supabase credentials. Platform identity is tracked in the `user_platforms` table via `PlatformIdentityService`.
+
+Shadow account merging is supported: an Apple/Google-only account with no activity can be automatically merged into an existing Roblox account when the user connects Roblox.
 
 ## 2. High-Level Architecture
 
@@ -106,7 +109,9 @@ The frontend never receives Supabase credentials. Platform identity is tracked i
 - `backend/src/services/robloxOAuth.ts` - Roblox OAuth client
 - `backend/src/services/googleOAuth.ts` - Google OAuth client (PKCE + ID token verification)
 - `backend/src/services/google-auth.service.ts` - Google login: resolves or creates user, links Google platform
-- `backend/src/services/platform-identity.service.ts` - `PlatformIdentityService`: links/unlinks platforms (`roblox`, `google`) to users via `user_platforms`
+- `backend/src/services/appleOAuth.ts` - Apple Sign In identity token validation (JWKS)
+- `backend/src/services/apple-auth.service.ts` - Apple login: resolves or creates user, links Apple platform
+- `backend/src/services/platform-identity.service.ts` - `PlatformIdentityService`: links/unlinks platforms (`roblox`, `google`, `apple`) to users via `user_platforms`; triggers shadow-user merge via `merge_provider_shadow_user_into_roblox_user_tx`
 - `backend/src/services/tokenService.ts` - JWT generation/verification
 - `backend/src/services/userService.ts` - User CRUD operations (nullable roblox fields)
 - `backend/src/middleware/authenticate.ts` - JWT middleware
@@ -159,11 +164,33 @@ Google sign-in is handled via the `/api/auth` prefix (roblox-connect routes), wi
    - Links Google platform to user in `user_platforms`
    - Returns JWT access + refresh tokens
 
-4. **Account Link Conflict**
-   - If a platform account (Roblox or Google) is already linked to a different `app_users` row, backend returns `ACCOUNT_LINK_CONFLICT` (409)
-   - Frontend `accountLinkConflict.ts` catches this and shows an alert prompting the user to log in with their original method
+4. **Account Link Conflict / Shadow User Merge**
+   - If a platform account (Roblox, Google, or Apple) is already linked to a different `app_users` row, backend returns `ACCOUNT_LINK_CONFLICT` (409)
+   - When a Google/Apple-only shadow account (no activity) connects Roblox that is already owned by another user, the backend automatically calls `merge_provider_shadow_user_into_roblox_user_tx` to merge the shadow account into the target Roblox account, re-issues tokens for the merged account, and returns `mergedFromUserId`/`mergedToUserId` in the response
+   - If the merge safety gates fail (source has activity), a 409 conflict is raised and `accountLinkConflict.ts` prompts the user to log in with their original method
 
-4. **Token Storage** (Roblox sign-in path; Google path is identical)
+### Apple Sign In Flow (Apple-first users)
+
+Apple Sign In uses an identity token (JWT) rather than an OAuth authorization code flow.
+
+1. **Initiate Apple Sign In** (native iOS flow via `expo-apple-authentication`)
+   - iOS presents the native Apple Sign In sheet to the user
+   - Apple returns an `identityToken` (JWT), and optionally `email`, `givenName`, `familyName`, `isPrivateEmail`
+   - Email and name are only provided on the **first** sign-in; subsequent sign-ins return only the token
+
+2. **Complete Apple Sign In** (`POST /api/auth/apple/callback`)
+   - Client sends `identityToken`, `nonce`, `email`, `givenName`, `familyName`, `isPrivateEmail` to backend
+   - Backend validates the identity token against Apple's JWKS (`APPLE_JWKS_URI`)
+   - `AppleAuthService.resolveUserForAppleLogin()` looks up or creates an `app_users` row
+   - Links Apple platform to user in `user_platforms` (stores metadata: email, is_private_email, given/family name)
+   - Syncs Apple identity columns on `app_users` (`apple_sub`, `apple_email`, `apple_email_is_private`, `apple_full_name`)
+   - If a currently-authenticated user sends a Bearer token, the Apple account is linked to that existing user
+   - Returns JWT access + refresh tokens
+
+3. **Account Link Conflict**
+   - Same conflict detection as Google: if the Apple account is already linked to a different user, returns `CONFLICT_ACCOUNT_PROVIDER` (409)
+
+4. **Token Storage** (Roblox sign-in path; Google and Apple paths are identical)
    - Client stores `accessToken` in SecureStore (native) / localStorage (web)
    - Client stores `refreshToken` in SecureStore (native) / localStorage (web)
    - Tokens are encrypted on iOS/Android via system keychain
@@ -253,21 +280,30 @@ Google sign-in is handled via the `/api/auth` prefix (roblox-connect routes), wi
 
 #### app_users
 ```sql
-id                   UUID PRIMARY KEY
-roblox_user_id       VARCHAR UNIQUE NULLABLE  -- NULL for Google-first users who haven't connected Roblox
-roblox_username      VARCHAR NULLABLE         -- NULL for Google-first users
-roblox_display_name  VARCHAR
-roblox_profile_url   TEXT
-avatar_headshot_url  TEXT            -- Cached avatar
-avatar_cached_at     TIMESTAMPTZ     -- Cache timestamp
-status               TEXT            -- 'ACTIVE' | 'PENDING_DELETION' | 'DELETED'
-token_version        INTEGER         -- JWT invalidation counter (default 0)
-created_at           TIMESTAMPTZ
-updated_at           TIMESTAMPTZ
-last_login_at        TIMESTAMPTZ
+id                     UUID PRIMARY KEY
+roblox_user_id         VARCHAR UNIQUE NULLABLE  -- NULL for Google/Apple-first users who haven't connected Roblox
+roblox_username        VARCHAR NULLABLE         -- NULL for Google/Apple-first users
+roblox_display_name    VARCHAR
+roblox_profile_url     TEXT
+avatar_headshot_url    TEXT            -- Cached avatar
+avatar_cached_at       TIMESTAMPTZ     -- Cache timestamp
+google_sub             TEXT UNIQUE NULLABLE    -- Google account subject (denormalized)
+google_email           TEXT NULLABLE
+google_email_verified  BOOLEAN NOT NULL DEFAULT false
+google_full_name       TEXT NULLABLE
+apple_sub              TEXT UNIQUE NULLABLE    -- Apple account subject (denormalized)
+apple_email            TEXT NULLABLE
+apple_email_is_private BOOLEAN NOT NULL DEFAULT false
+apple_full_name        TEXT NULLABLE
+auth_provider          TEXT NULLABLE   -- 'ROBLOX' | 'GOOGLE' | 'APPLE'
+status                 TEXT            -- 'ACTIVE' | 'PENDING_DELETION' | 'DELETED'
+token_version          INTEGER         -- JWT invalidation counter (default 0)
+created_at             TIMESTAMPTZ
+updated_at             TIMESTAMPTZ
+last_login_at          TIMESTAMPTZ
 ```
 
-**Purpose**: User accounts. Roblox fields are nullable to support Google-first users who connect Roblox later (or never). Platform identities are stored in `user_platforms`.
+**Purpose**: User accounts. Roblox fields are nullable to support Google/Apple-first users who connect Roblox later (or never). Google and Apple identity columns are denormalized from `user_platforms` for performance. Platform identities are authoritatively stored in `user_platforms`.
 
 #### games
 ```sql
@@ -301,6 +337,7 @@ scheduled_end        TIMESTAMPTZ
 original_input_url   TEXT NOT NULL
 normalized_from      TEXT NOT NULL
 is_ranked            BOOLEAN (default false)
+archived_at          TIMESTAMPTZ NULLABLE  -- Set when session is archived; excluded from all listing queries
 created_at           TIMESTAMPTZ
 updated_at           TIMESTAMPTZ
 ```
@@ -542,6 +579,22 @@ updated_at           TIMESTAMPTZ
 - `app_users` 1 → N `user_achievements`
 - `app_users` 1 → 1 `user_rankings`
 - `seasons` 1 → N `season_rankings`
+
+#### audit_logs
+```sql
+id            UUID PRIMARY KEY
+actor_id      UUID (FK -> app_users.id, nullable ON DELETE SET NULL)
+action        TEXT NOT NULL   -- 'account.delete_requested', 'oauth.token_issued', etc.
+resource_type TEXT            -- 'account', 'oauth_token', 'report', 'session', etc.
+resource_id   TEXT
+metadata      JSONB
+ip_address    TEXT
+user_agent    TEXT
+outcome       TEXT NOT NULL   -- 'success' | 'failure'
+error_message TEXT
+created_at    TIMESTAMPTZ NOT NULL
+```
+**Purpose**: Immutable append-only audit trail for sensitive operations (COPPA/GDPR compliance and security monitoring). Service role only for writes.
 
 ### Schema Documentation
 Reference: `docs/canonical/database_schema.md` and `database-schema.md` (live Supabase state)
@@ -897,10 +950,12 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 **File**: `backend/src/routes/roblox-connect.routes.ts`
 
 - `GET /api/auth/roblox/start` - Start Roblox OAuth flow for token refresh / first-time Roblox connection (authenticated)
-- `POST /api/auth/roblox/callback` - Complete Roblox OAuth token exchange for linking (authenticated)
+- `POST /api/auth/roblox/callback` - Complete Roblox OAuth token exchange for linking; supports shadow-account merge (authenticated)
 - `GET /api/auth/roblox/callback` - Same as POST variant, accepts `code`/`state` as query params (authenticated)
-- `GET /api/auth/google/start` - Initiate Google OAuth sign-in (unauthenticated; rate-limited 10/min); accepts optional `redirectUri` query param
+- `GET /api/auth/google/start` - Initiate Google OAuth sign-in (unauthenticated; rate-limited 10/min); accepts optional `redirectUri` query param; defaults redirect to `lagalaga://auth/google`
 - `POST /api/auth/google/callback` - Complete Google OAuth; creates or resolves user and returns JWT tokens (unauthenticated; rate-limited 10/min)
+- `GET /api/auth/google/callback` - Browser-facing Google OAuth redirect handler; validates state, then HTTP 302 redirects to the deep link URI with code/state params
+- `POST /api/auth/apple/callback` - Complete Apple Sign In via identity token; creates or resolves user and returns JWT tokens (unauthenticated; rate-limited 10/min); optionally accepts a Bearer token to link Apple to an existing session
 
 #### Safety Escalation Webhook
 **File**: `backend/src/routes/safety-escalation-webhook.routes.ts`
@@ -922,8 +977,8 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 #### Roblox Routes
 **File**: `backend/src/routes/roblox.ts`
 
-- `POST /roblox/normalize-link` - Normalize a Roblox game URL
-- `POST /roblox/resolve-experience` - Resolve a Roblox experience from URL
+- `POST /roblox/normalize-link` - Normalize a Roblox game URL (authenticated)
+- `POST /roblox/resolve-experience` - Resolve a Roblox experience from URL (authenticated)
 - `GET /api/roblox/experience-by-place/:placeId` - Get experience metadata by Roblox place ID
 
 #### Reports Routes (`/api/reports`)
@@ -1114,9 +1169,15 @@ ROBLOX_REDIRECT_URI=lagalaga://auth/roblox
 # Google OAuth (required in production)
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URI=lagalaga://auth     # Deep link URI for Google OAuth callback
+GOOGLE_REDIRECT_URI=lagalaga://auth/google  # Deep link URI for Google OAuth callback
 GOOGLE_ISSUER=https://accounts.google.com
 GOOGLE_JWKS_URI=                        # Optional; defaults to Google's discovery document
+
+# Apple Sign In (required in production)
+APPLE_BUNDLE_ID=com.yourapp.bundleid   # iOS bundle ID for audience validation
+APPLE_AUDIENCE=                        # Optional; overrides APPLE_BUNDLE_ID for audience
+APPLE_ISSUER=https://appleid.apple.com # Default
+APPLE_JWKS_URI=                        # Optional; defaults to Apple's discovery document
 
 # JWT
 JWT_SECRET=your-super-secret-jwt-key-min-32-chars
@@ -1365,8 +1426,10 @@ Based on the current architecture, the following extensions are feasible:
 
 ### 11. ✅ Google OAuth / Multi-Platform Sign-In (Implemented)
 - Google OAuth 2.0 sign-in path via `/api/auth/google/start` and `/api/auth/google/callback`
-- `PlatformIdentityService` manages `user_platforms` links for `roblox` and `google` platforms
-- Nullable `roblox_user_id`/`roblox_username` on `app_users` enables Google-first accounts
+- Apple Sign In via `/api/auth/apple/callback` (identity token flow, no server-side PKCE)
+- `PlatformIdentityService` manages `user_platforms` links for `roblox`, `google`, and `apple` platforms
+- Nullable `roblox_user_id`/`roblox_username` on `app_users` enables Google/Apple-first accounts
+- Shadow account merging: Apple/Google-only accounts with no activity are automatically merged into existing Roblox accounts when the user connects Roblox
 - Account link conflict detection prevents one platform account from linking to multiple LagaLaga users
 - `requireRobloxConnected` middleware protects Roblox-specific endpoints (friends, presence, favorites)
 - Roblox Gate on frontend: `ROBLOX_NOT_CONNECTED` API error triggers redirect to `/me` for Roblox linking
@@ -1377,10 +1440,16 @@ Based on the current architecture, the following extensions are feasible:
 - Rate limiting per user (currently via `@fastify/rate-limit` per route)
 - Database connection pooling
 
-### 12. Observability
+### 13. Observability
 - Distributed tracing (OpenTelemetry)
 - APM integration (Sentry, Datadog)
 - Custom dashboards for session metrics
+
+### 14. ✅ Audit Logging (Implemented)
+- `audit_logs` table: immutable append-only, service role only writes
+- Tracks sensitive actions: account deletion, OAuth token issuance, report submission/escalation
+- Indexed for actor lookups, action filtering, outcome filtering, and failure monitoring
+- Authenticated users can read their own audit log entries
 
 ---
 

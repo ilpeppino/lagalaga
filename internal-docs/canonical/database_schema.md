@@ -2,20 +2,21 @@
 
 This document describes the complete database schema for LagaLaga as deployed on Supabase and replicated for on-premise installations.
 
-> Last updated: 2026-02-27. For the authoritative live schema see `database-schema.md` (generated from Supabase).
+> Last updated: 2026-03-10. For the authoritative live schema see `database-schema.md` (generated from Supabase).
 
 ## Overview
 
-The database consists of 22+ tables organized into several functional areas:
+The database consists of 25+ tables organized into several functional areas:
 - **User Management**: `app_users`, `user_platforms`
-- **Platform Support**: `platforms` (roblox, google, discord, steam)
+- **Platform Support**: `platforms` (roblox, google, apple, discord, steam)
 - **Gaming Sessions**: `games`, `sessions`, `session_participants`, `session_invites`, `session_invited_roblox`
 - **Social Features**: `friendships`, `roblox_friends_cache`, `roblox_friends_cache_legacy`
 - **Caching**: `roblox_experience_cache`, `user_favorites_cache`
-- **Notifications**: `user_push_tokens`
+- **Notifications**: `user_push_tokens`, `user_notification_prefs`, `in_app_notifications`
 - **Gamification**: `user_stats`, `user_achievements`, `user_rankings`, `match_results`, `seasons`, `season_rankings`
 - **Account Management**: `account_deletion_requests`
 - **Safety**: `reports`
+- **Compliance**: `audit_logs`
 
 ## Custom Types (Enums)
 
@@ -63,17 +64,29 @@ Lifecycle status of a safety report.
 
 ### app_users
 
-Stores user accounts linked via Roblox OAuth. This is the primary user identity table.
+Stores user accounts. This is the primary user identity table. Users may sign in via Roblox, Google, or Apple; Roblox fields are nullable for non-Roblox-first users.
 
 ```sql
 CREATE TABLE app_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  roblox_user_id VARCHAR UNIQUE,             -- NULL for Google-first users who haven't connected Roblox
-  roblox_username VARCHAR,                    -- NULL for Google-first users
+  roblox_user_id VARCHAR UNIQUE,             -- NULL for Google/Apple-first users who haven't connected Roblox
+  roblox_username VARCHAR,                    -- NULL for Google/Apple-first users
   roblox_display_name VARCHAR,
   roblox_profile_url TEXT,
   avatar_headshot_url TEXT,        -- Cached Roblox avatar headshot URL
   avatar_cached_at TIMESTAMPTZ,    -- Timestamp when avatar was last cached
+  -- Google identity (denormalized from user_platforms for quick access)
+  google_sub TEXT UNIQUE,
+  google_email TEXT,
+  google_email_verified BOOLEAN NOT NULL DEFAULT false,
+  google_full_name TEXT,
+  -- Apple identity (denormalized from user_platforms for quick access)
+  apple_sub TEXT UNIQUE,
+  apple_email TEXT,
+  apple_email_is_private BOOLEAN NOT NULL DEFAULT false,
+  apple_full_name TEXT,
+  -- Auth provider metadata
+  auth_provider TEXT,              -- 'ROBLOX' | 'GOOGLE' | 'APPLE' (primary sign-in method)
   status TEXT NOT NULL DEFAULT 'ACTIVE',  -- CHECK: ACTIVE | PENDING_DELETION | DELETED
   token_version INTEGER NOT NULL DEFAULT 0, -- Incremented to invalidate all JWTs
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -82,7 +95,7 @@ CREATE TABLE app_users (
 );
 ```
 
-**Note**: `roblox_user_id` and `roblox_username` are nullable as of the Google-first user migration. Users who sign in via Google do not have Roblox fields populated until they connect Roblox via the Me screen. Platform identity (Roblox or Google) is authoritatively tracked in `user_platforms`.
+**Note**: `roblox_user_id` and `roblox_username` are nullable. Google and Apple identity columns are denormalized copies of `user_platforms` data for performance; `user_platforms` remains the authoritative source. Platform identity is managed by `PlatformIdentityService`.
 
 **Indexes:**
 - `app_users_pkey` - Primary key on `id`
@@ -113,6 +126,7 @@ CREATE TABLE platforms (
 **Initial Data:**
 - `roblox` - Roblox platform with deep link `roblox://`
 - `google` - Google platform (used for Google OAuth sign-in)
+- `apple` - Apple platform (used for Sign in with Apple)
 - `discord` - Discord platform (for future use)
 - `steam` - Steam platform (for future use)
 
@@ -142,7 +156,7 @@ CREATE TABLE user_platforms (
   roblox_refresh_token_enc TEXT,     -- Encrypted Roblox OAuth refresh token
   roblox_token_expires_at TIMESTAMPTZ,
   roblox_scope TEXT,
-  metadata JSONB,                    -- Platform-specific metadata (e.g., Google email, email_verified)
+  metadata JSONB,                    -- Platform-specific metadata (e.g., Google/Apple email, email_verified, is_private_email)
 
   PRIMARY KEY (user_id, platform_id),
   FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE,
@@ -151,7 +165,7 @@ CREATE TABLE user_platforms (
 );
 ```
 
-**Supported platforms:** `roblox` (OAuth tokens), `google` (identity metadata: email, email_verified, name, picture)
+**Supported platforms:** `roblox` (OAuth tokens), `google` (identity metadata: email, email_verified, name, picture), `apple` (identity metadata: email, email_verified, is_private_email, given_name, family_name, full_name)
 
 **`PlatformIdentityService`** (backend service) is the authoritative interface for all `user_platforms` reads/writes. It uses a transactional RPC (`link_platform_to_user_tx`) with a fallback upsert, and enforces conflict detection (one platform account cannot be linked to multiple LagaLaga users).
 
@@ -181,6 +195,7 @@ CREATE TABLE games (
   game_name TEXT,
   game_description TEXT,
   thumbnail_url TEXT,
+  thumbnail_cached_at TIMESTAMPTZ,  -- When the thumbnail was last fetched/cached
   max_players INTEGER,
   creator_id BIGINT,
   creator_name TEXT,
@@ -195,6 +210,7 @@ CREATE TABLE games (
 - `idx_games_creator` - Creator lookups
 - `idx_games_canonical_url` - URL lookups
 - `idx_games_thumbnail_url` - Partial index on non-null thumbnails
+- `idx_games_thumbnail_cached_at` - Thumbnail cache staleness checks
 
 **RLS Policies:**
 - Public SELECT for all users
@@ -224,6 +240,7 @@ CREATE TABLE sessions (
   original_input_url TEXT NOT NULL,
   normalized_from TEXT NOT NULL,
   is_ranked BOOLEAN NOT NULL DEFAULT false,
+  archived_at TIMESTAMPTZ,          -- Set when session is archived; excluded from all listing queries
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
 
@@ -245,6 +262,7 @@ CREATE TABLE sessions (
 - `idx_sessions_place_status` - Composite for active/scheduled by game
 - `idx_sessions_status_scheduled` - Composite for active listing
 - `idx_sessions_is_ranked_created_at` - Ranked session queries
+- `idx_sessions_archived_at` - Partial index for archived sessions (archived_at IS NOT NULL)
 
 **RLS Policies:**
 - Public sessions: SELECT by anyone
@@ -724,27 +742,108 @@ Optimized session listing with participant counts and friend filtering.
 CREATE FUNCTION list_sessions_optimized(
   p_status TEXT DEFAULT NULL,
   p_visibility TEXT DEFAULT NULL,
-  p_place_id BIGINT DEFAULT NULL,
+  p_place_id INT DEFAULT NULL,
   p_host_id UUID DEFAULT NULL,
-  p_limit INTEGER DEFAULT 20,
-  p_offset INTEGER DEFAULT 0,
+  p_limit INT DEFAULT 20,
+  p_offset INT DEFAULT 0,
   p_requester_id UUID DEFAULT NULL
 )
 RETURNS TABLE (...)
 ```
 
 **Features:**
+- Excludes archived sessions (`archived_at IS NULL`)
 - Filters by status, visibility, place, and host
-- Enforces friends-only visibility
+- Enforces friends-only visibility (host, accepted friend, or existing participant)
 - Returns denormalized game data
-- Includes participant counts
+- Includes participant counts and total count (via window function)
 - Pagination support
+
+---
+
+### list_user_planned_sessions_optimized
+
+Lists a user's own planned (scheduled/active) sessions, excluding archived ones.
+
+```sql
+CREATE FUNCTION list_user_planned_sessions_optimized(
+  p_user_id UUID,
+  p_limit INT DEFAULT 20,
+  p_offset INT DEFAULT 0
+)
+RETURNS TABLE (...)
+```
+
+**Features:**
+- Returns sessions where `host_id = p_user_id` and `status IN ('scheduled', 'active')`
+- Excludes archived sessions
+- Returns denormalized game data and participant counts
+
+---
+
+### merge_provider_shadow_user_into_roblox_user_tx
+
+Safely merges an Apple/Google-only shadow account into an existing Roblox account when no user activity exists on the source account.
+
+```sql
+CREATE FUNCTION merge_provider_shadow_user_into_roblox_user_tx(
+  p_source_user_id UUID,
+  p_roblox_platform_user_id TEXT
+)
+RETURNS TABLE (merged BOOLEAN, merged_user_id UUID, reason_code TEXT)
+```
+
+**Safety checks:**
+- Source must have no Roblox link
+- Target must have a Roblox link
+- Source must only have apple/google platform links (no other providers)
+- Target must not already have a link for the same provider(s)
+- Source must have zero activity (sessions, participants, friends, reports, stats, etc.)
+
+**On success:** Moves push tokens, notification prefs, and provider links from source to target. Deletes source `app_users` row. Returns `merged=true, reason_code='MERGED'`.
+
+**Reason codes on failure:** `INVALID_INPUT`, `TARGET_ROBLOX_USER_NOT_FOUND`, `ALREADY_LINKED`, `SOURCE_NOT_FOUND`, `TARGET_NOT_FOUND`, `SOURCE_ALREADY_HAS_ROBLOX`, `TARGET_MISSING_ROBLOX`, `SOURCE_HAS_NO_PROVIDER_LINKS`, `SOURCE_HAS_NON_PROVIDER_LINKS`, `TARGET_ALREADY_HAS_PROVIDER_LINK`, `SOURCE_HAS_ACTIVITY`.
+
+---
+
+### audit_logs
+
+Immutable append-only audit trail for sensitive operations. Used for COPPA/GDPR compliance and security monitoring.
+
+```sql
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID REFERENCES app_users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,           -- e.g., 'account.delete_requested', 'oauth.token_issued', 'report.submitted'
+  resource_type TEXT,             -- e.g., 'account', 'oauth_token', 'report', 'session'
+  resource_id TEXT,               -- ID of the affected resource
+  metadata JSONB,                 -- Additional context (deletion_reason, report_category, oauth_provider, etc.)
+  ip_address TEXT,
+  user_agent TEXT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Indexes:**
+- `idx_audit_logs_actor_id` - Actor lookups
+- `idx_audit_logs_action` - Action type filtering
+- `idx_audit_logs_resource_type` - Resource type filtering
+- `idx_audit_logs_created_at` - Time-based ordering (DESC)
+- `idx_audit_logs_outcome` - Outcome filtering
+- `idx_audit_logs_failures` - Partial index for failures (security monitoring)
+
+**RLS Policies:**
+- Authenticated users can SELECT their own logs (`actor_id = auth.uid()`)
+- Service role has full access (INSERT, SELECT, UPDATE)
+- Authenticated users cannot INSERT directly (only service role can write)
 
 ---
 
 ## Migration History
 
-Migrations applied to production (Supabase) as of 2026-02-27:
+Migrations applied to production (Supabase) as of 2026-03-10:
 
 | # | Version | Name |
 |---|---------|------|
@@ -767,7 +866,16 @@ Migrations applied to production (Supabase) as of 2026-02-27:
 | 17 | 20260217203258 | account_deletion |
 | 18 | 20260217221455 | rls_account_deletion_experience_favorites |
 | 19 | 20260220154000 | create_reports_and_safety_rls |
-| 20+ | 20260222–20260227 | google_auth, nullable_roblox_fields, platform_identity_tx_rpc, google_platform_seed (post-2026-02-20 migrations enabling Google OAuth and nullable Roblox fields) |
+| 20 | 20260220190000 | add_sessions_archival_column_and_filter_rpc |
+| 21 | 20260223174000 | track_roblox_experience_cache |
+| 22 | 20260223184500 | add_games_thumbnail_cached_at |
+| 23 | 20260227193000 | google_first_users (nullable roblox fields, google platform seed) |
+| 24 | 20260227211500 | link_platform_identity_tx_rpc |
+| 25 | 20260228120000 | add_apple_platform |
+| 26 | 20260301000000 | create_audit_logs |
+| 27 | 20260302143000 | safe_provider_merge_and_provider_profile_sync |
+| 28 | 20260302145500 | fix_merge_provider_unique_constraint |
+| 29 | 20260302150000 | fix_merge_provider_bool_not_null |
 
 ---
 

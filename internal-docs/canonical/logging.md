@@ -327,66 +327,32 @@ logger.fatal('Database connection lost', { error: err.message });
 
 ### Implementation
 
-**Frontend (Axios Interceptor):**
+**Frontend (`src/lib/api.ts` — custom `ApiClient`):**
+
+The frontend uses a custom `ApiClient` class (not Axios). Correlation IDs are generated per-request and sent via `X-Correlation-ID`. The `X-Request-ID` header from the response is tracked for support tracing.
+
 ```typescript
-import { v4 as uuidv4 } from 'uuid';
-
-axios.interceptors.request.use((config) => {
-  const correlationId = uuidv4();
-  config.headers['X-Correlation-ID'] = correlationId;
-
-  // Store for logging
-  config.metadata = { correlationId };
-
-  return config;
-});
-
-axios.interceptors.response.use(
-  (response) => {
-    const requestId = response.headers['x-request-id'];
-    const correlationId = response.config.metadata?.correlationId;
-
-    logger.debug('API response received', {
-      correlationId,
-      requestId,
-      status: response.status,
-      url: response.config.url,
-    });
-
-    return response;
-  },
-  (error) => {
-    const correlationId = error.config?.metadata?.correlationId;
-    logger.error('API request failed', {
-      correlationId,
-      error: error.message,
-      url: error.config?.url,
-    });
-    throw error;
-  }
-);
+// Simplified example from src/lib/api.ts
+const correlationId = generateCorrelationId(); // UUID
+const headers = {
+  'X-Correlation-ID': correlationId,
+  Authorization: `Bearer ${accessToken}`,
+};
+const response = await fetch(url, { headers });
+const requestId = response.headers.get('X-Request-ID');
+logger.debug('API response received', { correlationId, requestId, status: response.status });
 ```
 
-**Backend (Express Middleware):**
+**Backend (Fastify middleware — `backend/src/middleware/logging.middleware.ts`):**
 ```typescript
-import { v4 as uuidv4 } from 'uuid';
-
-app.use((req, res, next) => {
-  // Get correlation ID from client or generate new one
-  const correlationId = req.headers['x-correlation-id'] || uuidv4();
+// requestLoggingPlugin attaches a per-request child logger with correlationId and requestId.
+// X-Correlation-ID is read from the incoming request (or generated if absent).
+// X-Request-ID is generated server-side and returned in the response header.
+fastify.addHook('onRequest', async (request, reply) => {
+  const correlationId = (request.headers['x-correlation-id'] as string) || uuidv4();
   const requestId = uuidv4();
-
-  // Attach to request for use in handlers
-  req.correlationId = correlationId;
-  req.requestId = requestId;
-
-  // Return request ID to client
-  res.setHeader('X-Request-ID', requestId);
-
-  // Add to logger context
-  req.log = logger.child({ correlationId, requestId });
-
-  next();
+  reply.header('X-Request-ID', requestId);
+  // request.log is Fastify's per-request Pino child with { correlationId, requestId }
 });
 ```
 
@@ -466,78 +432,49 @@ try {
 
 ## 7. Logging Examples
 
-### logRequestStart
+### logRequestStart / logRequestEnd
+
+In the Fastify backend, request lifecycle logging is handled by the `requestLoggingPlugin` (`backend/src/middleware/logging.middleware.ts`). It uses Fastify's `onRequest` and `onResponse`/`onError` hooks:
 
 ```typescript
-// Backend middleware
-export function logRequestStart(req: Request, res: Response, next: NextFunction) {
-  const startTime = Date.now();
+// Simplified — actual implementation uses Fastify hooks
+fastify.addHook('onRequest', async (request) => {
+  request.log.info({
+    method: request.method,
+    url: request.url,
+    userAgent: request.headers['user-agent'],
+    correlationId: request.headers['x-correlation-id'],
+  }, 'Request started');
+});
 
-  req.log.info('Request started', {
-    method: req.method,
-    url: req.url,
-    userAgent: req.headers['user-agent'],
-    ip: req.ip,
-  });
-
-  res.locals.startTime = startTime;
-  next();
-}
-```
-
-### logRequestEnd
-
-```typescript
-// Backend middleware
-export function logRequestEnd(req: Request, res: Response, next: NextFunction) {
-  const originalSend = res.send;
-
-  res.send = function (data: any) {
-    const duration = Date.now() - res.locals.startTime;
-
-    req.log.info('Request completed', {
-      method: req.method,
-      url: req.url,
-      statusCode: res.statusCode,
-      duration,
-      responseSize: data?.length || 0,
-    });
-
-    return originalSend.call(this, data);
-  };
-
-  next();
-}
+fastify.addHook('onResponse', async (request, reply) => {
+  request.log.info({
+    method: request.method,
+    url: request.url,
+    statusCode: reply.statusCode,
+    responseTime: reply.getResponseTime(),
+  }, 'Request completed');
+});
 ```
 
 ### logError
 
 ```typescript
-// Backend error handler
-export function logError(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+// Backend error handler (backend/src/plugins/errorHandler.ts)
+// PII is sanitized before logging via sanitizeObject()
+fastify.setErrorHandler(async (error, request, reply) => {
   const sanitized = sanitizeObject({
-    error: err.message,
-    stack: err.stack,
-    code: err.code,
-    method: req.method,
-    url: req.url,
-    body: req.body,
-    query: req.query,
-    params: req.params,
+    error: error.message,
+    code: error.code,
+    method: request.method,
+    url: request.url,
   });
-
-  req.log.error('Request error', sanitized);
-
-  res.status(err.statusCode || 500).json({
-    error: err.message,
-    requestId: req.requestId,
+  request.log.error(sanitized, 'Request error');
+  reply.status(error.statusCode || 500).send({
+    success: false,
+    error: { code: error.code, message: error.message, requestId: reply.getHeader('X-Request-ID') },
   });
-}
+});
 ```
 
 ### logAuthEvent
@@ -662,44 +599,38 @@ const user = await fetchWithLogging<User>('/api/user/profile');
 ### Complete OAuth Flow Example
 
 ```typescript
-// Frontend OAuth flow with comprehensive logging
-export async function initiateOAuthFlow(provider: string) {
-  const authLogger = logger.withContext({ module: 'oauth', provider });
-  const correlationId = uuidv4();
+// Frontend Roblox OAuth flow with comprehensive logging (src/features/auth/useAuth.tsx)
+export async function initiateRobloxOAuthFlow() {
+  const authLogger = logger.withContext({ module: 'oauth', provider: 'roblox' });
+  const correlationId = generateCorrelationId();
 
   authLogger.info('OAuth flow started', { correlationId });
 
   try {
     // Generate PKCE parameters
     const codeVerifier = generateCodeVerifier();
-    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    const codeChallenge = generateCodeChallenge(codeVerifier);
 
     authLogger.debug('PKCE parameters generated', {
       correlationId,
       codeChallengeMethod: 'S256',
     });
 
-    // Store code verifier (sanitized in logs)
-    await secureStorage.set('codeVerifier', codeVerifier);
+    // Store verifier in ephemeral storage (never logged)
+    await oauthTransientStorage.set({ codeVerifier });
 
-    authLogger.debug('Code verifier stored', { correlationId });
+    authLogger.debug('Code verifier stored in transient storage', { correlationId });
 
-    // Build authorization URL
-    const authUrl = buildAuthUrl(provider, codeChallenge);
+    const { authorizationUrl } = await apiClient.auth.startRobloxAuth(codeChallenge);
 
-    authLogger.info('Redirecting to provider', {
-      correlationId,
-      provider,
-    });
+    authLogger.info('Redirecting to Roblox', { correlationId });
 
-    // Redirect user
-    window.location.href = authUrl;
+    await WebBrowser.openAuthSessionAsync(authorizationUrl);
 
   } catch (error) {
     authLogger.error('OAuth flow failed', {
       correlationId,
-      error: error.message,
-      stack: error.stack,
+      error: (error as Error).message,
     });
     throw error;
   }

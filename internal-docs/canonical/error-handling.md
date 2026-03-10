@@ -99,16 +99,16 @@ Used for authentication failures:
 
 ```typescript
 class SessionError extends AppError {
-  constructor(code: ErrorCode, message: string, details?: Record<string, any>)
-  // statusCode: 401
+  constructor(code: ErrorCode, message: string, statusCode?: number, details?: Record<string, any>)
+  // default statusCode: 400
 }
 ```
 
-Used for session management issues:
-- Session not found
-- Session expired
-- Invalid session data
-- Session refresh failures
+Used for gaming session errors:
+- Session not found (404)
+- Session full (409)
+- User already joined (409)
+- Session access denied (403)
 
 #### ValidationError
 
@@ -227,86 +227,100 @@ Represents network-level failures:
 
 ## Error Codes Reference
 
-All error codes are defined in `shared/errors/codes.ts` and used across backend and frontend.
+All error codes are defined in `shared/errors/codes.ts` and used across backend and frontend. Codes use short symbolic names as the `ErrorCodes` enum key; the string value sent over the wire is the numeric code (e.g., `AUTH_001`).
 
 ### Authentication Errors (AUTH_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `AUTH_INVALID_CREDENTIALS` | Invalid email or password | 401 |
-| `AUTH_TOKEN_EXPIRED` | Authentication token has expired | 401 |
-| `AUTH_TOKEN_INVALID` | Authentication token is malformed or invalid | 401 |
-| `AUTH_MISSING_TOKEN` | No authentication token provided | 401 |
-| `AUTH_INSUFFICIENT_PERMISSIONS` | User lacks required permissions | 403 |
-| `AUTH_ACCOUNT_DISABLED` | User account has been disabled | 403 |
-| `AUTH_EMAIL_NOT_VERIFIED` | Email verification required | 403 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `AUTH_INVALID_CREDENTIALS` | `AUTH_001` | Invalid credentials or code verifier | 401 |
+| `AUTH_TOKEN_EXPIRED` | `AUTH_002` | Authentication token has expired | 401 |
+| `AUTH_INVALID_STATE` | `AUTH_003` | OAuth state is invalid or expired | 401 |
+| `AUTH_OAUTH_FAILED` | `AUTH_004` | OAuth exchange or token validation failed | 401 |
+| `AUTH_UNAUTHORIZED` | `AUTH_005` | No valid authentication token provided | 401 |
+| `AUTH_FORBIDDEN` | `AUTH_006` | Account is pending deletion or unavailable | 403 |
+| `AUTH_TOKEN_REVOKED` | `AUTH_007` | Refresh token has been revoked | 401 |
 
-### Session Errors (SESSION_*)
+### Session (Gaming) Errors (SESSION_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `SESSION_NOT_FOUND` | Session does not exist | 401 |
-| `SESSION_EXPIRED` | Session has expired | 401 |
-| `SESSION_INVALID` | Session data is invalid | 401 |
-| `SESSION_REFRESH_FAILED` | Failed to refresh session | 401 |
-| `SESSION_LIMIT_EXCEEDED` | Too many active sessions | 429 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `SESSION_NOT_FOUND` | `SESSION_001` | Session does not exist | 404 |
+| `SESSION_FULL` | `SESSION_002` | Session has reached max participants | 409 |
+| `SESSION_ALREADY_JOINED` | `SESSION_003` | User has already joined the session | 409 |
+| `SESSION_NOT_ACTIVE` | `SESSION_004` | Session is not in an active state | 409 |
+| `SESSION_CREATE_FAILED` | `SESSION_005` | Failed to create session | 500 |
+| `SESSION_ACCESS_DENIED` | `SESSION_006` | User does not have access to this session | 403 |
 
 ### Validation Errors (VAL_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `VAL_INVALID_EMAIL` | Email format is invalid | 400 |
-| `VAL_INVALID_PASSWORD` | Password does not meet requirements | 400 |
-| `VAL_INVALID_USERNAME` | Username format is invalid | 400 |
-| `VAL_MISSING_FIELD` | Required field is missing | 400 |
-| `VAL_INVALID_FORMAT` | Field format is invalid | 400 |
-| `VAL_OUT_OF_RANGE` | Value is out of acceptable range | 400 |
-| `VAL_INVALID_LENGTH` | Field length is invalid | 400 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `VALIDATION_ERROR` | `VAL_001` | Input validation failed | 400 |
+| `VALIDATION_MISSING_FIELDS` | `VAL_002` | Required field is missing | 400 |
+| `VALIDATION_INVALID_FORMAT` | `VAL_003` | Field format is invalid | 400 |
 
 ### Network Errors (NET_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `NET_CONNECTION_FAILED` | Failed to establish connection | 503 |
-| `NET_TIMEOUT` | Request timeout exceeded | 504 |
-| `NET_OFFLINE` | Device is offline | 503 |
-| `NET_DNS_FAILED` | DNS resolution failed | 503 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `NETWORK_OFFLINE` | `NET_001` | Device is offline | 503 |
+| `NETWORK_TIMEOUT` | `NET_002` | Request timeout exceeded | 504 |
+| `NETWORK_REQUEST_FAILED` | `NET_003` | Network request failed | 503 |
 
 ### Not Found Errors (NOT_FOUND_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `NOT_FOUND_USER` | User not found | 404 |
-| `NOT_FOUND_POST` | Post not found | 404 |
-| `NOT_FOUND_COMMENT` | Comment not found | 404 |
-| `NOT_FOUND_RESOURCE` | Generic resource not found | 404 |
-| `NOT_FOUND_ROUTE` | API route not found | 404 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `NOT_FOUND` | `NOT_FOUND_001` | Generic resource not found | 404 |
+| `NOT_FOUND_INVITE` | `NOT_FOUND_002` | Invite code not found | 404 |
+| `NOT_FOUND_USER` | `NOT_FOUND_003` | User not found | 404 |
 
 ### Rate Limit Errors (RATE_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `RATE_LIMIT_EXCEEDED` | Too many requests | 429 |
-| `RATE_LIMIT_LOGIN_ATTEMPTS` | Too many login attempts | 429 |
-| `RATE_LIMIT_API_CALLS` | API rate limit exceeded | 429 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `RATE_LIMIT_EXCEEDED` | `RATE_001` | Too many requests | 429 |
 
 ### Internal Errors (INT_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `INT_SERVER_ERROR` | Internal server error | 500 |
-| `INT_DATABASE_ERROR` | Database operation failed | 500 |
-| `INT_UNEXPECTED_ERROR` | Unexpected error occurred | 500 |
-| `INT_SERVICE_UNAVAILABLE` | Service temporarily unavailable | 503 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `INTERNAL_ERROR` | `INT_001` | Internal server error | 500 |
+| `INTERNAL_DB_ERROR` | `INT_002` | Database operation failed | 500 |
+| `INTERNAL_EXTERNAL_SERVICE` | `INT_003` | External service (Roblox API, etc.) failed | 502 |
 
 ### Conflict Errors (CONFLICT_*)
 
-| Code | Description | HTTP Status |
-|------|-------------|-------------|
-| `CONFLICT_DUPLICATE_EMAIL` | Email already exists | 409 |
-| `CONFLICT_DUPLICATE_USERNAME` | Username already exists | 409 |
-| `CONFLICT_RESOURCE_EXISTS` | Resource already exists | 409 |
-| `CONFLICT_VERSION_MISMATCH` | Resource version conflict | 409 |
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `CONFLICT` | `CONFLICT_001` | Generic resource conflict | 409 |
+
+### Friend Errors (FRIEND_*)
+
+| Symbolic Key | Wire Value | Description | HTTP Status |
+|---|---|---|---|
+| `FRIEND_SELF_REQUEST` | `FRIEND_001` | Cannot send friend request to yourself | 400 |
+| `FRIEND_ALREADY_EXISTS` | `FRIEND_002` | Friendship already exists | 409 |
+| `FRIEND_REQUEST_EXISTS` | `FRIEND_003` | Friend request already pending | 409 |
+| `FRIEND_BLOCKED` | `FRIEND_004` | User is blocked | 403 |
+| `FRIEND_NOT_FOUND` | `FRIEND_005` | Friendship not found | 404 |
+| `FRIEND_NOT_PENDING` | `FRIEND_006` | Friend request is not in pending state | 409 |
+| `FRIEND_NOT_RECIPIENT` | `FRIEND_007` | Current user is not the request recipient | 403 |
+| `FRIEND_SYNC_FAILED` | `FRIEND_008` | Roblox friends cache sync failed | 502 |
+| `FRIEND_RATE_LIMITED` | `FRIEND_009` | Friends sync rate limited | 429 |
+| `FRIEND_NOT_AUTHORIZED` | `FRIEND_010` | Not authorized for this friendship operation | 403 |
+
+### Account Linking Errors
+
+These codes use string keys (not the `AUTH_*` numeric pattern) since they are domain-specific conflict types.
+
+| Wire Value | Description | HTTP Status |
+|---|---|---|
+| `ACCOUNT_LINK_CONFLICT` | Platform account already linked to another LagaLaga account (generic) | 409 |
+| `CONFLICT_ACCOUNT_PROVIDER` | Platform account linked to a different user (Google/Apple/Roblox) | 409 |
+| `ACCOUNT_LINK_SAME_PROVIDER_DUPLICATE` | This provider account is already linked to this user | 409 |
+| `ACCOUNT_LINK_INVALID_STATE` | OAuth state is invalid or expired during link flow | 401 |
 
 ---
 
@@ -999,5 +1013,5 @@ Integration points:
 
 ---
 
-**Last Updated**: 2026-02-20
-**Version**: 1.0.0
+**Last Updated**: 2026-03-10
+**Version**: 1.1.0

@@ -482,7 +482,7 @@ export class ConsoleMonitoringProvider implements MonitoringProvider {
 To use a different monitoring provider (e.g., Sentry), call `setProvider()` at application startup:
 
 ```typescript
-// backend/src/app.ts
+// backend/src/server.ts (called from buildServer())
 import { monitoring } from '@/shared/monitoring';
 import { SentryMonitoringProvider } from '@/monitoring/sentry-provider';
 
@@ -607,16 +607,16 @@ navigation.addListener('state', (event) => {
 #### HTTP Request Tracking
 
 ```typescript
-// src/services/monitoring/http-tracker.ts
+// HTTP tracking is integrated directly into src/lib/api.ts (ApiClient)
+// The ApiClient records start time, tracks status codes, and calls monitoring breadcrumbs.
 import { monitoring } from '@/shared/monitoring';
-import axios, { AxiosError, AxiosResponse } from 'axios';
 
 export function trackHttpRequest(
   method: string,
   url: string,
   status: number,
   duration: number,
-  error?: AxiosError
+  error?: Error
 ): void {
   monitoring.addBreadcrumb({
     type: 'http',
@@ -627,44 +627,22 @@ export function trackHttpRequest(
       url,
       status,
       duration,
-      error: error ? {
-        message: error.message,
-        code: error.code
-      } : undefined
+      error: error ? { message: error.message } : undefined,
     },
-    level: status >= 400 ? 'error' : 'info'
+    level: status >= 400 ? 'error' : 'info',
   });
 }
 
-// Axios interceptor
-axios.interceptors.request.use((config) => {
-  config.metadata = { startTime: Date.now() };
-  return config;
-});
-
-axios.interceptors.response.use(
-  (response: AxiosResponse) => {
-    const duration = Date.now() - response.config.metadata.startTime;
-    trackHttpRequest(
-      response.config.method?.toUpperCase() || 'GET',
-      response.config.url || '',
-      response.status,
-      duration
-    );
-    return response;
-  },
-  (error: AxiosError) => {
-    const duration = Date.now() - error.config?.metadata?.startTime || 0;
-    trackHttpRequest(
-      error.config?.method?.toUpperCase() || 'GET',
-      error.config?.url || '',
-      error.response?.status || 0,
-      duration,
-      error
-    );
-    throw error;
-  }
-);
+// Called within ApiClient._request() in src/lib/api.ts
+const startTime = Date.now();
+try {
+  const response = await fetch(url, options);
+  trackHttpRequest(method, url, response.status, Date.now() - startTime);
+  return response;
+} catch (error) {
+  trackHttpRequest(method, url, 0, Date.now() - startTime, error as Error);
+  throw error;
+}
 ```
 
 #### User Context Management
@@ -673,38 +651,21 @@ axios.interceptors.response.use(
 // src/services/monitoring/user-context.ts
 import { monitoring } from '@/shared/monitoring';
 
-export function updateUserContext(user: User | null): void {
+export function updateUserContext(user: AppUser | null): void {
   if (user) {
     monitoring.setUser({
       id: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      createdAt: user.createdAt
+      username: user.robloxUsername ?? undefined,
     });
   } else {
     monitoring.setUser(null);
   }
 }
 
-// Usage in auth flow
-export const useAuth = () => {
-  const [user, setUser] = useState<User | null>(null);
-
-  const login = async (credentials: LoginCredentials) => {
-    const authenticatedUser = await authService.login(credentials);
-    setUser(authenticatedUser);
-    updateUserContext(authenticatedUser);
-  };
-
-  const logout = async () => {
-    await authService.logout();
-    setUser(null);
-    updateUserContext(null);
-  };
-
-  return { user, login, logout };
-};
+// Usage in auth flow (src/features/auth/useAuth.tsx)
+// AuthProvider calls updateUserContext on sign-in and sign-out:
+// - On sign-in: updateUserContext(user) sets id, robloxUserId, robloxUsername
+// - On sign-out: updateUserContext(null) clears user context
 ```
 
 ---
@@ -878,7 +839,7 @@ export class DataDogMonitoringProvider implements MonitoringProvider {
 ### Provider Setup at Startup
 
 ```typescript
-// backend/src/app.ts
+// backend/src/server.ts (called from buildServer())
 import { monitoring } from '@/shared/monitoring';
 import { SentryMonitoringProvider } from '@/shared/monitoring/sentry-provider';
 import { ConsoleMonitoringProvider } from '@/monitoring/console-provider';
@@ -901,7 +862,7 @@ initializeMonitoring();
 ```
 
 ```typescript
-// app/_layout.tsx (or src/App.tsx)
+// app/_layout.tsx
 import { monitoring } from '@/shared/monitoring';
 import { SentryMonitoringProvider } from '@/shared/monitoring/sentry-provider';
 import { ConsoleMonitoringProvider } from '@/services/monitoring/console-provider';

@@ -192,6 +192,21 @@ describe('roblox connect routes', () => {
     expect(response.body.error.code).toBe('ACCOUNT_LINK_INVALID_STATE');
   });
 
+  it('returns 400 when redirectUri in state is invalid (buildGoogleAuthRedirectUrl throws ValidationError)', async () => {
+    mockDecodeSignedOAuthState.mockReturnValue({
+      codeVerifier: 'test-verifier',
+      nonce: 'test-nonce',
+      redirectUri: ':::invalid',
+      iat: Date.now(),
+      exp: Date.now() + 600000,
+    });
+
+    const response = await request(app.server)
+      .get('/api/auth/google/callback?code=some-code&state=some-state');
+
+    expect(response.status).toBe(400);
+  });
+
   it('safely merges provider shadow account into existing roblox user and returns replacement tokens', async () => {
     mockRobloxExchangeCode.mockResolvedValue({ access_token: 'roblox-access-token' });
     mockRobloxGetUserInfo.mockResolvedValue({

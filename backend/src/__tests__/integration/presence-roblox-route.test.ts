@@ -61,6 +61,54 @@ describe('GET /api/presence/roblox/users', () => {
 
     await app.close();
   });
+
+  it('returns 400 when more than 50 userIds are provided', async () => {
+    const app = Fastify({ logger: false });
+    (app as any).config = { NODE_ENV: 'test' };
+
+    await app.register(errorHandlerPlugin);
+    await app.register(buildPresenceRoutes({
+      authPreHandler: async (req) => {
+        (req as any).user = { userId: 'viewer-1' };
+      },
+      robloxConnectedPreHandler: async () => {},
+      presenceService: {
+        getPresenceForUsers: jest.fn(async () => ({ available: true, statuses: [] })),
+      } as any,
+    }));
+    await app.ready();
+
+    const ids = Array.from({ length: 51 }, (_, i) => `u${i}`).join(',');
+    const res = await request(app.server).get(`/api/presence/roblox/users?userIds=${ids}`);
+
+    expect(res.status).toBe(400);
+
+    await app.close();
+  });
+
+  it('returns 400 when userIds string exceeds 500 characters', async () => {
+    const app = Fastify({ logger: false });
+    (app as any).config = { NODE_ENV: 'test' };
+
+    await app.register(errorHandlerPlugin);
+    await app.register(buildPresenceRoutes({
+      authPreHandler: async (req) => {
+        (req as any).user = { userId: 'viewer-1' };
+      },
+      robloxConnectedPreHandler: async () => {},
+      presenceService: {
+        getPresenceForUsers: jest.fn(async () => ({ available: true, statuses: [] })),
+      } as any,
+    }));
+    await app.ready();
+
+    const longIds = 'x'.repeat(501);
+    const res = await request(app.server).get(`/api/presence/roblox/users?userIds=${longIds}`);
+
+    expect(res.status).toBe(400);
+
+    await app.close();
+  });
 });
 
 describe('POST /api/roblox/presence', () => {

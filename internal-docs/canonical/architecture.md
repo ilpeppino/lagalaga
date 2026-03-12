@@ -848,7 +848,7 @@ These values are read by the session list screen to filter display.
 **Plugins Registered:**
 1. `fastifyEnv` - Environment variable validation
 2. `requestLoggingPlugin` - Request/response logging
-3. `corsPlugin` - CORS headers
+3. `corsPlugin` - CORS headers (`credentials: true` only when specific origins are configured; wildcard/empty `CORS_ORIGIN` disables credentials)
 4. `authPlugin` - JWT configuration (unused, JWT handled manually)
 5. `errorHandlerPlugin` - Global error handler
 6. `healthCheckPlugin` - `/health` and `/health/detailed` endpoints
@@ -884,7 +884,7 @@ fastify.register(safetyEscalationWebhookRoutes)  // POST /webhooks/safety-escala
 - `POST /auth/roblox/start` - Generate OAuth URL
 - `POST /auth/roblox/callback` - Exchange code for JWT
 - `POST /auth/refresh` - Refresh access token
-- `POST /auth/revoke` - Sign out (revoke token)
+- `POST /auth/revoke` - Sign out; increments `token_version` in DB to invalidate all existing tokens (authenticated)
 - `GET /auth/me` - Get current user with avatar
 
 #### Sessions v2 Routes (`/api/sessions`)
@@ -931,7 +931,7 @@ Feature-flagged by `FEATURE_FRIENDS_ENABLED` environment variable.
 **File**: `backend/src/routes/presence.routes.ts`
 
 - `POST /api/roblox/presence` - Get Roblox presence for up to 50 users by robloxUserIds (authenticated)
-- `GET /api/presence/roblox/users` - Get presence by comma-separated userIds query param (authenticated)
+- `GET /api/presence/roblox/users` - Get presence by comma-separated `userIds` query param (authenticated); max 50 IDs; `userIds` string must not exceed 500 characters
 
 #### Me Routes (`/api/me`)
 **File**: `backend/src/routes/me.routes.ts`
@@ -1186,6 +1186,8 @@ REFRESH_TOKEN_SECRET=different-secret-for-refresh
 REFRESH_TOKEN_EXPIRY=7d           # Default: 7d
 
 # CORS
+# Comma-separated list of allowed origins. Use * or leave empty for development (disables credentials).
+# Production requires explicit origins; wildcard is rejected at startup.
 CORS_ORIGIN=*
 
 # Feature Flags

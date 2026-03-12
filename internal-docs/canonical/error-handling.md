@@ -114,14 +114,13 @@ Used for gaming session errors:
 
 ```typescript
 class ValidationError extends AppError {
-  constructor(
-    code: ErrorCode,
-    message: string,
-    public fieldErrors?: Record<string, string>
-  )
+  constructor(message: string, metadata?: Record<string, unknown>)
   // statusCode: 400
+  // code: VAL_001
 }
 ```
+
+The constructor no longer accepts an explicit `code` parameter — it always uses `VAL_001`. The optional second parameter is `metadata` (not `fieldErrors`).
 
 Used for input validation failures:
 - Invalid field formats

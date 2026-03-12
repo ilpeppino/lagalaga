@@ -22,6 +22,12 @@ const mockGenerateSignedOAuthState = jest.fn<any>();
 const mockVerifySignedOAuthState = jest.fn<any>();
 const mockIsValidCodeVerifier = jest.fn<any>();
 
+jest.unstable_mockModule('../../middleware/authenticate.js', () => ({
+  authenticate: async (request: any) => {
+    request.user = { userId: 'user-1', tokenVersion: 2 };
+  },
+}));
+
 jest.unstable_mockModule('../../services/robloxOAuth.js', () => ({
   RobloxOAuthService: class {
     generateAuthorizationUrl = mockGenerateAuthorizationUrl;
@@ -341,5 +347,26 @@ describe('auth routes', () => {
 
     expect(limitedResponse.status).toBe(429);
     expect(limitedResponse.body?.error?.code).toBe('RATE_001');
+  });
+
+  it('POST /auth/revoke returns 204 and increments token version', async () => {
+    mockIncrementTokenVersion.mockResolvedValue(3);
+
+    const response = await request(app.server)
+      .post('/auth/revoke')
+      .set('Authorization', 'Bearer fake-token');
+
+    expect(response.status).toBe(204);
+    expect(mockIncrementTokenVersion).toHaveBeenCalledWith('user-1', 2);
+  });
+
+  it('POST /auth/revoke returns 500 when incrementTokenVersion fails', async () => {
+    mockIncrementTokenVersion.mockRejectedValue(new Error('db error'));
+
+    const response = await request(app.server)
+      .post('/auth/revoke')
+      .set('Authorization', 'Bearer fake-token');
+
+    expect(response.status).toBe(500);
   });
 });

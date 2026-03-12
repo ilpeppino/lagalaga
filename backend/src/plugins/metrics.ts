@@ -219,9 +219,12 @@ export async function metricsPlugin(fastify: FastifyInstance) {
   const bearerToken = fastify.config.METRICS_BEARER_TOKEN.trim();
 
   async function guardMetrics(request: FastifyRequest, reply: FastifyReply) {
-    // No token configured → endpoint is disabled in all environments
     if (!bearerToken) {
-      return reply.code(404).send({ error: 'Not Found' });
+      // No token configured: hide endpoint in production, allow freely in development
+      if (isProduction) {
+        return reply.code(404).send({ error: 'Not Found' });
+      }
+      return;
     }
 
     const authHeader = request.headers.authorization;
@@ -230,9 +233,7 @@ export async function metricsPlugin(fastify: FastifyInstance) {
       : '';
 
     if (!providedToken || providedToken !== bearerToken) {
-      // Return 404 in production to obscure the endpoint's existence
-      const code = isProduction ? 404 : 401;
-      return reply.code(code).send({ error: code === 404 ? 'Not Found' : 'Unauthorized' });
+      return reply.code(401).send({ error: 'Unauthorized' });
     }
   }
 

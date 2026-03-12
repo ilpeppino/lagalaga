@@ -153,16 +153,12 @@ const config: ExpoConfig = {
             host: "auth",
             pathPrefix: "/google",
           },
-          {
-            scheme: "exp+lagalaga",
-            host: "auth",
-            pathPrefix: "/roblox",
-          },
-          {
-            scheme: "exp+lagalaga",
-            host: "auth",
-            pathPrefix: "/google",
-          },
+          ...(isDevVariant
+            ? [
+                { scheme: "exp+lagalaga", host: "auth", pathPrefix: "/roblox" },
+                { scheme: "exp+lagalaga", host: "auth", pathPrefix: "/google" },
+              ]
+            : []),
         ],
       },
       {

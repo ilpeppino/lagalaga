@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
 import * as Notifications from 'expo-notifications';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import { logger } from '@/src/lib/logger';
 import { monitoring } from '@/src/lib/monitoring';
@@ -85,10 +87,20 @@ function extractProjectId(): string | null {
   return Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId ?? null;
 }
 
+const PUSH_DEVICE_ID_KEY = 'push_device_id';
+
 async function getDeviceId(): Promise<string | undefined> {
   try {
     if (Platform.OS === 'android') {
-      return Application.getAndroidId();
+      // Use a randomly-generated UUID stored in SecureStore rather than
+      // Application.getAndroidId() (a persistent hardware-scoped identifier)
+      // to avoid Google Play Data Safety disclosure requirements.
+      let id = await SecureStore.getItemAsync(PUSH_DEVICE_ID_KEY);
+      if (!id) {
+        id = Crypto.randomUUID();
+        await SecureStore.setItemAsync(PUSH_DEVICE_ID_KEY, id);
+      }
+      return id;
     }
     if (Platform.OS === 'ios') {
       return (await Application.getIosIdForVendorAsync()) ?? undefined;

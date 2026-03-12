@@ -52,3 +52,4 @@ backend/.env.backup-20260210-171928
 # Firebase / Google services
 google-services.json
 GoogleService-Info.plist
+.factory

@@ -2,6 +2,7 @@ const {
   withAppBuildGradle,
   withProjectBuildGradle,
   withGradleProperties,
+  withAndroidManifest,
   createRunOncePlugin,
 } = require("@expo/config-plugins");
 
@@ -65,12 +66,63 @@ function withAndroidNativeBuildFixes(config) {
   config = withAppBuildGradleFixes(config);
   config = withProjectBuildGradleFixes(config);
   config = withGradleParallelDisabled(config);
+  config = withLargeScreenOrientationFixes(config);
   return config;
+}
+
+function appendCsvValue(existing, value) {
+  const parts = (existing || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (!parts.includes(value)) {
+    parts.push(value);
+  }
+  return parts.join(",");
+}
+
+function withLargeScreenOrientationFixes(config) {
+  return withAndroidManifest(config, (configMod) => {
+    const manifest = configMod.modResults.manifest;
+    manifest.$ = manifest.$ || {};
+    if (!manifest.$["xmlns:tools"]) {
+      manifest.$["xmlns:tools"] = "http://schemas.android.com/tools";
+    }
+
+    const application = manifest.application?.[0];
+    if (!application) {
+      return configMod;
+    }
+
+    application.activity = application.activity || [];
+    const activities = application.activity;
+
+    for (const activity of activities) {
+      const activityName = activity?.$?.["android:name"];
+      if (activityName === ".MainActivity" || activityName?.endsWith(".MainActivity")) {
+        delete activity.$["android:screenOrientation"];
+      }
+    }
+
+    const barcodeActivityName = "com.google.mlkit.vision.codescanner.internal.GmsBarcodeScanningDelegateActivity";
+    const existingBarcodeActivity = activities.find(
+      (activity) => activity?.$?.["android:name"] === barcodeActivityName
+    );
+
+    if (existingBarcodeActivity) {
+      existingBarcodeActivity.$["android:screenOrientation"] = "unspecified";
+      existingBarcodeActivity.$["tools:replace"] = appendCsvValue(
+        existingBarcodeActivity.$["tools:replace"],
+        "android:screenOrientation"
+      );
+    }
+
+    return configMod;
+  });
 }
 
 module.exports = createRunOncePlugin(
   withAndroidNativeBuildFixes,
   "withAndroidNativeBuildFixes",
-  "1.0.0"
+  "1.1.0"
 );
-

@@ -9,6 +9,7 @@ const mockGetUserInfo = jest.fn<any>();
 const mockCreateUser = jest.fn<any>();
 const mockGetUserById = jest.fn<any>();
 const mockTouchLastLogin = jest.fn<any>();
+const mockIncrementTokenVersion = jest.fn<any>();
 const mockFindUserIdByPlatform = jest.fn<any>();
 const mockLinkPlatformToUser = jest.fn<any>();
 
@@ -34,6 +35,7 @@ jest.unstable_mockModule('../../services/userService.js', () => ({
     createUser = mockCreateUser;
     getUserById = mockGetUserById;
     touchLastLogin = mockTouchLastLogin;
+    incrementTokenVersion = mockIncrementTokenVersion;
   },
 }));
 
@@ -97,6 +99,7 @@ describe('auth routes', () => {
     mockFindUserIdByPlatform.mockResolvedValue(null);
     mockLinkPlatformToUser.mockResolvedValue(undefined);
     mockTouchLastLogin.mockResolvedValue(undefined);
+    mockIncrementTokenVersion.mockResolvedValue(3);
 
     app = Fastify({ logger: false });
     (app as any).config = buildConfig();
@@ -301,6 +304,13 @@ describe('auth routes', () => {
     });
     expect(mockVerifyRefreshToken).toHaveBeenCalledWith('valid-refresh-token');
     expect(mockGetUserById).toHaveBeenCalledWith('user-1');
+    expect(mockIncrementTokenVersion).toHaveBeenCalledWith('user-1', 2);
+    expect(mockGenerateTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      robloxUserId: '12345',
+      robloxUsername: 'roblox-username',
+      tokenVersion: 3,
+    });
   });
 
   it('POST /auth/refresh returns token expired error for invalid refresh token', async () => {

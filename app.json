@@ -4,7 +4,7 @@
     "slug": "lagalaga",
     "owner": "ilpeppino",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/generated/icon.png",
     "scheme": "lagalaga",
     "userInterfaceStyle": "automatic",

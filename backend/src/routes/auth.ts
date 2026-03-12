@@ -224,12 +224,15 @@ export async function authRoutes(fastify: FastifyInstance) {
         throw new AuthError(ErrorCodes.AUTH_TOKEN_REVOKED, 'Refresh token has been revoked');
       }
 
-      // Generate new tokens
+      // Rotate token version — old refresh token is immediately invalid
+      const nextTokenVersion = await userService.incrementTokenVersion(user.id, user.tokenVersion);
+
+      // Generate new tokens with the updated version
       const tokens = tokenService.generateTokens({
         userId: user.id,
         robloxUserId: user.robloxUserId,
         robloxUsername: user.robloxUsername,
-        tokenVersion: user.tokenVersion,
+        tokenVersion: nextTokenVersion,
       });
 
       return {

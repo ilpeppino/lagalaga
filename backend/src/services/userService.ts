@@ -281,4 +281,24 @@ export class UserService {
       return cachedUrl;
     }
   }
+
+  /**
+   * Atomically increment token_version for a user, invalidating all existing tokens.
+   * Returns the new version number.
+   */
+  async incrementTokenVersion(userId: string, currentVersion: number): Promise<number> {
+    const supabase = getSupabase();
+    const nextVersion = currentVersion + 1;
+
+    const { error } = await supabase
+      .from('app_users')
+      .update({ token_version: nextVersion })
+      .eq('id', userId);
+
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to rotate token version: ${error.message}`);
+    }
+
+    return nextVersion;
+  }
 }

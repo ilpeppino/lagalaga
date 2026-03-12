@@ -218,27 +218,21 @@ export async function metricsPlugin(fastify: FastifyInstance) {
   const isProduction = fastify.config.NODE_ENV === 'production';
   const bearerToken = fastify.config.METRICS_BEARER_TOKEN.trim();
 
-  function isAuthorized(request: FastifyRequest): boolean {
-    if (!bearerToken) {
-      return !isProduction;
-    }
-
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return false;
-    }
-
-    const providedToken = authHeader.slice('Bearer '.length).trim();
-    return providedToken.length > 0 && providedToken === bearerToken;
-  }
-
   async function guardMetrics(request: FastifyRequest, reply: FastifyReply) {
-    if (!bearerToken && isProduction) {
+    // No token configured → endpoint is disabled in all environments
+    if (!bearerToken) {
       return reply.code(404).send({ error: 'Not Found' });
     }
 
-    if (!isAuthorized(request)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
+    const authHeader = request.headers.authorization;
+    const providedToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length).trim()
+      : '';
+
+    if (!providedToken || providedToken !== bearerToken) {
+      // Return 404 in production to obscure the endpoint's existence
+      const code = isProduction ? 404 : 401;
+      return reply.code(code).send({ error: code === 404 ? 'Not Found' : 'Unauthorized' });
     }
   }
 

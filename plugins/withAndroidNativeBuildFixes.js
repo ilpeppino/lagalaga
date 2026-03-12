@@ -1,8 +1,11 @@
+const fs = require("fs");
+const path = require("path");
 const {
   withAppBuildGradle,
   withProjectBuildGradle,
   withGradleProperties,
   withAndroidManifest,
+  withDangerousMod,
   createRunOncePlugin,
 } = require("@expo/config-plugins");
 
@@ -62,11 +65,91 @@ function withGradleParallelDisabled(config) {
   });
 }
 
+const BACKUP_RULES_XML = `<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+  <exclude domain="database" path="."/>
+  <exclude domain="sharedpref" path="."/>
+  <exclude domain="file" path="."/>
+</full-backup-content>
+`;
+
+const DATA_EXTRACTION_RULES_XML = `<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="database" path="."/>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="file" path="."/>
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="database" path="."/>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="file" path="."/>
+  </device-transfer>
+</data-extraction-rules>
+`;
+
+// Permissions injected by Expo/React Native libraries that must not appear in production.
+const BLOCKED_PERMISSIONS = new Set([
+  "android.permission.SYSTEM_ALERT_WINDOW",
+  "android.permission.READ_EXTERNAL_STORAGE",
+  "android.permission.WRITE_EXTERNAL_STORAGE",
+]);
+
+function withManifestPermissionFixes(config) {
+  return withAndroidManifest(config, (configMod) => {
+    const manifest = configMod.modResults.manifest;
+    if (Array.isArray(manifest["uses-permission"])) {
+      manifest["uses-permission"] = manifest["uses-permission"].filter(
+        (entry) => !BLOCKED_PERMISSIONS.has(entry?.$?.["android:name"])
+      );
+    }
+    return configMod;
+  });
+}
+
+function withBackupRules(config) {
+  // Step 1: write the XML resource files
+  config = withDangerousMod(config, [
+    "android",
+    (configMod) => {
+      const xmlDir = path.join(
+        configMod.modRequest.platformProjectRoot,
+        "app",
+        "src",
+        "main",
+        "res",
+        "xml"
+      );
+      fs.mkdirSync(xmlDir, { recursive: true });
+      fs.writeFileSync(path.join(xmlDir, "backup_rules.xml"), BACKUP_RULES_XML);
+      fs.writeFileSync(
+        path.join(xmlDir, "data_extraction_rules.xml"),
+        DATA_EXTRACTION_RULES_XML
+      );
+      return configMod;
+    },
+  ]);
+
+  // Step 2: reference the XML files from the <application> element
+  config = withAndroidManifest(config, (configMod) => {
+    const application = configMod.modResults.manifest.application?.[0];
+    if (application) {
+      application.$["android:fullBackupContent"] = "@xml/backup_rules";
+      application.$["android:dataExtractionRules"] = "@xml/data_extraction_rules";
+    }
+    return configMod;
+  });
+
+  return config;
+}
+
 function withAndroidNativeBuildFixes(config) {
   config = withAppBuildGradleFixes(config);
   config = withProjectBuildGradleFixes(config);
   config = withGradleParallelDisabled(config);
   config = withLargeScreenOrientationFixes(config);
+  config = withManifestPermissionFixes(config);
+  config = withBackupRules(config);
   return config;
 }
 
@@ -124,5 +207,5 @@ function withLargeScreenOrientationFixes(config) {
 module.exports = createRunOncePlugin(
   withAndroidNativeBuildFixes,
   "withAndroidNativeBuildFixes",
-  "1.1.0"
+  "1.2.0"
 );

@@ -17,7 +17,7 @@ const config: ExpoConfig = {
   slug: "lagalaga",
   owner: "ilpeppino",
   version: "1.0.0",
-  orientation: "portrait",
+  orientation: "default",
   icon: "./assets/generated/icon.png",
   scheme: appScheme,
   userInterfaceStyle: "automatic",
@@ -125,6 +125,11 @@ const config: ExpoConfig = {
   },
   android: {
     googleServicesFile: "./google-services.json",
+    permissions: [
+      "android.permission.INTERNET",
+      "android.permission.VIBRATE",
+      "android.permission.POST_NOTIFICATIONS",
+    ],
     adaptiveIcon: {
       backgroundColor: "#1A2A6C",
       foregroundImage: "./assets/generated/adaptive-icon-foreground.png",
@@ -220,7 +225,18 @@ const config: ExpoConfig = {
     typedRoutes: true,
     reactCompiler: true,
   },
-  ...(isDevVariant ? {} : { autolinking: { exclude: ["expo-dev-client"] } }),
+  ...(isDevVariant
+    ? {}
+    : {
+        autolinking: {
+          exclude: [
+            "expo-dev-client",
+            "expo-dev-launcher",
+            "expo-dev-menu",
+            "expo-dev-menu-interface",
+          ],
+        },
+      }),
   extra: {
     router: {},
     eas: {

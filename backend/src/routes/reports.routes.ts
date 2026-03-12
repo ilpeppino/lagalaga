@@ -30,6 +30,12 @@ export function buildReportsRoutes(deps: ReportsRoutesDeps = {}) {
     fastify.post<{ Body: CreateReportBody }>(
       '/api/reports',
       {
+        config: {
+          rateLimit: {
+            max: 5,
+            timeWindow: '1 hour',
+          },
+        },
         preHandler: authPreHandler,
         schema: {
           body: {

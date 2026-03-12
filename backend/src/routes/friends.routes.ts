@@ -69,6 +69,12 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
     }>(
       '/api/friends/request',
       {
+        config: {
+          rateLimit: {
+            max: 10,
+            timeWindow: '1 hour',
+          },
+        },
         preHandler: authPreHandler,
         schema: {
           body: {

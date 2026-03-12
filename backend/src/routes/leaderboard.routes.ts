@@ -15,6 +15,12 @@ export function buildLeaderboardRoutes(deps: LeaderboardRoutesDeps = {}) {
     }>(
       '/api/leaderboard',
       {
+        config: {
+          rateLimit: {
+            max: 20,
+            timeWindow: '1 minute',
+          },
+        },
         schema: {
           querystring: {
             type: 'object',

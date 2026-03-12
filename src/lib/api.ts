@@ -16,6 +16,13 @@ export function notifyRobloxNotConnected(context: { endpoint: string; statusCode
   robloxNotConnectedHandler?.(context);
 }
 
+type AuthFailureHandler = () => void;
+let authFailureHandler: AuthFailureHandler | null = null;
+
+export function setAuthFailureHandler(handler: AuthFailureHandler | null): void {
+  authFailureHandler = handler;
+}
+
 interface AuthResponse {
   accessToken: string;
   refreshToken: string;
@@ -142,6 +149,9 @@ class ApiClient {
         await tokenStorage.setRefreshToken(data.refreshToken);
 
         return data.accessToken;
+      } catch (error) {
+        authFailureHandler?.();
+        throw error;
       } finally {
         this.isRefreshing = false;
         this.refreshPromise = null;
@@ -228,7 +238,6 @@ class ApiClient {
 
         return await retryResponse.json();
       } catch (error) {
-        await tokenStorage.clearTokens();
         throw error;
       }
     }

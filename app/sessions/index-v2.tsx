@@ -477,23 +477,31 @@ export default function SessionsListScreenV2() {
 
   useEffect(() => {
     let cancelled = false;
-    const placeIds = Array.from(
+    const pendingIds = Array.from(
       new Set(
         mergedSessions
           .filter((s) => !s.game.thumbnailUrl && s.game.placeId > 0)
           .map((s) => s.game.placeId)
       )
-    );
+    ).filter((id) => !fallbackThumbnails[id]);
 
-    if (placeIds.length === 0) return;
+    if (pendingIds.length === 0) return;
 
-    placeIds.forEach((placeId) => {
-      if (fallbackThumbnails[placeId]) return;
-      getRobloxGameThumbnail(placeId).then((url) => {
-        if (!url || cancelled) return;
-        setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
-      });
-    });
+    const BATCH_SIZE = 5;
+    const fetchBatched = async () => {
+      for (let i = 0; i < pendingIds.length; i += BATCH_SIZE) {
+        if (cancelled) break;
+        await Promise.all(
+          pendingIds.slice(i, i + BATCH_SIZE).map(async (placeId) => {
+            const url = await getRobloxGameThumbnail(placeId).catch(() => null);
+            if (!url || cancelled) return;
+            setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
+          })
+        );
+      }
+    };
+
+    void fetchBatched();
 
     return () => {
       cancelled = true;

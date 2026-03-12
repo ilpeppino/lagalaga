@@ -102,7 +102,15 @@ export async function buildServer() {
     });
     const intervalMs = Math.max(1, fastify.config.ACCOUNT_PURGE_INTERVAL_MINUTES) * 60 * 1000;
 
+    const PURGE_VOLUME_ALERT_THRESHOLD = 10;
+    let purgeRunning = false;
+
     const runPurge = async () => {
+      if (purgeRunning) {
+        fastify.log.warn('Account deletion purge skipped — previous run still in progress');
+        return;
+      }
+      purgeRunning = true;
       try {
         const result = await accountDeletionService.processDueDeletionRequests();
         if (result.processed > 0 || result.failed > 0) {
@@ -111,11 +119,19 @@ export async function buildServer() {
             'Account deletion purge cycle finished'
           );
         }
+        if (result.processed >= PURGE_VOLUME_ALERT_THRESHOLD) {
+          fastify.log.warn(
+            { processed: result.processed, threshold: PURGE_VOLUME_ALERT_THRESHOLD },
+            'High account deletion volume detected — possible coordinated attack'
+          );
+        }
       } catch (error) {
         fastify.log.error(
           { error: error instanceof Error ? error.message : String(error) },
           'Account deletion purge cycle failed'
         );
+      } finally {
+        purgeRunning = false;
       }
     };
 

@@ -2,7 +2,6 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import * as Linking from 'expo-linking';
@@ -21,7 +20,7 @@ import {
   configureNotificationHandler,
   setupNotificationListeners,
 } from '@/src/features/notifications/notificationHandlers';
-import { setRobloxNotConnectedHandler } from '@/src/lib/api';
+import { setRobloxNotConnectedHandler, setAuthFailureHandler } from '@/src/lib/api';
 import { handleRobloxNotConnectedError } from '@/src/lib/robloxGateController';
 import { shouldRequireRobloxConnection } from '@/src/features/auth/robloxConnectionGate';
 
@@ -105,6 +104,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary level="screen">
         <AuthProvider>
+          <AuthFailureBridge />
           <FavoritesForegroundRefreshBridge />
           <PaperProvider theme={paperTheme}>
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -136,13 +136,25 @@ export default function RootLayout() {
                 ) : null}
               </Stack>
               <RobloxLinkingGuard />
-              <StatusBar style="auto" />
             </ThemeProvider>
           </PaperProvider>
         </AuthProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
+}
+
+function AuthFailureBridge() {
+  const { signOut } = useAuth();
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      signOut().catch(() => {});
+    });
+    return () => {
+      setAuthFailureHandler(null);
+    };
+  }, [signOut]);
+  return null;
 }
 
 function FavoritesForegroundRefreshBridge() {

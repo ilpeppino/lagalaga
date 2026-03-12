@@ -8,6 +8,8 @@ import { generateCodeVerifier, generateCodeChallenge } from '../../lib/pkce';
 import { logger } from '../../lib/logger';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '../../lib/oauthTransientStorage';
 import { warmFavorites } from '../favorites/service';
+import { clearCachedFavorites } from '../favorites/cache';
+import { clearSessionSettings } from '../../lib/sessionSettings';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
 import { API_URL } from '../../lib/runtimeConfig';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -259,6 +261,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    const userId = user?.id;
     try {
       await apiClient.auth.revoke();
     } catch (error) {
@@ -272,6 +275,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // best effort
       }
       await tokenStorage.clearTokens();
+      await clearSessionSettings();
+      if (userId) {
+        await clearCachedFavorites(userId);
+      }
       setUser(null);
     }
   };

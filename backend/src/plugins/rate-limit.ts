@@ -7,7 +7,13 @@ export const rateLimitPlugin = fp(async (fastify: FastifyInstance) => {
     global: true,
     max: 100,
     timeWindow: '15 minutes',
-    keyGenerator: (request) => request.ip,
+    // Run after preHandlers so JWT-verified user IDs are available for authenticated routes.
+    // Unauthenticated routes fall back to IP-based keying.
+    hook: 'preHandler',
+    keyGenerator: (request) => {
+      const userId = (request as typeof request & { user?: { userId?: string } }).user?.userId;
+      return userId ? `user:${userId}` : `ip:${request.ip}`;
+    },
   });
 
   fastify.addHook('onResponse', async (request, reply) => {

@@ -68,6 +68,16 @@ export async function loadSessionSettings(): Promise<SessionSettings> {
   }
 }
 
+export async function clearSessionSettings(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(SESSION_SETTINGS_STORAGE_KEY);
+  } catch (error) {
+    logger.warn('Failed to clear session settings', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function saveSessionSettings(partial: Partial<SessionSettings>): Promise<SessionSettings> {
   let current = DEFAULT_SESSION_SETTINGS;
 

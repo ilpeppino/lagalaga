@@ -910,36 +910,19 @@ export class SessionServiceV2 {
       return 0;
     }
 
-    // Fetch sessions to verify ownership
-    const { data: sessions, error: fetchError } = await supabase
-      .from('sessions')
-      .select('id, host_id')
-      .in('id', sessionIds);
-
-    if (fetchError) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to fetch sessions: ${fetchError.message}`);
-    }
-
-    // Filter to only sessions hosted by the user
-    const validSessionIds = (sessions || [])
-      .filter((session: any) => session.host_id === userId)
-      .map((session: any) => session.id);
-
-    if (validSessionIds.length === 0) {
-      return 0;
-    }
-
-    // Soft delete by updating status to 'cancelled'
-    const { error: updateError } = await supabase
+    // Atomically soft-delete only sessions owned by this user — eliminates TOCTOU race
+    const { data: updated, error: updateError } = await supabase
       .from('sessions')
       .update({ status: 'cancelled' })
-      .in('id', validSessionIds);
+      .in('id', sessionIds)
+      .eq('host_id', userId)
+      .select('id');
 
     if (updateError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to delete sessions: ${updateError.message}`);
     }
 
-    return validSessionIds.length;
+    return (updated ?? []).length;
   }
 
   /**

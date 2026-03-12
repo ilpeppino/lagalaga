@@ -35,6 +35,12 @@ export function buildAccountRoutes(deps: AccountRoutesDeps = {}) {
     }>(
       '/deletion-request',
       {
+        config: {
+          rateLimit: {
+            max: 5,
+            timeWindow: '1 hour',
+          },
+        },
         preHandler: authPreHandler,
         schema: {
           body: {

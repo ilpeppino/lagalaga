@@ -6,7 +6,7 @@
  * Opens from SessionLobbyScreen.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -24,10 +24,8 @@ import { useFriends } from '@/src/features/friends/useFriends';
 import { useAuth } from '@/src/features/auth/useAuth';
 import type { RobloxFriend, RobloxFriendPresence } from '@/src/features/sessions/types-v2';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import { useEffect, useRef } from 'react';
 
 export default function FriendPickerScreen() {
-  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -37,7 +35,6 @@ export default function FriendPickerScreen() {
   const {
     friends,
     isLoading,
-    isRefreshing,
     robloxNotConnected,
   } = useFriends(user?.id);
 

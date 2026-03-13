@@ -268,7 +268,7 @@ export function LaunchProgressPanel({ session, userId, onConfirmed, onStuck }: P
           <ActivityIndicator size="small" color="#007AFF" />
           <View style={styles.phaseText}>
             <ThemedText type="bodyLarge" style={{ color: '#007AFF', fontWeight: '600' }}>
-              Checking if you're in…
+              Checking if you&apos;re in…
             </ThemedText>
             <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366">
               This usually takes a few seconds
@@ -282,10 +282,10 @@ export function LaunchProgressPanel({ session, userId, onConfirmed, onStuck }: P
           <MaterialIcons name="check-circle" size={28} color="#34C759" />
           <View style={styles.phaseText}>
             <ThemedText type="bodyLarge" style={{ color: '#34C759', fontWeight: '700' }}>
-              You're in!
+              You&apos;re in!
             </ThemedText>
             <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366">
-              Your squad can see you're in game
+              Your squad can see you&apos;re in game
             </ThemedText>
           </View>
         </View>
@@ -297,7 +297,7 @@ export function LaunchProgressPanel({ session, userId, onConfirmed, onStuck }: P
             Still joining?
           </ThemedText>
           <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366" style={styles.recoveryHint}>
-            Roblox can take a moment. Tap when you're in, or try launching again.
+            Roblox can take a moment. Tap when you&apos;re in, or try launching again.
           </ThemedText>
           <View style={styles.recoveryActions}>
             <Button

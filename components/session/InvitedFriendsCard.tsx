@@ -2,7 +2,7 @@ import { View, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { SessionParticipant, ParticipantHandoffState } from '@/src/features/sessions/types-v2';
+import type { ParticipantHandoffState } from '@/src/features/sessions/types-v2';
 
 function stateLabel(state: string, handoffState?: ParticipantHandoffState | null): string {
   if (handoffState === 'confirmed_in_game') return 'In game';

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FlatList, SectionList, View, StyleSheet } from 'react-native';
+import { SectionList, View, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { FriendInviteRow } from './FriendInviteRow';
 import type { RobloxFriend } from '@/src/features/sessions/types-v2';
@@ -44,7 +44,7 @@ export function VirtualizedFriendList({ friends, invitedIds, onInvite, searchQue
 
     const online = filtered.filter((f) => f.presence?.userPresenceType === 1);
     const inGame = filtered.filter((f) => f.presence?.userPresenceType === 2 || f.presence?.userPresenceType === 3);
-    const offline = filtered.filter((f) => !f.presence?.userPresenceType || f.presence.userPresenceType === 0);
+    const offline = filtered.filter((f) => !f.presence || f.presence.userPresenceType === 0);
 
     const sections: Section[] = [];
     if (online.length > 0) sections.push({ title: 'ONLINE', data: online });

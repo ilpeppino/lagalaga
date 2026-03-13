@@ -107,7 +107,7 @@ export function useSmartInviteSuggestions({
       if (friends.length > 0) {
         void fetchPresence();
       }
-    }, [fetchPresence])
+    }, [fetchPresence, friends.length])
   );
 
   const suggestions = useMemo<SuggestedFriend[]>(() => {

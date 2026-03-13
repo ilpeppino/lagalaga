@@ -10,7 +10,7 @@
  * Friends, advanced options, and scheduling moved to the lobby screen.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,

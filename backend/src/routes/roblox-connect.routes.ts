@@ -16,7 +16,7 @@ import {
   generateCodeChallenge,
   decodeSignedOAuthState,
 } from '../utils/crypto.js';
-import { AppError, AuthError, ErrorCodes } from '../utils/errors.js';
+import { AppError, AuthError, ErrorCodes, ValidationError } from '../utils/errors.js';
 import { metrics } from '../plugins/metrics.js';
 
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -54,10 +54,8 @@ function buildGoogleAuthRedirectUrl(
     const url = new URL(baseUri);
     appendParams(url);
     return url.toString();
-  } catch {
-    const fallback = new URL(DEFAULT_DEEP_LINK_REDIRECT_URI);
-    appendParams(fallback);
-    return fallback.toString();
+  } catch (err) {
+    throw new ValidationError(`Invalid redirect URI: ${baseUri}`, { cause: err });
   }
 }
 

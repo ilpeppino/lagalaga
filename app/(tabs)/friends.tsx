@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,9 +25,33 @@ interface FriendsPayload {
   };
 }
 
+type FriendItem = NonNullable<FriendsPayload['lagalaFriends']>[number];
+
 function displayName(display?: string | null, username?: string | null): string {
   return display || username || 'Unknown user';
 }
+
+const FriendRow = memo(function FriendRow({ item }: { item: FriendItem }) {
+  return (
+    <ThemedText>{displayName(item.robloxDisplayName, item.robloxUsername)}</ThemedText>
+  );
+});
+
+interface SuggestionRowProps {
+  user: { userId: string; robloxDisplayName?: string | null; robloxUsername?: string | null };
+  onSendRequest: (userId: string) => void;
+}
+
+const SuggestionRow = memo(function SuggestionRow({ user, onSendRequest }: SuggestionRowProps) {
+  return (
+    <View style={styles.row}>
+      <ThemedText style={styles.rowText}>{displayName(user.robloxDisplayName, user.robloxUsername)}</ThemedText>
+      <Pressable style={styles.button} onPress={() => onSendRequest(user.userId)}>
+        <ThemedText style={styles.buttonText}>Add</ThemedText>
+      </Pressable>
+    </View>
+  );
+});
 
 export default function FriendsTabScreen() {
   const { user } = useAuth();
@@ -91,60 +115,60 @@ export default function FriendsTabScreen() {
     );
   }
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
-    >
+  const friends = data?.lagalaFriends ?? [];
+  const suggestions = (data?.robloxSuggestions?.onApp ?? []).slice(0, 20);
+
+  const listHeader = (
+    <>
       <ThemedText type="title">Friends</ThemedText>
 
-      <>
-          <ThemedView style={styles.section}>
-            <ThemedText type="subtitle">Requests</ThemedText>
-            <ThemedText>Incoming: {data?.requests?.incoming?.length ?? 0}</ThemedText>
-            <ThemedText>Outgoing: {data?.requests?.outgoing?.length ?? 0}</ThemedText>
-          </ThemedView>
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle">Requests</ThemedText>
+        <ThemedText>Incoming: {data?.requests?.incoming?.length ?? 0}</ThemedText>
+        <ThemedText>Outgoing: {data?.requests?.outgoing?.length ?? 0}</ThemedText>
+      </ThemedView>
 
-          <ThemedView style={styles.section}>
-            <SyncedAtBadge
-              label="LagaLaga Friends"
-              syncedAt={syncedAt}
-              isStale={isStale}
-              isRefreshing={refreshing || isRefreshingFriends}
-              onRefresh={() => { void onRefresh(); }}
-              disabled={loading || refreshing || isRefreshingFriends}
-            />
-            {(data?.lagalaFriends ?? []).length === 0 ? (
-              <ThemedText>No friends yet.</ThemedText>
-            ) : (
-              (data?.lagalaFriends ?? []).map((friend) => (
-                <ThemedText key={friend.friendshipId}>
-                  {displayName(friend.robloxDisplayName, friend.robloxUsername)}
-                </ThemedText>
-              ))
-            )}
-          </ThemedView>
+      <ThemedView style={styles.section}>
+        <SyncedAtBadge
+          label="LagaLaga Friends"
+          syncedAt={syncedAt}
+          isStale={isStale}
+          isRefreshing={refreshing || isRefreshingFriends}
+          onRefresh={() => { void onRefresh(); }}
+          disabled={loading || refreshing || isRefreshingFriends}
+        />
+        {friends.length === 0 && <ThemedText>No friends yet.</ThemedText>}
+      </ThemedView>
+    </>
+  );
 
-          <ThemedView style={styles.section}>
-            <ThemedText type="subtitle">Roblox Suggestions</ThemedText>
-            {robloxNotConnected ? (
-              <ThemedText>Connect Roblox to sync friends.</ThemedText>
-            ) : (
-              <>
-                {(data?.robloxSuggestions?.onApp ?? []).slice(0, 20).map((user) => (
-                  <View key={user.userId} style={styles.row}>
-                    <ThemedText style={styles.rowText}>{displayName(user.robloxDisplayName, user.robloxUsername)}</ThemedText>
-                    <Pressable style={styles.button} onPress={() => void sendFriendRequest(user.userId)}>
-                      <ThemedText style={styles.buttonText}>Add</ThemedText>
-                    </Pressable>
-                  </View>
-                ))}
-              </>
-            )}
-          </ThemedView>
-      </>
-    </ScrollView>
+  const listFooter = (
+    <ThemedView style={styles.section}>
+      <ThemedText type="subtitle">Roblox Suggestions</ThemedText>
+      {robloxNotConnected ? (
+        <ThemedText>Connect Roblox to sync friends.</ThemedText>
+      ) : (
+        suggestions.map((suggUser) => (
+          <SuggestionRow key={suggUser.userId} user={suggUser} onSendRequest={sendFriendRequest} />
+        ))
+      )}
+    </ThemedView>
+  );
+
+  return (
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      data={friends}
+      keyExtractor={(item) => item.friendshipId}
+      renderItem={({ item }) => <FriendRow item={item} />}
+      initialNumToRender={15}
+      maxToRenderPerBatch={10}
+      windowSize={5}
+      ListHeaderComponent={listHeader}
+      ListFooterComponent={listFooter}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
+    />
   );
 }
 

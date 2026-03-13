@@ -15,17 +15,18 @@ export async function corsPlugin(fastify: FastifyInstance) {
     );
   }
 
-  const originConfig =
-    configuredOrigins.length === 0
-      ? true
-      : hasWildcardOrigin
-        ? true
-        : configuredOrigins.length === 1
-          ? configuredOrigins[0]
-          : configuredOrigins;
+  const isWildcard = configuredOrigins.length === 0 || hasWildcardOrigin;
+
+  const originConfig = isWildcard
+    ? true
+    : configuredOrigins.length === 1
+      ? configuredOrigins[0]
+      : configuredOrigins;
 
   await fastify.register(cors, {
     origin: originConfig,
-    credentials: true,
+    // Never combine credentials:true with a wildcard origin — browsers reject it
+    // and it would allow cross-site credential-bearing requests from any domain.
+    credentials: !isWildcard,
   });
 }

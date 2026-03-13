@@ -246,13 +246,12 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /auth/revoke
-   * Sign out (in production, blacklist token)
+   * Sign out — increments token_version to invalidate all existing tokens
    */
   fastify.post('/revoke', {
     preHandler: authenticate,
-  }, async (_request, reply) => {
-    // In production, add token to blacklist (Redis)
-    // For now, just return success
+  }, async (request, reply) => {
+    await userService.incrementTokenVersion(request.user.userId, request.user.tokenVersion ?? 0);
     reply.status(204).send();
   });
 

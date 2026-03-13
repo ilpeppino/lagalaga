@@ -62,7 +62,7 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
           type: 'object',
           required: ['userIds'],
           properties: {
-            userIds: { type: 'string' },
+            userIds: { type: 'string', maxLength: 500 },
           },
         },
       },
@@ -71,6 +71,10 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
+
+      if (userIds.length > 50) {
+        return reply.status(400).send({ error: 'Too many user IDs (max 50)' });
+      }
 
       const data = await presenceService.getPresenceForUsers(request.user.userId, userIds);
 

@@ -204,8 +204,19 @@ class ApiClient {
       response.status
     );
 
-    // Handle 401 - try to refresh token
+    // Handle 401 - try to refresh token only when we actually have one.
     if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
+      const refreshToken = await tokenStorage.getRefreshToken();
+      if (!refreshToken) {
+        const apiError = await parseApiError(response);
+        logger.warn('Skipping token refresh on 401 because no refresh token is available', {
+          endpoint,
+          correlationId,
+          code: apiError.code,
+        });
+        throw apiError;
+      }
+
       try {
         await this.refreshAccessToken();
         // Retry the request with new token
@@ -298,6 +309,10 @@ class ApiClient {
     }
 
     if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
+      const refreshToken = await tokenStorage.getRefreshToken();
+      if (!refreshToken) {
+        throw await parseApiError(response);
+      }
       try {
         await this.refreshAccessToken();
         const retryHeaders: Record<string, string> = {

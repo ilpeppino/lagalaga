@@ -16,6 +16,39 @@ import { monitoring } from '@/src/lib/monitoring';
 import { parseGoogleCallbackPayload } from '@/src/features/auth/oauthCallback';
 
 const processedGoogleCallbackKeys = new Set<string>();
+const inFlightGoogleCallbackKeys = new Map<string, Promise<void>>();
+const CALLBACK_STEP_TIMEOUT_MS = 15000;
+const CALLBACK_TOTAL_TIMEOUT_MS = 45000;
+const CALLBACK_WATCHDOG_TIMEOUT_MS = 60000;
+
+function timeoutError(stage: string): Error {
+  const error = new Error(`Google callback timeout at stage: ${stage}`);
+  error.name = 'GoogleCallbackTimeoutError';
+  return error;
+}
+
+async function withTimeout<T>(promise: Promise<T>, stage: string, timeoutMs = CALLBACK_STEP_TIMEOUT_MS): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(timeoutError(stage)), timeoutMs);
+    }),
+  ]);
+}
+
+function emitNativeAuthLog(level: 'info' | 'warn' | 'error', message: string, data?: Record<string, unknown>) {
+  const payload = data ? ` ${JSON.stringify(data)}` : '';
+  const line = `[GoogleAuthCallback] ${message}${payload}`;
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(line);
+    return;
+  }
+  console.log(line);
+}
 
 export default function GoogleCallback() {
   const router = useRouter();
@@ -32,6 +65,7 @@ export default function GoogleCallback() {
   const { reloadUser } = useAuth();
   const { handleError } = useErrorHandler();
   const [fatalMessage, setFatalMessage] = useState<string | null>(null);
+  const [statusLabel, setStatusLabel] = useState('Completing sign in...');
   const normalizeParam = (value: string | string[] | undefined): string | undefined => {
     if (Array.isArray(value)) {
       return value[0];
@@ -54,9 +88,11 @@ export default function GoogleCallback() {
   const refreshToken = directRefreshToken ?? parsedPayload?.refreshToken;
 
   const handleCallback = useCallback(async () => {
+    const startedAt = Date.now();
     const callbackKey = `${error ?? ''}|${errorCode ?? ''}|${code ?? ''}|${state ?? ''}|${accessToken ?? ''}|${refreshToken ?? ''}`;
-    if (processedGoogleCallbackKeys.has(callbackKey)) {
-      logger.warn('Skipping duplicate Google OAuth callback processing', {
+    const existingInFlight = inFlightGoogleCallbackKeys.get(callbackKey);
+    if (existingInFlight) {
+      logger.warn('Duplicate Google OAuth callback detected; waiting for in-flight handler', {
         hasCode: !!code,
         hasState: !!state,
         hasError: !!error,
@@ -64,11 +100,45 @@ export default function GoogleCallback() {
         hasAccessToken: !!accessToken,
         hasRefreshToken: !!refreshToken,
       });
+      emitNativeAuthLog('warn', 'duplicate_callback_waiting_for_inflight');
+      await withTimeout(existingInFlight, 'await_existing_callback', 10000);
       return;
     }
-    processedGoogleCallbackKeys.add(callbackKey);
+    if (processedGoogleCallbackKeys.has(callbackKey)) {
+      logger.warn('Duplicate Google OAuth callback detected after completion; redirecting to sign-in', {
+        hasCode: !!code,
+        hasState: !!state,
+        hasError: !!error,
+        hasErrorCode: !!errorCode,
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+      });
+      emitNativeAuthLog('warn', 'duplicate_callback_after_completion_redirect_signin');
+      router.replace('/auth/sign-in');
+      return;
+    }
 
-    try {
+    const flow = (async () => {
+      try {
+      monitoring.addBreadcrumb({
+        category: 'info',
+        message: 'google_callback_received',
+        level: 'info',
+        data: {
+          hasCode: Boolean(code),
+          hasState: Boolean(state),
+          hasAccessToken: Boolean(accessToken),
+          hasRefreshToken: Boolean(refreshToken),
+          hasError: Boolean(error || errorCode),
+        },
+      });
+      emitNativeAuthLog('info', 'callback_received', {
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+        hasAccessToken: Boolean(accessToken),
+        hasRefreshToken: Boolean(refreshToken),
+      });
+
       if (error || errorCode) {
         const callbackError = new ApiError({
           code: errorCode || 'AUTH_004',
@@ -84,22 +154,47 @@ export default function GoogleCallback() {
           hasProviderError: Boolean(error),
           errorCode: errorCode ?? null,
         });
+        emitNativeAuthLog('error', 'provider_error', {
+          errorCode: errorCode ?? null,
+          error: error ?? null,
+        });
         return;
       }
 
       if (accessToken && refreshToken) {
-        await tokenStorage.setToken(accessToken);
-        await tokenStorage.setRefreshToken(refreshToken);
+        setStatusLabel('Finalizing Google sign-in...');
+        await withTimeout(tokenStorage.setToken(accessToken), 'persist_access_token');
+        await withTimeout(tokenStorage.setRefreshToken(refreshToken), 'persist_refresh_token');
+        monitoring.addBreadcrumb({
+          category: 'info',
+          message: 'google_callback_token_persistence_succeeded',
+          level: 'info',
+          data: { source: 'deep_link_tokens' },
+        });
         logger.info('Google callback token persistence succeeded', {
           source: 'deep_link_tokens',
         });
+        emitNativeAuthLog('info', 'token_persisted', { source: 'deep_link_tokens' });
       } else if (code && state) {
-        const response = await apiClient.auth.completeGoogleAuth(code, state);
-        await tokenStorage.setToken(response.accessToken);
-        await tokenStorage.setRefreshToken(response.refreshToken);
+        setStatusLabel('Exchanging Google callback...');
+        emitNativeAuthLog('info', 'exchange_started');
+        const response = await withTimeout(
+          apiClient.auth.completeGoogleAuth(code, state),
+          'exchange_google_callback'
+        );
+        setStatusLabel('Saving session...');
+        await withTimeout(tokenStorage.setToken(response.accessToken), 'persist_access_token');
+        await withTimeout(tokenStorage.setRefreshToken(response.refreshToken), 'persist_refresh_token');
+        monitoring.addBreadcrumb({
+          category: 'info',
+          message: 'google_callback_token_persistence_succeeded',
+          level: 'info',
+          data: { source: 'backend_exchange' },
+        });
         logger.info('Google callback token persistence succeeded', {
           source: 'backend_exchange',
         });
+        emitNativeAuthLog('info', 'token_persisted', { source: 'backend_exchange' });
       } else {
         logger.error('Missing callback credentials for Google sign-in completion');
         const missingPayloadMessage = handleError(
@@ -108,13 +203,28 @@ export default function GoogleCallback() {
         );
         setFatalMessage(missingPayloadMessage);
         monitoring.captureMessage('Google callback missing credentials', 'warning');
+        emitNativeAuthLog('error', 'missing_callback_credentials');
         return;
       }
 
-      const user = await reloadUser({
-        reason: 'google_sign_in_callback',
-        noCache: true,
+      if (Date.now() - startedAt > CALLBACK_TOTAL_TIMEOUT_MS) {
+        throw timeoutError('overall_callback_flow');
+      }
+
+      setStatusLabel('Loading your account...');
+      emitNativeAuthLog('info', 'bootstrap_started');
+      monitoring.addBreadcrumb({
+        category: 'info',
+        message: 'google_callback_bootstrap_started',
+        level: 'info',
       });
+      const user = await withTimeout(
+        reloadUser({
+          reason: 'google_sign_in_callback',
+          noCache: true,
+        }),
+        'bootstrap_reload_user'
+      );
       if (!user) {
         const bootstrapError = new ApiError({
           code: 'AUTH_005',
@@ -125,12 +235,23 @@ export default function GoogleCallback() {
       }
       const requiresRobloxConnect = shouldRequireRobloxConnection(user);
       const nextRoute = getPostLoginRoute(!requiresRobloxConnect);
+      monitoring.addBreadcrumb({
+        category: 'info',
+        message: 'google_callback_bootstrap_succeeded',
+        level: 'info',
+        data: {
+          nextRoute,
+          robloxConnected: !requiresRobloxConnect,
+        },
+      });
       logger.info('Final routing decision after Google sign-in', {
         nextRoute,
         reason: requiresRobloxConnect ? 'roblox_not_connected' : 'roblox_connected',
       });
+      emitNativeAuthLog('info', 'bootstrap_succeeded', { nextRoute });
       router.replace(nextRoute);
-    } catch (callbackError) {
+      processedGoogleCallbackKeys.add(callbackKey);
+      } catch (callbackError) {
       const conflictResolution = resolveAccountLinkConflict(callbackError, 'google');
       if (conflictResolution.handled) {
         Alert.alert(conflictResolution.title, conflictResolution.message, [
@@ -153,16 +274,34 @@ export default function GoogleCallback() {
       logger.error('Failed to complete Google OAuth flow', {
         error: callbackError instanceof Error ? callbackError.message : String(callbackError),
       });
+      monitoring.addBreadcrumb({
+        category: 'info',
+        message: 'google_callback_failed',
+        level: 'error',
+        data: {
+          errorName: callbackError instanceof Error ? callbackError.name : 'Unknown',
+          isAuthError: isApiError(callbackError) && (callbackError.statusCode === 401 || callbackError.statusCode === 403),
+        },
+      });
       monitoring.captureMessage('Google callback completion failed', 'error');
       const errorMessage = handleError(callbackError, {
         fallbackMessage: 'Google sign-in failed. Please try again.',
+      });
+      emitNativeAuthLog('error', 'callback_failed', {
+        error: callbackError instanceof Error ? callbackError.message : String(callbackError),
       });
       if (isApiError(callbackError) && (callbackError.statusCode === 401 || callbackError.statusCode === 403)) {
         router.replace('/auth/sign-in');
         return;
       }
       setFatalMessage(errorMessage);
-    }
+      } finally {
+        inFlightGoogleCallbackKeys.delete(callbackKey);
+      }
+    })();
+
+    inFlightGoogleCallbackKeys.set(callbackKey, flow);
+    await flow;
   }, [accessToken, code, error, errorCode, handleError, refreshToken, reloadUser, router, state]);
 
   useEffect(() => {
@@ -177,6 +316,23 @@ export default function GoogleCallback() {
     });
     void handleCallback();
   }, [accessToken, callbackUrl, code, error, errorCode, handleCallback, refreshToken, state]);
+
+  useEffect(() => {
+    if (fatalMessage) {
+      return;
+    }
+    const watchdog = setTimeout(() => {
+      const message = 'Google sign-in took too long. Please try again.';
+      setFatalMessage(message);
+      logger.error('Google callback watchdog timeout reached', {
+        timeoutMs: CALLBACK_WATCHDOG_TIMEOUT_MS,
+      });
+      emitNativeAuthLog('error', 'watchdog_timeout', { timeoutMs: CALLBACK_WATCHDOG_TIMEOUT_MS });
+      monitoring.captureMessage('Google callback watchdog timeout', 'error');
+    }, CALLBACK_WATCHDOG_TIMEOUT_MS);
+
+    return () => clearTimeout(watchdog);
+  }, [fatalMessage]);
 
   if (fatalMessage) {
     return (
@@ -198,7 +354,7 @@ export default function GoogleCallback() {
 
   return (
     <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-      <LagaLoadingSpinner size={56} label="Completing sign in..." />
+      <LagaLoadingSpinner size={56} label={statusLabel} />
     </View>
   );
 }

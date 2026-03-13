@@ -1,8 +1,27 @@
 import Fastify from 'fastify';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockCompleteGoogleOAuth = jest.fn<any>();
+const mockGoogleGenerateAuthorizationUrl = jest.fn<
+  (input: { state: string; codeChallenge: string; nonce: string }) => Promise<string>
+>();
+
+const mockCompleteGoogleOAuth = jest.fn<
+  (
+    input: { code: string; state: string },
+    deps: unknown
+  ) => Promise<{
+    accessToken: string;
+    refreshToken: string;
+    redirectUri: string;
+    user: {
+      id: string;
+      robloxUserId: string | null;
+      robloxUsername: string | null;
+      robloxDisplayName: string | null;
+    };
+  }>
+>();
 
 jest.unstable_mockModule('../../services/robloxOAuth.js', () => ({
   RobloxOAuthService: class {
@@ -20,7 +39,7 @@ jest.unstable_mockModule('../../services/roblox-connection.service.js', () => ({
 
 jest.unstable_mockModule('../../services/googleOAuth.js', () => ({
   GoogleOAuthService: class {
-    generateAuthorizationUrl = jest.fn();
+    generateAuthorizationUrl = mockGoogleGenerateAuthorizationUrl;
     exchangeCode = jest.fn();
     validateIdToken = jest.fn();
   },
@@ -63,6 +82,9 @@ describe('google callback shared completion usage', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockGoogleGenerateAuthorizationUrl.mockImplementation(async ({ state }) => {
+      return `https://accounts.google.com/o/oauth2/v2/auth?state=${encodeURIComponent(state)}`;
+    });
     mockCompleteGoogleOAuth.mockResolvedValue({
       accessToken: 'shared-access-token',
       refreshToken: 'shared-refresh-token',
@@ -106,14 +128,16 @@ describe('google callback shared completion usage', () => {
       .get('/api/auth/google/start')
       .query({ redirectUri: 'lagalaga://auth/google' });
     const state = new URL(start.body.url).searchParams.get('state');
+    expect(state).toBeTruthy();
+    const callbackState = state as string;
 
     const response = await request(app.server)
       .get('/api/auth/google/callback')
-      .query({ code: 'oauth-code', state });
+      .query({ code: 'oauth-code', state: callbackState });
 
     expect(response.status).toBe(302);
     expect(mockCompleteGoogleOAuth).toHaveBeenCalledWith(
-      { code: 'oauth-code', state },
+      { code: 'oauth-code', state: callbackState },
       expect.objectContaining({
         jwtSecret: 'test-jwt-secret',
       })

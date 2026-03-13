@@ -292,23 +292,30 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
           googleAuthService,
           tokenService,
           consumeStateEntry: (s: string) => {
-          const decoded = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
-            s,
-            request.server.config.JWT_SECRET
-          );
-          if (!decoded) return null;
-          return { codeVerifier: decoded.codeVerifier, nonce: decoded.nonce, redirectUri: decoded.redirectUri, expiresAt: decoded.exp };
-        },
+            const decoded = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
+              s,
+              request.server.config.JWT_SECRET
+            );
+            if (!decoded) return null;
+            return {
+              codeVerifier: decoded.codeVerifier,
+              nonce: decoded.nonce,
+              redirectUri: decoded.redirectUri,
+              expiresAt: decoded.exp,
+            };
+          },
         }
       );
 
       metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
       fastify.log.info(
         {
+          event: 'auth_google_session_issued',
           provider: 'google',
           userId: result.user.id,
+          redirectMode: 'json',
         },
-        'Google OAuth callback succeeded'
+        'Google OAuth session issued'
       );
 
       return {
@@ -336,10 +343,12 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
 
       fastify.log.error(
         {
+          event: 'auth_google_callback_failed',
           provider: 'google',
+          code: error instanceof AppError || error instanceof AuthError ? error.code : 'UNKNOWN',
           error: error instanceof Error ? error.message : String(error),
         },
-        'Google OAuth callback failed'
+        'Google OAuth callback failed during JSON completion'
       );
       throw error;
     }
@@ -369,31 +378,95 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
 
     if (!code || !state) {
       metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
-      return reply
-        .code(400)
-        .type('text/plain; charset=utf-8')
-        .send('Sign-in failed, return to app and try again.');
+      const redirectUrl = buildGoogleAuthRedirectUrl(undefined, {
+        errorCode: ErrorCodes.AUTH_INVALID_CREDENTIALS,
+        error: 'missing_code_or_state',
+      });
+      return reply.code(302).redirect(redirectUrl);
     }
 
-    const stateEntry = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
-      state,
-      request.server.config.JWT_SECRET
-    );
-    if (!stateEntry) {
-      metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
-      return reply
-        .code(400)
-        .type('text/plain; charset=utf-8')
-        .send('Sign-in failed, return to app and try again.');
+    try {
+      const result = await completeGoogleOAuth(
+        {
+          code,
+          state,
+        },
+        {
+          jwtSecret: request.server.config.JWT_SECRET,
+          googleOAuth,
+          googleAuthService,
+          tokenService,
+          consumeStateEntry: (s: string) => {
+            const decoded = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
+              s,
+              request.server.config.JWT_SECRET
+            );
+            if (!decoded) return null;
+            return {
+              codeVerifier: decoded.codeVerifier,
+              nonce: decoded.nonce,
+              redirectUri: decoded.redirectUri,
+              expiresAt: decoded.exp,
+            };
+          },
+        }
+      );
+
+      const redirectUrl = buildGoogleAuthRedirectUrl(result.redirectUri, {
+        code,
+        state,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      });
+
+      metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
+      fastify.log.info(
+        {
+          event: 'auth_google_session_issued',
+          provider: 'google',
+          userId: result.user.id,
+          redirectMode: 'deep_link',
+        },
+        'Google OAuth session issued'
+      );
+
+      return reply.code(302).redirect(redirectUrl);
+    } catch (error) {
+      if (error instanceof AppError) {
+        if (error.code === ErrorCodes.AUTH_INVALID_STATE) {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'invalid_state' });
+        } else if (error.code === ErrorCodes.AUTH_FORBIDDEN) {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'forbidden' });
+        } else {
+          metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+        }
+      } else {
+        metrics.incrementCounter('auth_google_callback_total', { status: 'failure' });
+      }
+
+      fastify.log.error(
+        {
+          event: 'auth_google_callback_failed',
+          provider: 'google',
+          code: error instanceof AppError || error instanceof AuthError ? error.code : 'UNKNOWN',
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Google OAuth callback failed during deep-link completion'
+      );
+      const stateEntry = decodeSignedOAuthState<{ codeVerifier: string; nonce: string; redirectUri: string }>(
+        state,
+        request.server.config.JWT_SECRET
+      );
+      const redirectUrl = buildGoogleAuthRedirectUrl(stateEntry?.redirectUri, {
+        errorCode:
+          error instanceof AppError || error instanceof AuthError
+            ? error.code
+            : ErrorCodes.AUTH_OAUTH_FAILED,
+        error: 'google_callback_failed',
+      });
+
+      return reply.code(302).redirect(redirectUrl);
     }
-
-    const redirectUrl = buildGoogleAuthRedirectUrl(stateEntry.redirectUri, {
-      code,
-      state,
-    });
-
-    metrics.incrementCounter('auth_google_callback_total', { status: 'success' });
-    return reply.code(302).redirect(redirectUrl);
   });
 
   fastify.post<{

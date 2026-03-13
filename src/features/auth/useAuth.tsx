@@ -33,7 +33,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithRoblox: () => Promise<WebBrowser.WebBrowserAuthSessionResult>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<WebBrowser.WebBrowserAuthSessionResult>;
   signInWithApple: (options?: { flowCorrelationId?: string }) => Promise<User | null>;
   signOut: () => Promise<void>;
   reloadUser: (options?: {
@@ -223,7 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (): Promise<WebBrowser.WebBrowserAuthSessionResult> => {
     try {
       logger.info('Initiating Google sign-in', {
         apiUrl: API_URL,
@@ -248,10 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logger.info('Google OAuth session finished', {
         type: result.type,
       });
-
-      if (result.type === 'cancel' || result.type === 'dismiss') {
-        return;
-      }
+      return result;
     } catch (error) {
       logger.error('Failed to start Google OAuth flow', {
         error: error instanceof Error ? error.message : String(error),

@@ -13,6 +13,7 @@ import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { AppleSignInButton } from "@/components/auth/AppleSignInButton";
 import { logger } from "@/src/lib/logger";
 import { getPostLoginRoute, shouldRequireRobloxConnection } from "@/src/features/auth/robloxConnectionGate";
+import { parseGoogleCallbackPayload } from "@/src/features/auth/oauthCallback";
 import {
   getOrCreateAuthFlowCorrelationId,
   redactUserId,
@@ -69,7 +70,28 @@ export default function SignInScreen() {
   async function handleGoogleSignIn() {
     try {
       setLoadingProvider("google");
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      if (result.type === 'success' && 'url' in result && result.url) {
+        const payload = parseGoogleCallbackPayload(result.url);
+        if (payload) {
+          router.replace({
+            pathname: '/auth/google',
+            params: {
+              ...(payload.code ? { code: payload.code } : {}),
+              ...(payload.state ? { state: payload.state } : {}),
+              ...(payload.accessToken ? { accessToken: payload.accessToken } : {}),
+              ...(payload.refreshToken ? { refreshToken: payload.refreshToken } : {}),
+              ...(payload.errorCode ? { errorCode: payload.errorCode } : {}),
+              ...(payload.error ? { error: payload.error } : {}),
+            },
+          });
+        } else {
+          router.replace({
+            pathname: '/auth/google',
+            params: { callbackUrl: result.url },
+          });
+        }
+      }
     } catch (error) {
       handleError(error, { fallbackMessage: "Failed to sign in with Google. Please try again." });
     } finally {

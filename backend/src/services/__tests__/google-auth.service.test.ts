@@ -43,7 +43,7 @@ describe('GoogleAuthService', () => {
       tokenVersion: 0,
     });
 
-    const service = new GoogleAuthService({} as any);
+    const service = new GoogleAuthService({ log: { info: jest.fn() } } as any);
     const user = await service.resolveUserForGoogleLogin({
       sub: 'google-sub-existing',
       email: 'existing@example.com',
@@ -74,7 +74,7 @@ describe('GoogleAuthService', () => {
       tokenVersion: 0,
     });
 
-    const service = new GoogleAuthService({} as any);
+    const service = new GoogleAuthService({ log: { info: jest.fn() } } as any);
     const user = await service.resolveUserForGoogleLogin({
       sub: 'google-sub-new',
       email: 'new@example.com',
@@ -94,5 +94,42 @@ describe('GoogleAuthService', () => {
       sub: 'google-sub-new',
     }));
     expect(mockTouchLastLogin).toHaveBeenCalledWith('new-user');
+  });
+
+  it('does not create duplicate users for repeated google login', async () => {
+    mockFindUserIdByPlatform.mockResolvedValue('existing-user');
+    mockLinkPlatformToUser.mockResolvedValue(undefined);
+    mockSyncProviderIdentity.mockResolvedValue(undefined);
+    mockTouchLastLogin.mockResolvedValue(undefined);
+    mockGetUserById.mockResolvedValue({
+      id: 'existing-user',
+      robloxUserId: null,
+      robloxUsername: null,
+      status: 'ACTIVE',
+      tokenVersion: 1,
+    });
+
+    const service = new GoogleAuthService({ log: { info: jest.fn() } } as any);
+    await service.resolveUserForGoogleLogin({
+      sub: 'google-sub-existing',
+      email: 'existing@example.com',
+      email_verified: true,
+      name: 'Existing User',
+      picture: 'https://example.com/avatar.png',
+      iss: 'https://accounts.google.com',
+      aud: 'google-client-id',
+    });
+    await service.resolveUserForGoogleLogin({
+      sub: 'google-sub-existing',
+      email: 'existing@example.com',
+      email_verified: true,
+      name: 'Existing User',
+      picture: 'https://example.com/avatar.png',
+      iss: 'https://accounts.google.com',
+      aud: 'google-client-id',
+    });
+
+    expect(mockCreateUser).not.toHaveBeenCalled();
+    expect(mockFindUserIdByPlatform).toHaveBeenCalledTimes(2);
   });
 });

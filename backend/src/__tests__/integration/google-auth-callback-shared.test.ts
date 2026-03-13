@@ -101,12 +101,25 @@ describe('google callback shared completion usage', () => {
     );
   });
 
-  it('GET /api/auth/google/callback does not call completeGoogleOAuth', async () => {
+  it('GET /api/auth/google/callback calls completeGoogleOAuth and deep-links tokens', async () => {
+    const start = await request(app.server)
+      .get('/api/auth/google/start')
+      .query({ redirectUri: 'lagalaga://auth/google' });
+    const state = new URL(start.body.url).searchParams.get('state');
+
     const response = await request(app.server)
       .get('/api/auth/google/callback')
-      .query({ code: 'oauth-code', state: 'oauth-state' });
+      .query({ code: 'oauth-code', state });
 
-    expect(response.status).toBe(400);
-    expect(mockCompleteGoogleOAuth).not.toHaveBeenCalled();
+    expect(response.status).toBe(302);
+    expect(mockCompleteGoogleOAuth).toHaveBeenCalledWith(
+      { code: 'oauth-code', state },
+      expect.objectContaining({
+        jwtSecret: 'test-jwt-secret',
+      })
+    );
+    const redirect = new URL(response.headers.location as string);
+    expect(redirect.searchParams.get('accessToken')).toBe('shared-access-token');
+    expect(redirect.searchParams.get('refreshToken')).toBe('shared-refresh-token');
   });
 });

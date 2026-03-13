@@ -123,7 +123,7 @@ describe('google callback shared completion usage', () => {
     );
   });
 
-  it('GET /api/auth/google/callback calls completeGoogleOAuth and deep-links tokens', async () => {
+  it('GET /api/auth/google/callback redirects code/state without calling completeGoogleOAuth', async () => {
     const start = await request(app.server)
       .get('/api/auth/google/start')
       .query({ redirectUri: 'lagalaga://auth/google' });
@@ -136,14 +136,9 @@ describe('google callback shared completion usage', () => {
       .query({ code: 'oauth-code', state: callbackState });
 
     expect(response.status).toBe(302);
-    expect(mockCompleteGoogleOAuth).toHaveBeenCalledWith(
-      { code: 'oauth-code', state: callbackState },
-      expect.objectContaining({
-        jwtSecret: 'test-jwt-secret',
-      })
-    );
+    expect(mockCompleteGoogleOAuth).not.toHaveBeenCalled();
     const redirect = new URL(response.headers.location as string);
-    expect(redirect.searchParams.get('accessToken')).toBe('shared-access-token');
-    expect(redirect.searchParams.get('refreshToken')).toBe('shared-refresh-token');
+    expect(redirect.searchParams.get('code')).toBe('oauth-code');
+    expect(redirect.searchParams.get('state')).toBe(callbackState);
   });
 });

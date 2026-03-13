@@ -381,6 +381,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       const redirectUrl = buildGoogleAuthRedirectUrl(undefined, {
         errorCode: ErrorCodes.AUTH_INVALID_CREDENTIALS,
         error: 'missing_code_or_state',
+        requestId: String(request.id),
       });
       return reply.code(302).redirect(redirectUrl);
     }
@@ -458,11 +459,14 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
         request.server.config.JWT_SECRET
       );
       const redirectUrl = buildGoogleAuthRedirectUrl(stateEntry?.redirectUri, {
+        code,
+        state,
         errorCode:
           error instanceof AppError || error instanceof AuthError
             ? error.code
             : ErrorCodes.AUTH_OAUTH_FAILED,
         error: 'google_callback_failed',
+        requestId: String(request.id),
       });
 
       return reply.code(302).redirect(redirectUrl);

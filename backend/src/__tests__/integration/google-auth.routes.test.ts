@@ -291,4 +291,17 @@ describe('google auth routes', () => {
     expect(redirectUrl.searchParams.get('errorCode')).toBe('AUTH_001');
     expect(redirectUrl.searchParams.get('error')).toBe('missing_code_or_state');
   });
+
+  it('GET /api/auth/google/callback preserves code/state in error redirect for app-side fallback exchange', async () => {
+    const response = await request(app.server)
+      .get('/api/auth/google/callback')
+      .query({ code: 'oauth-code', state: 'bad-state' });
+
+    expect(response.status).toBe(302);
+    const redirectUrl = new URL(response.headers.location as string);
+    expect(redirectUrl.searchParams.get('code')).toBe('oauth-code');
+    expect(redirectUrl.searchParams.get('state')).toBe('bad-state');
+    expect(redirectUrl.searchParams.get('errorCode')).toBe('AUTH_003');
+    expect(redirectUrl.searchParams.get('error')).toBe('google_callback_failed');
+  });
 });

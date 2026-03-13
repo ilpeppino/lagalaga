@@ -9,6 +9,7 @@ export interface GoogleCallbackPayload {
   refreshToken?: string;
   error?: string;
   errorCode?: string;
+  requestId?: string;
 }
 
 export function parseOAuthCallbackUrl(
@@ -61,6 +62,7 @@ export function parseGoogleCallbackPayload(url: string): GoogleCallbackPayload |
       refreshToken: getParam('refreshToken'),
       error: getParam('error'),
       errorCode: getParam('errorCode'),
+      requestId: getParam('requestId'),
     };
 
     if (payload.accessToken && payload.refreshToken) {

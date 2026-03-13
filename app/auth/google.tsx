@@ -140,6 +140,17 @@ export default function GoogleCallback() {
       });
 
       if (error || errorCode) {
+        const canFallbackToExchange = Boolean(code && state);
+        if (canFallbackToExchange) {
+          logger.warn('Google callback included error flags but also code/state; proceeding with backend exchange fallback', {
+            errorCode: errorCode ?? null,
+            error: error ?? null,
+          });
+          emitNativeAuthLog('warn', 'error_flags_with_code_state_fallback_exchange', {
+            errorCode: errorCode ?? null,
+            error: error ?? null,
+          });
+        } else {
         const callbackError = new ApiError({
           code: errorCode || 'AUTH_004',
           message: 'Google sign-in could not be completed.',
@@ -159,6 +170,7 @@ export default function GoogleCallback() {
           error: error ?? null,
         });
         return;
+        }
       }
 
       if (accessToken && refreshToken) {

@@ -1,29 +1,37 @@
+/**
+ * SessionHandoffScreen
+ *
+ * Guides the current user through the lobby → Roblox → confirmed-in-game flow.
+ * Uses LaunchProgressPanel for the staged launch state machine.
+ * Shows squad readiness (ParticipantReadinessList) for awareness.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Image, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, Image, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { SessionDetail } from '@/src/features/sessions/types-v2';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedButton as Button } from '@/components/ui/paper';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { launchRobloxGame } from '@/src/services/roblox-launcher';
+import { useAuth } from '@/src/features/auth/useAuth';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { logger } from '@/src/lib/logger';
-import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
+import { monitoring } from '@/src/lib/monitoring';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
-import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
+import { LaunchProgressPanel } from '@/components/session/LaunchProgressPanel';
+import { ParticipantReadinessList } from '@/components/session/ParticipantReadinessList';
 
 export default function SessionHandoffScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const { user } = useAuth();
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busyAction, setBusyAction] = useState<'open' | 'confirm' | 'stuck' | null>(null);
   const [fallbackThumbnail, setFallbackThumbnail] = useState<string | null>(null);
-  const [presenceLabel, setPresenceLabel] = useState('Checking...');
-  const [presenceAvailable, setPresenceAvailable] = useState(true);
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -37,196 +45,107 @@ export default function SessionHandoffScreen() {
         setFallbackThumbnail(thumbnail);
       }
 
-      const presence = await sessionsAPIStoreV2.getRobloxPresence([detail.hostId]);
-      if (!presence.available) {
-        setPresenceAvailable(false);
-        setPresenceLabel('Presence unavailable - connect Roblox to enable');
-      } else {
-        setPresenceAvailable(true);
-        const status = presence.statuses?.[0]?.status || 'unknown';
-        setPresenceLabel(
-          status === 'in_game'
-            ? 'In game'
-            : status === 'online'
-              ? 'Online'
-              : status === 'offline'
-                ? 'Offline'
-                : 'Unknown'
-        );
-      }
+      logger.info('handoff: session loaded', { sessionId });
+      monitoring.addBreadcrumb({
+        category: 'navigation',
+        level: 'info',
+        message: 'handoff screen opened',
+        data: { sessionId },
+      });
     } catch (error) {
-      logger.warn('Failed to load handoff data', {
+      logger.warn('handoff: failed to load session', {
+        sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
-      setPresenceAvailable(false);
-      setPresenceLabel('Presence unavailable - connect Roblox to enable');
     } finally {
       setLoading(false);
     }
   }, [sessionId]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const thumbnailUrl = useMemo(
     () => session?.game.thumbnailUrl || fallbackThumbnail,
     [session?.game.thumbnailUrl, fallbackThumbnail]
   );
-  const joinSteps = useMemo(
-    () => [
-      'Open Roblox',
-      'Join host via Friends - Join or Party invite',
-      "Return here and tap I'm in",
-    ].filter((step) => step.trim().length > 0),
-    []
-  );
-  const instructionsBackgroundColor = colorScheme === 'dark' ? '#1c1c1e' : '#f5f7ff';
-  const instructionsTitleColor = colorScheme === 'dark' ? '#f2f2f7' : '#111111';
 
-  const handleOpenRoblox = useCallback(async () => {
-    if (!session) return;
+  const handleConfirmed = useCallback(() => {
+    // Reload session so the readiness list updates
+    void load();
+  }, [load]);
 
-    setBusyAction('open');
-    sessionsAPIStoreV2.updateHandoffState(session.id, 'opened_roblox').catch((error) => {
-      logger.warn('Failed to update handoff state: opened_roblox', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-
-    try {
-      await launchRobloxGame(session.game.placeId, session.game.canonicalStartUrl);
-    } catch {
-      Alert.alert('Error', 'Failed to open Roblox. Please try again.');
-    } finally {
-      setBusyAction(null);
-    }
-  }, [session]);
-
-  const handleConfirm = useCallback(async () => {
-    if (!session) return;
-    try {
-      setBusyAction('confirm');
-      await sessionsAPIStoreV2.updateHandoffState(session.id, 'confirmed_in_game');
-      Alert.alert('Confirmed', "Great - we've updated your status for the host.");
-      await load();
-    } catch {
-      Alert.alert('Error', 'Failed to confirm state. Please try again.');
-    } finally {
-      setBusyAction(null);
-    }
-  }, [load, session]);
-
-  const handleStuck = useCallback(async () => {
-    if (!session) return;
-    try {
-      setBusyAction('stuck');
-      await sessionsAPIStoreV2.updateHandoffState(session.id, 'stuck');
-      Alert.alert('Updated', 'The host can now see that you need help.');
-      await load();
-    } catch {
-      Alert.alert('Error', 'Failed to update state. Please try again.');
-    } finally {
-      setBusyAction(null);
-    }
-  }, [load, session]);
-
-  const handleConnectRoblox = useCallback(async () => {
-    try {
-      const { authorizationUrl, state } = await sessionsAPIStoreV2.getRobloxConnectUrl();
-      await oauthTransientStorage.setItem(OAUTH_STORAGE_KEYS.ROBLOX_CONNECT_STATE, state);
-      await openRobloxAuthSession(authorizationUrl);
-    } catch {
-      Alert.alert('Error', 'Failed to start Roblox connect flow.');
-    }
-  }, []);
+  const handleStuck = useCallback(() => {
+    void load();
+  }, [load]);
 
   if (loading || !session) {
     return (
-      <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
-        <LagaLoadingSpinner size={56} label="Loading handoff..." />
+      <View
+        style={[styles.centered, { backgroundColor: isDark ? '#000' : '#fff' }]}
+      >
+        <LagaLoadingSpinner size={56} label="Loading handoff…" />
       </View>
     );
   }
 
-  return (
-    <ScrollView style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]} contentContainerStyle={styles.content}>
-      <ThemedText type="headlineSmall" style={styles.title}>Join Handoff</ThemedText>
+  const hasParticipants = session.participants.length > 0;
 
+  return (
+    <ScrollView
+      style={[styles.container, { backgroundColor: isDark ? '#000' : '#fff' }]}
+      contentContainerStyle={styles.content}
+    >
+      {/* Game thumbnail */}
       {thumbnailUrl ? (
         <Image source={{ uri: thumbnailUrl }} style={styles.thumbnail} />
       ) : (
         <View style={[styles.thumbnail, styles.thumbnailFallback]} />
       )}
 
-      <ThemedText type="titleLarge" style={styles.gameName}>{session.game.gameName || 'Roblox Game'}</ThemedText>
+      {/* Game name + session title */}
+      <ThemedText type="titleLarge" style={styles.gameName}>
+        {session.game.gameName || 'Roblox Game'}
+      </ThemedText>
+      <ThemedText type="bodyMedium" lightColor="#8E8E93" darkColor="#636366" style={styles.sessionTitle}>
+        {session.title}
+      </ThemedText>
 
-      <View style={styles.hostRow}>
-        {session.host?.avatarHeadshotUrl ? (
-          <Image source={{ uri: session.host.avatarHeadshotUrl }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarFallback]} />
-        )}
-        <View style={styles.hostTextWrap}>
-          <ThemedText type="labelLarge">Host</ThemedText>
-          <ThemedText type="bodyLarge">{session.host?.robloxDisplayName || session.host?.robloxUsername || session.hostId}</ThemedText>
-          <ThemedText type="bodySmall" lightColor="#666" darkColor="#999">Presence: {presenceLabel}</ThemedText>
-        </View>
-      </View>
-
-      {joinSteps.length > 0 ? (
-        <View style={[styles.instructions, { backgroundColor: instructionsBackgroundColor }]}>
-          <ThemedText type="titleMedium" lightColor={instructionsTitleColor} darkColor={instructionsTitleColor}>How to join</ThemedText>
-          {joinSteps.map((step, index) => (
-            <ThemedText key={step} type="bodyLarge" style={styles.step}>{index + 1}. {step}</ThemedText>
-          ))}
-        </View>
-      ) : null}
-
-      <Button
-        title="Open Roblox"
-        variant="filled"
-        buttonColor="#007AFF"
-        textColor="#fff"
-        style={styles.button}
-        onPress={handleOpenRoblox}
-        loading={busyAction === 'open'}
-        enableHaptics
-      />
-
-      <Button
-        title="I'm in"
-        variant="filled"
-        buttonColor="#34C759"
-        textColor="#fff"
-        style={styles.button}
-        onPress={handleConfirm}
-        loading={busyAction === 'confirm'}
-      />
-
-      <Button
-        title="I'm stuck"
-        variant="outlined"
-        textColor="#ff3b30"
-        style={styles.button}
-        onPress={handleStuck}
-        loading={busyAction === 'stuck'}
-      />
-
-      {!presenceAvailable && (
-        <Button
-          title="Connect Roblox for Presence"
-          variant="outlined"
-          textColor="#007AFF"
-          style={styles.button}
-          onPress={handleConnectRoblox}
+      {/* Squad readiness — shown when there are participants */}
+      {hasParticipants && (
+        <ParticipantReadinessList
+          session={session}
+          currentUserId={user?.id}
+          defaultExpanded
         />
       )}
+
+      {/* Launch flow panel — only if user is authenticated */}
+      {user?.id ? (
+        <>
+          <ThemedText
+            type="labelSmall"
+            lightColor="#8E8E93"
+            darkColor="#636366"
+            style={styles.launchLabel}
+          >
+            YOUR LAUNCH
+          </ThemedText>
+          <LaunchProgressPanel
+            session={session}
+            userId={user.id}
+            onConfirmed={handleConfirmed}
+            onStuck={handleStuck}
+          />
+        </>
+      ) : null}
 
       <Button
         title="Back to Session"
         variant="text"
         textColor="#007AFF"
+        style={styles.backBtn}
         onPress={() => router.back()}
       />
     </ScrollView>
@@ -235,18 +154,23 @@ export default function SessionHandoffScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40, gap: 14 },
+  content: { padding: 20, paddingBottom: 48, gap: 14 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { marginTop: 10 },
-  title: { textAlign: 'center' },
-  thumbnail: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f0f0f0' },
+  thumbnail: {
+    width: '100%',
+    height: 160,
+    borderRadius: 14,
+    backgroundColor: '#f0f0f0',
+  },
   thumbnailFallback: { backgroundColor: '#ddd' },
-  gameName: { textAlign: 'center' },
-  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  hostTextWrap: { flex: 1 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#ddd' },
-  avatarFallback: { backgroundColor: '#ddd' },
-  instructions: { borderRadius: 10, padding: 12, gap: 6 },
-  step: { lineHeight: 22 },
-  button: { marginTop: 4 },
+  gameName: { textAlign: 'center', fontWeight: '700' },
+  sessionTitle: { textAlign: 'center', marginTop: -8 },
+  launchLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 4,
+  },
+  backBtn: { alignSelf: 'center', marginTop: 8 },
 });

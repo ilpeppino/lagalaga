@@ -685,20 +685,51 @@ LagaLaga implements a **hybrid friends system** that combines native app friends
 - Database function `list_sessions_optimized()` enforces friend filtering
 - Only accepted friendships grant access to friend-only sessions
 
-### Presence Tracking
+### Session Creation UX Flow (v2)
 
-**Handoff State Tracking**:
+The session creation flow follows a minimal lobby pattern:
+
+1. **CreateSessionScreen** (`/sessions/create`) — game selector + visibility only; title is auto-generated as `"{displayName}'s {gameName} session"`; no friend picker or advanced options
+2. **SessionLobbyScreen** (`/sessions/lobby`) — post-creation hub; shows squad readiness, smart invite suggestions, invited friends, and START SESSION CTA
+3. **FriendPickerScreen** (`/sessions/friend-picker`) — full-screen friend list with presence grouping and search; invite action shares the invite link
+
+**Smart Invite Suggestions**:
+- `src/features/sessions/smartInviteSuggestions.ts` — pure ranking function scoring friends by: online (100), in-game (80), studio (60), recently invited (+40 bonus), friend (10)
+- `src/features/sessions/inviteHistory.ts` — AsyncStorage cache of recently invited Roblox IDs per user; powers "Played with you" label and ranking boost
+- `src/features/sessions/useSmartInviteSuggestions.ts` — hook composing friends cache + bulk presence + invite history into ranked `SuggestedFriend[]`
+
+### Handoff State Tracking
+
 Session participants have a `handoff_state` field tracking their journey from RSVP to in-game:
 - `rsvp_joined` - User joined session in app
-- `opened_roblox` - User tapped "Join Game" deep link
-- `confirmed_in_game` - User presence confirmed in Roblox
+- `opened_roblox` - User tapped "Open in Roblox" CTA
+- `confirmed_in_game` - User presence confirmed in Roblox (auto or manual)
 - `stuck` - User encountered issues joining
+
+**UI Presentation**: `src/lib/handoffStatePresenter.ts` is the single source of truth for mapping these backend enums to user-facing labels, colors, and icons. Never render raw enum values in UI.
+
+**Handoff State → UI labels**:
+- `confirmed_in_game` → "In game" (green)
+- `opened_roblox` → "Opening Roblox…" (orange)
+- `rsvp_joined` → "Ready" (blue)
+- `stuck` → "Needs help" (orange warning)
+
+**LaunchProgressPanel** (`components/session/LaunchProgressPanel.tsx`):
+Self-contained state machine for the joiner's launch flow:
+- `idle` → Open in Roblox CTA
+- `opening` → 3 s delay, then transitions to `checking`
+- `checking` → polls `GET /api/presence/roblox/users?userIds=...` every 10 s (max 3 min) for auto-confirm
+- `confirmed` → success
+- `recovery` → shown after timeout; offers I'm in / Try again / I'm having trouble
+- `stuck` → marks participant stuck, notifies host
+
+**ParticipantReadinessList** (`components/session/ParticipantReadinessList.tsx`):
+Host-facing squad view showing all participants with their handoff states, a "X / N in game" summary, and a stuck-player warning banner.
 
 **Roblox Presence API**:
 - `GET /api/presence/roblox/users` - Check if users are online/in-game
 - Uses stored Roblox OAuth tokens to query presence
-- Updates `handoff_state` when users are confirmed in game
-- Enables "who's playing now" indicators
+- Enables auto-confirm in LaunchProgressPanel and smart invite ranking
 
 ## 8. Push Notifications
 

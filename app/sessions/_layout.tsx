@@ -84,6 +84,8 @@ export default function SessionsLayout() {
         }}
       />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
+      <Stack.Screen name="lobby" options={{ title: "Session Lobby" }} />
+      <Stack.Screen name="friend-picker" options={{ title: "Invite Friends" }} />
       <Stack.Screen name="[id]" options={{ title: "Session Details" }} />
       <Stack.Screen name="handoff" options={{ title: "Join Handoff" }} />
     </Stack>

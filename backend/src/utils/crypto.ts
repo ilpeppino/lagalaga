@@ -18,9 +18,12 @@ export function generateSignedOAuthState(
   data: Record<string, unknown> = {}
 ): string {
   const now = Date.now();
+  const dataNonce = typeof data.nonce === 'string' && data.nonce.trim().length > 0
+    ? data.nonce
+    : generateState();
   const payload = {
     ...data,
-    nonce: generateState(),
+    nonce: dataNonce,
     iat: now,
     exp: now + ttlMs,
   };

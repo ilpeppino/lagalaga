@@ -1,27 +1,27 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
-jest.mock('../../config/supabase.js', () => ({
+jest.unstable_mockModule('../../config/supabase.js', () => ({
   getSupabase: jest.fn(),
 }));
 
-jest.mock('../../lib/logger.js', () => ({
+jest.unstable_mockModule('../../lib/logger.js', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
 }));
 
 // Speed up retries in tests
-jest.mock('../../lib/errorRecovery.js', () => ({
+jest.unstable_mockModule('../../lib/errorRecovery.js', () => ({
   withRetry: jest.fn(async (fn: () => Promise<unknown>, _opts?: unknown) => fn()),
 }));
 
-jest.mock('../../plugins/metrics.js', () => ({
+jest.unstable_mockModule('../../plugins/metrics.js', () => ({
   metrics: { incrementCounter: jest.fn() },
 }));
 
-import { getSupabase } from '../../config/supabase.js';
-import { logger } from '../../lib/logger.js';
-import { withRetry } from '../../lib/errorRecovery.js';
-import { metrics } from '../../plugins/metrics.js';
-import { logAuditEvent } from '../../services/auditLogger.js';
+const { getSupabase } = await import('../../config/supabase.js');
+const { logger } = await import('../../lib/logger.js');
+const { withRetry } = await import('../../lib/errorRecovery.js');
+const { metrics } = await import('../../plugins/metrics.js');
+const { logAuditEvent } = await import('../../services/auditLogger.js');
 
 const mockGetSupabase = getSupabase as jest.MockedFunction<any>;
 const mockLoggerError = logger.error as jest.MockedFunction<typeof logger.error>;

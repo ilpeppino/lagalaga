@@ -3,6 +3,8 @@ import {
   SessionServiceV2,
   CreateSessionInput,
   ParticipantHandoffState,
+  SessionStatus,
+  SessionVisibility,
 } from '../services/sessionService-v2.js';
 import { RankingService } from '../services/rankingService.js';
 import { authenticate } from '../middleware/authenticate.js';
@@ -136,8 +138,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
    */
   fastify.get<{
     Querystring: {
-      status?: string;
-      visibility?: string;
+      status?: SessionStatus;
+      visibility?: SessionVisibility;
       placeId?: number;
       hostId?: string;
       limit?: number;
@@ -150,8 +152,8 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         querystring: {
           type: 'object',
           properties: {
-            status: { type: 'string' },
-            visibility: { type: 'string' },
+            status: { type: 'string', enum: ['scheduled', 'active', 'completed', 'cancelled'] },
+            visibility: { type: 'string', enum: ['public', 'friends', 'invite_only'] },
             placeId: { type: 'number' },
             hostId: { type: 'string' },
             limit: { type: 'number', default: 20 },
@@ -164,8 +166,6 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       const requesterId = await getOptionalRequesterId(request);
       const result = await sessionService.listSessions({
         ...request.query,
-        status: request.query.status as any,
-        visibility: request.query.visibility as any,
         requesterId,
       });
 

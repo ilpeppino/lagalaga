@@ -1,20 +1,19 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
-jest.mock('../../lib/monitoring.js', () => ({
+jest.unstable_mockModule('../../lib/monitoring.js', () => ({
   monitoring: {
     captureError: jest.fn(),
   },
 }));
 
-jest.mock('../../lib/logger.js', () => ({
+jest.unstable_mockModule('../../lib/logger.js', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
   logError: jest.fn(),
 }));
 
-// Mock fastify.config accessed inside the plugin
-import Fastify from 'fastify';
-import { errorHandlerPlugin } from '../../plugins/errorHandler.js';
-import { monitoring } from '../../lib/monitoring.js';
+const { default: Fastify } = await import('fastify');
+const { errorHandlerPlugin } = await import('../../plugins/errorHandler.js');
+const { monitoring } = await import('../../lib/monitoring.js');
 
 const mockCaptureError = monitoring.captureError as jest.MockedFunction<typeof monitoring.captureError>;
 

@@ -1,26 +1,26 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
-jest.mock('../../config/supabase.js', () => ({ getSupabase: jest.fn() }));
-jest.mock('../../plugins/metrics.js', () => ({
+jest.unstable_mockModule('../../config/supabase.js', () => ({ getSupabase: jest.fn() }));
+jest.unstable_mockModule('../../plugins/metrics.js', () => ({
   metrics: {
     incrementCounter: jest.fn(),
     rankedSessionsCreatedTotal: { inc: jest.fn() },
     quickSessionsCreatedTotal: { inc: jest.fn() },
   },
 }));
-jest.mock('../../lib/logger.js', () => ({
+jest.unstable_mockModule('../../lib/logger.js', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.mock('../../services/roblox-link-normalizer.js', () => ({
+jest.unstable_mockModule('../../services/roblox-link-normalizer.js', () => ({
   RobloxLinkNormalizer: jest.fn().mockImplementation(() => ({})),
 }));
-jest.mock('../../services/roblox-enrichment.service.js', () => ({
+jest.unstable_mockModule('../../services/roblox-enrichment.service.js', () => ({
   RobloxEnrichmentService: jest.fn().mockImplementation(() => ({})),
 }));
 
-import { getSupabase } from '../../config/supabase.js';
-import { metrics } from '../../plugins/metrics.js';
-import { SessionServiceV2 } from '../../services/sessionService-v2.js';
+const { getSupabase } = await import('../../config/supabase.js');
+const { metrics } = await import('../../plugins/metrics.js');
+const { SessionServiceV2 } = await import('../../services/sessionService-v2.js');
 
 const mockGetSupabase = getSupabase as jest.MockedFunction<any>;
 const mockIncrementCounter = metrics.incrementCounter as jest.MockedFunction<typeof metrics.incrementCounter>;
@@ -38,7 +38,7 @@ function makeSupabaseSpy(gameRow: unknown) {
 }
 
 describe('SessionServiceV2.getGameByPlaceId (via cache)', () => {
-  let service: SessionServiceV2;
+  let service: InstanceType<typeof SessionServiceV2>;
 
   beforeEach(() => {
     jest.clearAllMocks();

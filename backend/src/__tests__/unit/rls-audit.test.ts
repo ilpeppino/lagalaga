@@ -14,6 +14,7 @@
 import { describe, expect, it } from '@jest/globals';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Tables that must never have a net-active public-readable USING (true) SELECT
@@ -21,6 +22,7 @@ import * as path from 'node:path';
  */
 const SENSITIVE_TABLES = ['user_platforms'];
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../../../supabase/migrations');
 
 function readMigrationsChronologically(): { file: string; sql: string }[] {

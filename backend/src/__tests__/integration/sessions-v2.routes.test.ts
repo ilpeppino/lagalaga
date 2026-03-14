@@ -320,4 +320,45 @@ describe('sessions v2 routes', () => {
     expect(res.status).toBe(409);
     expect(res.body.error?.code ?? res.body.code).toBe('CONFLICT_001');
   });
+
+  describe('GET /api/sessions — enum query param validation', () => {
+    it('returns 400 for invalid status value', async () => {
+      const listSessions = jest.fn();
+      const app = await buildApp({ sessionService: { listSessions } });
+
+      const { default: request } = await import('supertest');
+      const res = await request(app.server).get('/api/sessions?status=invalid_status');
+      await app.close();
+
+      expect(res.status).toBe(400);
+      expect(listSessions).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for invalid visibility value', async () => {
+      const listSessions = jest.fn();
+      const app = await buildApp({ sessionService: { listSessions } });
+
+      const { default: request } = await import('supertest');
+      const res = await request(app.server).get('/api/sessions?visibility=anyone');
+      await app.close();
+
+      expect(res.status).toBe(400);
+      expect(listSessions).not.toHaveBeenCalled();
+    });
+
+    it('passes through valid status and visibility without as-any cast', async () => {
+      const listSessions = jest.fn(async () => ({ sessions: [], total: 0 }));
+      const app = await buildApp({ sessionService: { listSessions } });
+
+      const { default: request } = await import('supertest');
+      const res = await request(app.server).get('/api/sessions?status=active&visibility=public');
+      await app.close();
+
+      expect(res.status).toBe(200);
+      expect(listSessions).toHaveBeenCalledTimes(1);
+      const callArg = (listSessions.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+      expect(callArg.status).toBe('active');
+      expect(callArg.visibility).toBe('public');
+    });
+  });
 });

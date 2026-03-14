@@ -1,37 +1,37 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
-jest.mock('../../lib/logger.js', () => ({
+jest.unstable_mockModule('../../lib/logger.js', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-jest.mock('../../lib/http.js', () => ({
+jest.unstable_mockModule('../../lib/http.js', () => ({
   fetchJsonWithTimeoutRetry: jest.fn(),
 }));
 
-jest.mock('../../config/supabase.js', () => ({
+jest.unstable_mockModule('../../config/supabase.js', () => ({
   getSupabase: jest.fn(),
 }));
 
-jest.mock('../../config/cache.js', () => ({
+jest.unstable_mockModule('../../config/cache.js', () => ({
   AVATAR_CACHE_TTL_MS: 3600000,
 }));
 
-jest.mock('../../plugins/metrics.js', () => ({
+jest.unstable_mockModule('../../plugins/metrics.js', () => ({
   metrics: { incrementCounter: jest.fn() },
 }));
 
-jest.mock('../../config/featureFlags.js', () => ({
+jest.unstable_mockModule('../../config/featureFlags.js', () => ({
   isCompetitiveDepthEnabled: jest.fn(() => false),
 }));
 
-jest.mock('../../services/rankingService.js', () => ({
+jest.unstable_mockModule('../../services/rankingService.js', () => ({
   RankingService: jest.fn().mockImplementation(() => ({})),
 }));
 
-import { logger } from '../../lib/logger.js';
-import { fetchJsonWithTimeoutRetry } from '../../lib/http.js';
-import { getSupabase } from '../../config/supabase.js';
-import { fetchRobloxHeadshot, updateAppUserAvatarCache, isAvatarCacheFresh } from '../../services/me.service.js';
+const { logger } = await import('../../lib/logger.js');
+const { fetchJsonWithTimeoutRetry } = await import('../../lib/http.js');
+const { getSupabase } = await import('../../config/supabase.js');
+const { fetchRobloxHeadshot, updateAppUserAvatarCache, isAvatarCacheFresh } = await import('../../services/me.service.js');
 
 const mockFetch = fetchJsonWithTimeoutRetry as jest.MockedFunction<typeof fetchJsonWithTimeoutRetry>;
 const mockGetSupabase = getSupabase as jest.MockedFunction<any>;

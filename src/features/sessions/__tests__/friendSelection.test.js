@@ -1,10 +1,26 @@
 /* global describe, it, expect */
-import { buildCreateSessionPayload, buildTwoRowColumns, toggleFriendSelection } from '../friendSelection';
+import {
+  addFriendSelection,
+  buildCreateSessionPayload,
+  buildTwoRowColumns,
+  removeFriendSelection,
+  toggleFriendSelection,
+} from '../friendSelection';
 
 describe('friendSelection helpers', () => {
   it('toggleFriendSelection adds and removes IDs', () => {
     expect(toggleFriendSelection([], 10)).toEqual([10]);
     expect(toggleFriendSelection([10, 11], 11)).toEqual([10]);
+  });
+
+  it('addFriendSelection only adds when missing', () => {
+    expect(addFriendSelection([], 10)).toEqual([10]);
+    expect(addFriendSelection([10], 10)).toEqual([10]);
+  });
+
+  it('removeFriendSelection removes friend from selected IDs', () => {
+    expect(removeFriendSelection([10, 11], 10)).toEqual([11]);
+    expect(removeFriendSelection([10], 99)).toEqual([10]);
   });
 
   it('buildTwoRowColumns keeps two visible rows per column', () => {

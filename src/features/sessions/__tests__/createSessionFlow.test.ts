@@ -4,6 +4,8 @@ import {
   buildAutoSessionTitle,
   buildAvailableFriends,
   buildFriendSearchResults,
+  getFavoritePlaceId,
+  parseRobloxPlaceIdFromUrl,
   buildScheduledStartIso,
   buildSelectedFriendsMap,
   combineDateAndTime,
@@ -107,4 +109,43 @@ test('buildFriendSearchResults returns all when query empty and applies limit', 
 test('buildFriendSearchResults filters by display name or username', () => {
   const results = buildFriendSearchResults({ friends, searchQuery: 'brav' });
   assert.deepEqual(results.map((f) => f.id), [2]);
+});
+
+test('buildFriendSearchResults prioritizes prefix matches and sorts deterministically', () => {
+  const unorderedFriends = [
+    { id: 30, name: 'xchar', displayName: 'xchar', avatarUrl: null },
+    { id: 10, name: 'charles', displayName: 'Charles', avatarUrl: null },
+    { id: 20, name: 'alpha', displayName: 'Alpha', avatarUrl: null },
+    { id: 40, name: 'charlotte', displayName: 'charlotte', avatarUrl: null },
+  ];
+  const results = buildFriendSearchResults({ friends: unorderedFriends, searchQuery: 'char' });
+  assert.deepEqual(results.map((f) => f.id), [10, 40, 30]);
+});
+
+test('parseRobloxPlaceIdFromUrl reads placeId from canonical games URL', () => {
+  const placeId = parseRobloxPlaceIdFromUrl('https://www.roblox.com/games/123456789/My-Game');
+  assert.equal(placeId, 123456789);
+});
+
+test('parseRobloxPlaceIdFromUrl reads placeId from query parameter', () => {
+  const placeId = parseRobloxPlaceIdFromUrl('https://www.roblox.com/games/start?placeId=555777');
+  assert.equal(placeId, 555777);
+});
+
+test('getFavoritePlaceId prefers URL placeId and falls back to ID', () => {
+  assert.equal(
+    getFavoritePlaceId({
+      id: '42',
+      url: 'https://www.roblox.com/games/999/Preferred',
+    }),
+    999
+  );
+
+  assert.equal(
+    getFavoritePlaceId({
+      id: '1234',
+      url: undefined,
+    }),
+    1234
+  );
 });

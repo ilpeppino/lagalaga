@@ -1,10 +1,21 @@
 import type { CreateSessionInput, RobloxFriend, SessionVisibility } from './types-v2';
 
-export function toggleFriendSelection(selectedIds: number[], friendId: number): number[] {
+export function addFriendSelection(selectedIds: number[], friendId: number): number[] {
   if (selectedIds.includes(friendId)) {
-    return selectedIds.filter((id) => id !== friendId);
+    return selectedIds;
   }
   return [...selectedIds, friendId];
+}
+
+export function removeFriendSelection(selectedIds: number[], friendId: number): number[] {
+  return selectedIds.filter((id) => id !== friendId);
+}
+
+export function toggleFriendSelection(selectedIds: number[], friendId: number): number[] {
+  if (selectedIds.includes(friendId)) {
+    return removeFriendSelection(selectedIds, friendId);
+  }
+  return addFriendSelection(selectedIds, friendId);
 }
 
 export function buildTwoRowColumns(friends: RobloxFriend[]): RobloxFriend[][] {

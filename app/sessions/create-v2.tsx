@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -8,7 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput as RNTextInput,
   UIManager,
   View,
 } from 'react-native';
@@ -26,14 +25,16 @@ import type { Favorite } from '@/src/features/favorites/cache';
 import { warmFavorites } from '@/src/features/favorites/service';
 import { useFriends } from '@/src/features/friends/useFriends';
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
-import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
+import { addFriendSelection, buildCreateSessionPayload, removeFriendSelection } from '@/src/features/sessions/friendSelection';
 import {
   buildAutoSessionTitle,
   buildFriendSearchResults,
+  getFavoritePlaceId,
   buildScheduledStartIso,
   buildSelectedFriendsMap,
   type SessionStartMode,
 } from '@/src/features/sessions/createSessionFlow';
+import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
 import { AnimatedButton as Button, TextInput } from '@/components/ui/paper';
 
 function getFavoriteDisplayName(favorite: Favorite): string {
@@ -83,6 +84,8 @@ export default function CreateSessionScreenV2() {
 
   const [robloxUrl, setRobloxUrl] = useState('');
   const [selectedFavorite, setSelectedFavorite] = useState<Favorite | null>(null);
+  const [resolvedFavoriteThumbnailUrl, setResolvedFavoriteThumbnailUrl] = useState<string | null>(null);
+  const [favoriteThumbnailState, setFavoriteThumbnailState] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle');
   const [gameInputMode, setGameInputMode] = useState<'favorites' | 'link'>('favorites');
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false);
 
@@ -97,8 +100,6 @@ export default function CreateSessionScreenV2() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const searchInputRef = useRef<RNTextInput | null>(null);
-
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
       UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -110,6 +111,56 @@ export default function CreateSessionScreenV2() {
       void warmFavorites(user.id);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (gameInputMode !== 'favorites' || !selectedFavorite) {
+      setResolvedFavoriteThumbnailUrl(null);
+      setFavoriteThumbnailState('idle');
+      return;
+    }
+
+    const directThumbnail = selectedFavorite.thumbnailUrl?.trim();
+    if (directThumbnail) {
+      setResolvedFavoriteThumbnailUrl(directThumbnail);
+      setFavoriteThumbnailState('success');
+      return;
+    }
+
+    const placeId = getFavoritePlaceId(selectedFavorite);
+    if (!placeId) {
+      setResolvedFavoriteThumbnailUrl(null);
+      setFavoriteThumbnailState('failure');
+      return;
+    }
+
+    let cancelled = false;
+    setResolvedFavoriteThumbnailUrl(null);
+    setFavoriteThumbnailState('loading');
+
+    void getRobloxGameThumbnail(placeId)
+      .then((thumbnailUrl) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (thumbnailUrl) {
+          setResolvedFavoriteThumbnailUrl(thumbnailUrl);
+          setFavoriteThumbnailState('success');
+          return;
+        }
+
+        setFavoriteThumbnailState('failure');
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFavoriteThumbnailState('failure');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameInputMode, selectedFavorite]);
 
   const autoTitle = useMemo(
     () =>
@@ -133,7 +184,7 @@ export default function CreateSessionScreenV2() {
       buildFriendSearchResults({
         friends,
         searchQuery,
-        limit: 18,
+        limit: 24,
       }),
     [friends, searchQuery]
   );
@@ -159,13 +210,14 @@ export default function CreateSessionScreenV2() {
     setIsFavoritesExpanded(false);
   };
 
-  const handleToggleFriend = (friendId: number) => {
+  const handleAddFriend = (friendId: number) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSelectedFriendIds((prev) => toggleFriendSelection(prev, friendId));
+    setSelectedFriendIds((prev) => addFriendSelection(prev, friendId));
   };
 
-  const handleFocusSearch = () => {
-    searchInputRef.current?.focus?.();
+  const handleRemoveFriend = (friendId: number) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedFriendIds((prev) => removeFriendSelection(prev, friendId));
   };
 
   const handlePickerChange = (mode: 'date' | 'time') => (event: DateTimePickerEvent, value?: Date) => {
@@ -231,6 +283,8 @@ export default function CreateSessionScreenV2() {
   };
 
   const canStart = !isCreating && Boolean(robloxUrl.trim());
+  const showFavoriteThumbnailLoading = gameInputMode === 'favorites' && selectedFavorite && favoriteThumbnailState === 'loading';
+  const heroThumbnailUrl = favoriteThumbnailState === 'success' ? resolvedFavoriteThumbnailUrl : null;
 
   return (
     <KeyboardAvoidingView
@@ -253,8 +307,12 @@ export default function CreateSessionScreenV2() {
                 accessibilityRole="button"
                 testID="game-card"
               >
-                {selectedFavorite?.thumbnailUrl ? (
-                  <Image source={{ uri: selectedFavorite.thumbnailUrl }} style={styles.heroThumbnail} />
+                {heroThumbnailUrl ? (
+                  <Image source={{ uri: heroThumbnailUrl }} style={styles.heroThumbnail} />
+                ) : showFavoriteThumbnailLoading ? (
+                  <View style={[styles.heroThumbnail, styles.heroThumbnailSkeleton, { backgroundColor: isDark ? '#2b2b31' : '#e2e3ea' }]}>
+                    <ActivityIndicator size="small" color={isDark ? '#8d8d95' : '#8d8d95'} />
+                  </View>
                 ) : (
                   <View style={[styles.heroThumbnail, styles.heroThumbnailPlaceholder]}>
                     <MaterialIcons name="sports-esports" size={42} color={isDark ? '#65656a' : '#b4b4bf'} />
@@ -265,9 +323,11 @@ export default function CreateSessionScreenV2() {
                   <ThemedText type="titleMedium" numberOfLines={2} style={styles.heroTitle}>
                     {selectedFavorite ? getFavoriteDisplayName(selectedFavorite) : 'Choose a Roblox game'}
                   </ThemedText>
-                  <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#8b8b91" numberOfLines={2}>
-                    {selectedFavorite ? 'Ready to launch with your squad' : 'Tap to pick from your favorites'}
-                  </ThemedText>
+                  {!selectedFavorite ? (
+                    <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#8b8b91" numberOfLines={2}>
+                      Tap to pick from your favorites
+                    </ThemedText>
+                  ) : null}
                 </View>
 
                 <Pressable
@@ -364,19 +424,6 @@ export default function CreateSessionScreenV2() {
             contentContainerStyle={styles.squadRow}
             testID="squad-row"
           >
-            <Pressable
-              style={[styles.squadTile, styles.addTile, { borderColor: isDark ? '#2c2c31' : '#d8d8df' }]}
-              onPress={handleFocusSearch}
-              accessibilityRole="button"
-              accessibilityLabel="Add friends to squad"
-              testID="squad-add-tile"
-            >
-              <View style={styles.addIconWrap}>
-                <MaterialIcons name="person-add" size={18} color="#007AFF" />
-              </View>
-              <ThemedText type="bodySmall" numberOfLines={1}>Invite</ThemedText>
-            </Pressable>
-
             <View
               style={[styles.squadTile, styles.selfTile, { borderColor: isDark ? '#2c2c31' : '#d8d8df' }]}
               testID="squad-self-tile"
@@ -395,7 +442,7 @@ export default function CreateSessionScreenV2() {
               <Pressable
                 key={friend.id}
                 style={[styles.squadTile, styles.selectedTile, { borderColor: '#5ac8fa' }]}
-                onPress={() => handleToggleFriend(friend.id)}
+                onPress={() => handleRemoveFriend(friend.id)}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${friend.displayName || friend.name} from squad`}
                 testID={`squad-member-${friend.id}`}
@@ -413,7 +460,6 @@ export default function CreateSessionScreenV2() {
           </ScrollView>
 
           <TextInput
-            ref={searchInputRef}
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -437,12 +483,7 @@ export default function CreateSessionScreenV2() {
           ) : null}
 
           {!isLoadingFriends && !robloxNotConnected && searchResults.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.resultsRow}
-              testID="friend-search-results"
-            >
+            <View style={styles.resultsList} testID="friend-search-results">
               {searchResults.map((friend) => {
                 const isSelected = selectedSet.has(friend.id);
                 return (
@@ -450,14 +491,21 @@ export default function CreateSessionScreenV2() {
                     key={friend.id}
                     style={[
                       styles.resultCard,
-                      {
-                        borderColor: isSelected ? '#5ac8fa' : isDark ? '#2c2c31' : '#d8d8df',
-                        opacity: isSelected ? 0.72 : 1,
-                      },
+                      isSelected
+                        ? [
+                            styles.resultCardSelected,
+                            {
+                              borderColor: isDark ? '#343440' : '#c7d0dc',
+                              backgroundColor: isDark ? '#17181d' : '#eef3f9',
+                              opacity: 0.46,
+                            },
+                          ]
+                        : { borderColor: isDark ? '#2c2c31' : '#d8d8df', backgroundColor: isDark ? '#101012' : '#fff' },
                     ]}
-                    onPress={() => handleToggleFriend(friend.id)}
+                    onPress={() => handleAddFriend(friend.id)}
+                    disabled={isSelected}
                     accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
+                    accessibilityState={{ selected: isSelected, disabled: isSelected }}
                     accessibilityLabel={`${friend.displayName || friend.name}${isSelected ? ' in squad' : ' add to squad'}`}
                     testID={`friend-search-result-${friend.id}`}
                   >
@@ -466,16 +514,32 @@ export default function CreateSessionScreenV2() {
                     ) : (
                       <View style={[styles.resultAvatar, styles.avatarFallback]} />
                     )}
-                    <ThemedText type="bodySmall" numberOfLines={1} style={styles.resultName}>
-                      {friend.displayName || friend.name}
-                    </ThemedText>
-                    <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366" numberOfLines={1}>
-                      {isSelected ? 'In squad' : 'Add'}
-                    </ThemedText>
+                    <View style={styles.resultTextWrap}>
+                      <ThemedText
+                        type="bodySmall"
+                        numberOfLines={1}
+                        style={[styles.resultName, isSelected && styles.resultNameSelected]}
+                      >
+                        {friend.displayName || friend.name}
+                      </ThemedText>
+                      <ThemedText
+                        type="bodySmall"
+                        lightColor={isSelected ? '#97a1ab' : '#8E8E93'}
+                        darkColor={isSelected ? '#6f7884' : '#888992'}
+                        numberOfLines={1}
+                      >
+                        {isSelected ? 'In squad' : 'Tap to add'}
+                      </ThemedText>
+                    </View>
+                    {isSelected ? (
+                      <MaterialIcons name="check-circle" size={18} color={isDark ? '#8892a0' : '#728197'} />
+                    ) : (
+                      <MaterialIcons name="add-circle-outline" size={18} color={isDark ? '#9a9aa6' : '#71717c'} />
+                    )}
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
           ) : null}
 
           {friendsError ? (
@@ -620,6 +684,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  heroThumbnailSkeleton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   heroTextWrap: {
     flex: 1,
     gap: 5,
@@ -651,6 +719,8 @@ const styles = StyleSheet.create({
   },
   squadRow: {
     gap: 10,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
     paddingBottom: 8,
   },
   squadTile: {
@@ -662,17 +732,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-  },
-  addTile: {
-    borderStyle: 'dashed',
-  },
-  addIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#e8f2ff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   selfTile: {},
   selectedTile: {
@@ -692,34 +751,42 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     borderRadius: 12,
-    marginTop: 8,
+    marginTop: 14,
   },
   loadingRow: {
     paddingVertical: 10,
   },
-  resultsRow: {
+  resultsList: {
+    marginTop: 12,
     gap: 10,
-    paddingTop: 10,
-    paddingBottom: 4,
   },
   resultCard: {
-    width: 108,
+    minHeight: 62,
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 9,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    gap: 10,
+  },
+  resultCardSelected: {
+    borderStyle: 'solid',
   },
   resultAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  resultTextWrap: {
+    flex: 1,
+    gap: 2,
   },
   resultName: {
-    textAlign: 'center',
     width: '100%',
+  },
+  resultNameSelected: {
+    color: '#7b8692',
   },
   retryRow: {
     marginTop: 8,

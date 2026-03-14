@@ -95,3 +95,37 @@ export function getUserScopedClient(accessToken: string): SupabaseClient {
 export function getServiceClient(): SupabaseClient {
   return getSupabase();
 }
+
+/**
+ * Returns a set of query helpers pre-scoped to a single user's rows.
+ *
+ * Because the backend uses the service-role client (which bypasses RLS),
+ * every query on user-owned tables must include an explicit ownership filter.
+ * This helper makes that contract hard to miss and easy to audit.
+ *
+ * Usage:
+ *   const { data } = await userScopedFrom('user_platforms', userId)
+ *     .select('platform_user_id, platform_id')
+ *     .eq('platform_id', 'roblox')
+ *     .maybeSingle();
+ *
+ *   await userScopedFrom('user_platforms', userId)
+ *     .update({ roblox_access_token_enc: newEnc });
+ *
+ * Do NOT use this for admin/service-level operations that legitimately need
+ * cross-user access — use getSupabase().from(table) directly with a comment.
+ */
+export function userScopedFrom(table: string, userId: string) {
+  if (!userId) {
+    throw new Error(`userScopedFrom('${table}'): userId must not be empty`);
+  }
+  const db = getSupabase();
+  return {
+    select: (columns?: string) =>
+      db.from(table).select(columns).eq('user_id', userId),
+    update: (values: Record<string, unknown>) =>
+      db.from(table).update(values).eq('user_id', userId),
+    delete: () =>
+      db.from(table).delete().eq('user_id', userId),
+  };
+}

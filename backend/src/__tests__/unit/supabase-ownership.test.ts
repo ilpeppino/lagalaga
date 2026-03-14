@@ -2,97 +2,102 @@
  * Ownership enforcement audit — userScopedFrom helper
  *
  * Verifies that userScopedFrom:
- *   1. Requires a non-empty userId (guard against accidentally unscoped queries)
- *   2. Applies .eq('user_id', userId) on select, update, and delete operations
- *   3. Does NOT allow cross-user data access by construction
+ *   1. Requires a non-empty userId (guard against unscoped queries)
+ *   2. Pre-applies .eq('user_id', userId) on select, update, and delete
+ *   3. Cannot be used to access another user's data by construction
  */
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
+import { userScopedFrom } from '../../config/supabase.js';
 
-// --- minimal Supabase client mock -------------------------------------------
+// ---------------------------------------------------------------------------
+// Minimal fake Supabase client — captures .eq() calls for assertion
+// ---------------------------------------------------------------------------
 
-function makeEqCapture() {
-  const calls: Array<{ column: string; value: unknown }> = [];
-  const eqFn = jest.fn((column: string, value: unknown) => {
-    calls.push({ column, value });
-    // return something chainable so further .eq/.maybeSingle calls don't throw
-    return { eq: eqFn, maybeSingle: jest.fn(), single: jest.fn() };
-  });
-  return { eqFn, calls };
-}
+type EqCapture = { column: string; value: unknown };
 
-function makeTableMock() {
-  const { eqFn, calls } = makeEqCapture();
-  const selectMock = jest.fn(() => ({ eq: eqFn, maybeSingle: jest.fn() }));
-  const updateMock = jest.fn(() => ({ eq: eqFn }));
-  const deleteMock = jest.fn(() => ({ eq: eqFn }));
-  const fromMock = jest.fn(() => ({
-    select: selectMock,
-    update: updateMock,
-    delete: deleteMock,
+function makeClient() {
+  const eqCalls: EqCapture[] = [];
+
+  function makeEq() {
+    const eq = jest.fn((column: string, value: unknown) => {
+      eqCalls.push({ column, value });
+      return { eq, maybeSingle: jest.fn(), single: jest.fn() };
+    });
+    return eq;
+  }
+
+  const selectEq = makeEq();
+  const updateEq = makeEq();
+  const deleteEq = makeEq();
+
+  const selectFn = jest.fn((_cols?: string) => ({ eq: selectEq, maybeSingle: jest.fn() }));
+  const updateFn = jest.fn((_vals: Record<string, unknown>) => ({ eq: updateEq }));
+  const deleteFn = jest.fn(() => ({ eq: deleteEq }));
+
+  const fromFn = jest.fn((_table: string) => ({
+    select: selectFn,
+    update: updateFn,
+    delete: deleteFn,
   }));
-  return { fromMock, selectMock, updateMock, deleteMock, eqFn, eqCalls: calls };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const client = { from: fromFn } as any;
+
+  return { client, fromFn, selectFn, updateFn, deleteFn, eqCalls };
 }
 
-let mockFrom: ReturnType<typeof makeTableMock>;
-
-jest.unstable_mockModule('../../config/supabase.js', () => ({
-  getSupabase: () => ({ from: (...args: unknown[]) => mockFrom.fromMock(...args) }),
-  userScopedFrom: jest.fn(), // replaced by actual implementation via direct import below
-}));
-
-// Re-import after mocking
-const { userScopedFrom } = await import('../../config/supabase.js');
-
+// ---------------------------------------------------------------------------
+// Tests
 // ---------------------------------------------------------------------------
 
 describe('userScopedFrom — ownership guard', () => {
-  beforeEach(() => {
-    mockFrom = makeTableMock();
-  });
-
   it('throws when userId is empty string', () => {
-    expect(() => userScopedFrom('user_platforms', '')).toThrow(
+    const { client } = makeClient();
+    expect(() => userScopedFrom('user_platforms', '', client)).toThrow(
       "userScopedFrom('user_platforms'): userId must not be empty"
     );
   });
 
-  it('select() calls .eq("user_id", userId) on the underlying query', () => {
+  it('select() applies .eq("user_id", userId) before returning', () => {
     const userId = 'user-abc-123';
-    userScopedFrom('user_platforms', userId).select('platform_user_id');
+    const { client, fromFn, selectFn, eqCalls } = makeClient();
 
-    expect(mockFrom.fromMock).toHaveBeenCalledWith('user_platforms');
-    expect(mockFrom.selectMock).toHaveBeenCalledWith('platform_user_id');
-    const firstEqCall = mockFrom.eqCalls[0];
-    expect(firstEqCall).toEqual({ column: 'user_id', value: userId });
+    userScopedFrom('user_platforms', userId, client).select('platform_user_id');
+
+    expect(fromFn).toHaveBeenCalledWith('user_platforms');
+    expect(selectFn).toHaveBeenCalledWith('platform_user_id');
+    expect(eqCalls[0]).toEqual({ column: 'user_id', value: userId });
   });
 
-  it('update() calls .eq("user_id", userId) on the underlying query', () => {
+  it('update() applies .eq("user_id", userId) before returning', () => {
     const userId = 'user-xyz-456';
-    userScopedFrom('user_platforms', userId).update({ roblox_access_token_enc: 'new-enc' });
+    const { client, updateFn, eqCalls } = makeClient();
 
-    expect(mockFrom.updateMock).toHaveBeenCalledWith({ roblox_access_token_enc: 'new-enc' });
-    const firstEqCall = mockFrom.eqCalls[0];
-    expect(firstEqCall).toEqual({ column: 'user_id', value: userId });
+    userScopedFrom('user_platforms', userId, client).update({ roblox_access_token_enc: 'new-enc' });
+
+    expect(updateFn).toHaveBeenCalledWith({ roblox_access_token_enc: 'new-enc' });
+    expect(eqCalls[0]).toEqual({ column: 'user_id', value: userId });
   });
 
-  it('delete() calls .eq("user_id", userId) on the underlying query', () => {
+  it('delete() applies .eq("user_id", userId) before returning', () => {
     const userId = 'user-del-789';
-    userScopedFrom('user_platforms', userId).delete();
+    const { client, deleteFn, eqCalls } = makeClient();
 
-    expect(mockFrom.deleteMock).toHaveBeenCalled();
-    const firstEqCall = mockFrom.eqCalls[0];
-    expect(firstEqCall).toEqual({ column: 'user_id', value: userId });
+    userScopedFrom('user_platforms', userId, client).delete();
+
+    expect(deleteFn).toHaveBeenCalled();
+    expect(eqCalls[0]).toEqual({ column: 'user_id', value: userId });
   });
 
-  it('does not permit querying another user\'s rows by construction', () => {
+  it('cannot access another user\'s rows by construction', () => {
     const requestingUser = 'user-a';
     const otherUser = 'user-b';
+    const { client, eqCalls } = makeClient();
 
-    userScopedFrom('user_platforms', requestingUser).select('*');
+    userScopedFrom('user_platforms', requestingUser, client).select('*');
 
-    // The userId filter must be requestingUser, never otherUser
-    const eqCall = mockFrom.eqCalls.find((c) => c.column === 'user_id');
-    expect(eqCall?.value).toBe(requestingUser);
-    expect(eqCall?.value).not.toBe(otherUser);
+    const ownershipFilter = eqCalls.find((c) => c.column === 'user_id');
+    expect(ownershipFilter?.value).toBe(requestingUser);
+    expect(ownershipFilter?.value).not.toBe(otherUser);
   });
 });

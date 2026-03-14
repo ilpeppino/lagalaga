@@ -115,11 +115,15 @@ export function getServiceClient(): SupabaseClient {
  * Do NOT use this for admin/service-level operations that legitimately need
  * cross-user access — use getSupabase().from(table) directly with a comment.
  */
-export function userScopedFrom(table: string, userId: string) {
+export function userScopedFrom(
+  table: string,
+  userId: string,
+  /** Inject a client for testing; defaults to the global service-role client. */
+  db: Pick<SupabaseClient, 'from'> = getSupabase()
+) {
   if (!userId) {
     throw new Error(`userScopedFrom('${table}'): userId must not be empty`);
   }
-  const db = getSupabase();
   return {
     select: (columns?: string) =>
       db.from(table).select(columns).eq('user_id', userId),

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STAGED_FILES="$(git diff --cached --name-only)"
+
+BLOCKED_REGEX='(^|/)(build|generated|intermediates|cxx|Pods|\.gradle|\.expo|node_modules)(/|$)|(\.apk$|\.aab$|\.ipa$|\.keystore$|\.jks$|google-services\.json$|GoogleService-Info\.plist$)|((^|/)\.env$)|((^|/)\.env\..*)|(^|/)ios/\.xcode\.env\.local$'
+
+MATCHES="$(echo "$STAGED_FILES" | grep -E "$BLOCKED_REGEX" || true)"
+
+if [ -n "$MATCHES" ]; then
+  echo "❌ Commit blocked."
+  echo "One or more generated files, secrets, or native build artifacts are staged:"
+  echo
+  echo "$MATCHES"
+  echo
+  echo "Unstage/remove them before committing."
+  exit 1
+fi
+
+exit 0

@@ -108,6 +108,7 @@ android/app/build/
 
 ios/build/
 ios/Pods/
+ios/.xcode.env.local
 *.ipa
 *.xcarchive
 *.xcuserstate

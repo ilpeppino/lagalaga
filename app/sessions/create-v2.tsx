@@ -3,15 +3,18 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  UIManager,
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SegmentedButtons } from 'react-native-paper';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -25,7 +28,7 @@ import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import { buildCreateSessionPayload, toggleFriendSelection } from '@/src/features/sessions/friendSelection';
 import {
   buildAutoSessionTitle,
-  buildAvailableFriends,
+  buildFriendSearchResults,
   buildScheduledStartIso,
   buildSelectedFriendsMap,
   type SessionStartMode,
@@ -54,6 +57,7 @@ function formatScheduleTime(date: Date): string {
 
 export default function CreateSessionScreenV2() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -81,9 +85,6 @@ export default function CreateSessionScreenV2() {
   const [gameInputMode, setGameInputMode] = useState<'favorites' | 'link'>('favorites');
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false);
 
-  const [sessionName, setSessionName] = useState('');
-  const [hasEditedSessionName, setHasEditedSessionName] = useState(false);
-
   const [startMode, setStartMode] = useState<SessionStartMode>('now');
   const [scheduledDate, setScheduledDate] = useState<Date>(new Date());
   const [scheduledTime, setScheduledTime] = useState<Date>(new Date(Date.now() + 30 * 60 * 1000));
@@ -91,12 +92,17 @@ export default function CreateSessionScreenV2() {
 
   const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchVisible, setSearchVisible] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const searchInputRef = useRef<any>(null);
+  const searchInputRef = useRef<{ focus?: () => void } | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (user?.id) {
@@ -114,25 +120,21 @@ export default function CreateSessionScreenV2() {
     [selectedFavorite, user?.robloxDisplayName, user?.robloxUsername]
   );
 
-  useEffect(() => {
-    if (!hasEditedSessionName) {
-      setSessionName(autoTitle);
-    }
-  }, [autoTitle, hasEditedSessionName]);
-
   const selectedFriends = useMemo(
     () => buildSelectedFriendsMap(friends, selectedFriendIds),
     [friends, selectedFriendIds]
   );
 
-  const availableFriends = useMemo(
+  const selectedSet = useMemo(() => new Set(selectedFriendIds), [selectedFriendIds]);
+
+  const searchResults = useMemo(
     () =>
-      buildAvailableFriends({
+      buildFriendSearchResults({
         friends,
-        selectedIds: selectedFriendIds,
         searchQuery,
+        limit: 18,
       }),
-    [friends, searchQuery, selectedFriendIds]
+    [friends, searchQuery]
   );
 
   const scheduledStartIso = useMemo(
@@ -157,14 +159,12 @@ export default function CreateSessionScreenV2() {
   };
 
   const handleToggleFriend = (friendId: number) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedFriendIds((prev) => toggleFriendSelection(prev, friendId));
   };
 
-  const handleOpenSearch = () => {
-    setSearchVisible(true);
-    setTimeout(() => {
-      searchInputRef.current?.focus?.();
-    }, 50);
+  const handleFocusSearch = () => {
+    searchInputRef.current?.focus?.();
   };
 
   const handlePickerChange = (mode: 'date' | 'time') => (event: DateTimePickerEvent, value?: Date) => {
@@ -192,11 +192,6 @@ export default function CreateSessionScreenV2() {
       return;
     }
 
-    if (!sessionName.trim()) {
-      setError('Session name cannot be empty.');
-      return;
-    }
-
     if (startMode === 'scheduled' && scheduledStartIso) {
       const now = Date.now();
       const scheduledMs = new Date(scheduledStartIso).getTime();
@@ -211,7 +206,7 @@ export default function CreateSessionScreenV2() {
       const result = await sessionsAPIStoreV2.createSession(
         buildCreateSessionPayload({
           robloxUrl: robloxUrl.trim(),
-          title: sessionName.trim(),
+          title: autoTitle,
           visibility: 'friends',
           isRanked: false,
           scheduledStart: scheduledStartIso,
@@ -234,7 +229,7 @@ export default function CreateSessionScreenV2() {
     }
   };
 
-  const canStart = !isCreating && Boolean(robloxUrl.trim()) && Boolean(sessionName.trim());
+  const canStart = !isCreating && Boolean(robloxUrl.trim());
 
   return (
     <KeyboardAvoidingView
@@ -243,37 +238,35 @@ export default function CreateSessionScreenV2() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 132 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.section}>
-          <ThemedText type="labelSmall" lightColor="#8E8E93" darkColor="#636366" style={styles.sectionLabel}>
-            GAME
-          </ThemedText>
+          <ThemedText type="titleMedium" style={styles.blockTitle}>Game</ThemedText>
 
           {gameInputMode === 'favorites' ? (
-            <View style={[styles.gameCard, { backgroundColor: isDark ? '#1c1c1e' : '#f2f2f7' }]}>
+            <View style={[styles.heroCard, { backgroundColor: isDark ? '#1a1a1c' : '#f4f5fa' }]}>
               <Pressable
                 onPress={() => setIsFavoritesExpanded((prev) => !prev)}
-                style={styles.gameCardInner}
+                style={styles.heroCardInner}
                 accessibilityRole="button"
                 testID="game-card"
               >
                 {selectedFavorite?.thumbnailUrl ? (
-                  <Image source={{ uri: selectedFavorite.thumbnailUrl }} style={styles.gameThumbnail} />
+                  <Image source={{ uri: selectedFavorite.thumbnailUrl }} style={styles.heroThumbnail} />
                 ) : (
-                  <View style={[styles.gameThumbnail, styles.gameThumbnailPlaceholder]}>
-                    <MaterialIcons name="gamepad" size={24} color={isDark ? '#555' : '#bbb'} />
+                  <View style={[styles.heroThumbnail, styles.heroThumbnailPlaceholder]}>
+                    <MaterialIcons name="sports-esports" size={42} color={isDark ? '#65656a' : '#b4b4bf'} />
                   </View>
                 )}
 
-                <View style={styles.gameTextWrap}>
-                  <ThemedText type="bodyMedium" numberOfLines={2} style={styles.gameTitle}>
-                    {selectedFavorite ? getFavoriteDisplayName(selectedFavorite) : 'Select from your Roblox favorites'}
+                <View style={styles.heroTextWrap}>
+                  <ThemedText type="titleMedium" numberOfLines={2} style={styles.heroTitle}>
+                    {selectedFavorite ? getFavoriteDisplayName(selectedFavorite) : 'Choose a Roblox game'}
                   </ThemedText>
-                  {isLoadingFavorites ? (
-                    <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366">Loading...</ThemedText>
-                  ) : null}
+                  <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#8b8b91" numberOfLines={2}>
+                    {selectedFavorite ? 'Ready to launch with your squad' : 'Tap to pick from your favorites'}
+                  </ThemedText>
                 </View>
 
                 <Pressable
@@ -281,16 +274,17 @@ export default function CreateSessionScreenV2() {
                     event.stopPropagation();
                     void forceRefreshFavorites();
                   }}
-                  hitSlop={8}
+                  hitSlop={10}
                   accessibilityRole="button"
+                  accessibilityLabel="Refresh game favorites"
                   testID="game-refresh"
                 >
-                  <MaterialIcons name="refresh" size={20} color={isDark ? '#636366' : '#8E8E93'} />
+                  <MaterialIcons name="refresh" size={22} color={isDark ? '#909096' : '#62626c'} />
                 </Pressable>
               </Pressable>
 
-              {isFavoritesExpanded && (
-                <View style={[styles.favoriteList, { borderTopColor: isDark ? '#2c2c2e' : '#dddddd' }]}>
+              {isFavoritesExpanded ? (
+                <View style={[styles.favoriteList, { borderTopColor: isDark ? '#2c2c31' : '#dfdfe6' }]}>
                   {favorites.map((favorite) => (
                     <Pressable
                       key={favorite.id}
@@ -324,11 +318,11 @@ export default function CreateSessionScreenV2() {
                     </ThemedText>
                   ) : null}
                 </View>
-              )}
+              ) : null}
             </View>
           ) : (
             <TextInput
-              style={styles.textInput}
+              style={styles.linkInput}
               value={robloxUrl}
               onChangeText={setRobloxUrl}
               placeholder="https://www.roblox.com/games/..."
@@ -358,27 +352,142 @@ export default function CreateSessionScreenV2() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="labelSmall" lightColor="#8E8E93" darkColor="#636366" style={styles.sectionLabel}>
-            SESSION NAME
-          </ThemedText>
+          <View style={styles.squadTitleRow}>
+            <ThemedText type="titleMedium" style={styles.blockTitle}>Squad</ThemedText>
+            {isRefreshingFriends ? <ActivityIndicator size="small" color="#007AFF" /> : null}
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.squadRow}
+            testID="squad-row"
+          >
+            <Pressable
+              style={[styles.squadTile, styles.addTile, { borderColor: isDark ? '#2c2c31' : '#d8d8df' }]}
+              onPress={handleFocusSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Add friends to squad"
+              testID="squad-add-tile"
+            >
+              <View style={styles.addIconWrap}>
+                <MaterialIcons name="person-add" size={18} color="#007AFF" />
+              </View>
+              <ThemedText type="bodySmall" numberOfLines={1}>Invite</ThemedText>
+            </Pressable>
+
+            <View
+              style={[styles.squadTile, styles.selfTile, { borderColor: isDark ? '#2c2c31' : '#d8d8df' }]}
+              testID="squad-self-tile"
+            >
+              {user?.avatarHeadshotUrl ? (
+                <Image source={{ uri: user.avatarHeadshotUrl }} style={styles.squadAvatar} />
+              ) : (
+                <View style={[styles.squadAvatar, styles.avatarFallback]} />
+              )}
+              <ThemedText type="bodySmall" numberOfLines={1}>
+                {user?.robloxDisplayName || user?.robloxUsername || 'You'}
+              </ThemedText>
+            </View>
+
+            {selectedFriends.map((friend) => (
+              <Pressable
+                key={friend.id}
+                style={[styles.squadTile, styles.selectedTile, { borderColor: '#5ac8fa' }]}
+                onPress={() => handleToggleFriend(friend.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${friend.displayName || friend.name} from squad`}
+                testID={`squad-member-${friend.id}`}
+              >
+                {friend.avatarUrl ? (
+                  <Image source={{ uri: friend.avatarUrl }} style={styles.squadAvatar} />
+                ) : (
+                  <View style={[styles.squadAvatar, styles.avatarFallback]} />
+                )}
+                <ThemedText type="bodySmall" numberOfLines={1} style={styles.squadName}>
+                  {friend.displayName || friend.name}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </ScrollView>
+
           <TextInput
-            style={styles.textInput}
-            value={sessionName}
-            onChangeText={(value) => {
-              setHasEditedSessionName(true);
-              setSessionName(value);
-            }}
-            placeholder="Session name"
+            ref={searchInputRef}
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search friends"
+            autoCapitalize="none"
+            autoCorrect={false}
             variant="outlined"
-            maxLength={100}
-            testID="session-name-input"
+            testID="squad-search-input"
           />
+
+          {isLoadingFriends ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#007AFF" />
+            </View>
+          ) : null}
+
+          {!isLoadingFriends && robloxNotConnected ? (
+            <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366">
+              Connect Roblox to build your squad.
+            </ThemedText>
+          ) : null}
+
+          {!isLoadingFriends && !robloxNotConnected && searchResults.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.resultsRow}
+              testID="friend-search-results"
+            >
+              {searchResults.map((friend) => {
+                const isSelected = selectedSet.has(friend.id);
+                return (
+                  <Pressable
+                    key={friend.id}
+                    style={[
+                      styles.resultCard,
+                      {
+                        borderColor: isSelected ? '#5ac8fa' : isDark ? '#2c2c31' : '#d8d8df',
+                        opacity: isSelected ? 0.72 : 1,
+                      },
+                    ]}
+                    onPress={() => handleToggleFriend(friend.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${friend.displayName || friend.name}${isSelected ? ' in squad' : ' add to squad'}`}
+                    testID={`friend-search-result-${friend.id}`}
+                  >
+                    {friend.avatarUrl ? (
+                      <Image source={{ uri: friend.avatarUrl }} style={styles.resultAvatar} />
+                    ) : (
+                      <View style={[styles.resultAvatar, styles.avatarFallback]} />
+                    )}
+                    <ThemedText type="bodySmall" numberOfLines={1} style={styles.resultName}>
+                      {friend.displayName || friend.name}
+                    </ThemedText>
+                    <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366" numberOfLines={1}>
+                      {isSelected ? 'In squad' : 'Add'}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+
+          {friendsError ? (
+            <Pressable onPress={() => void refreshFriends()} style={styles.retryRow}>
+              <ThemedText type="bodySmall" style={{ color: '#007AFF' }}>
+                Could not load friends. Tap to retry.
+              </ThemedText>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="labelSmall" lightColor="#8E8E93" darkColor="#636366" style={styles.sectionLabel}>
-            START TIME
-          </ThemedText>
+          <ThemedText type="titleMedium" style={styles.blockTitle}>Start time</ThemedText>
 
           <SegmentedButtons
             value={startMode}
@@ -389,24 +498,24 @@ export default function CreateSessionScreenV2() {
             ]}
           />
 
-          {startMode === 'scheduled' && (
+          {startMode === 'scheduled' ? (
             <View style={styles.scheduleWrap}>
               <View style={styles.scheduleRow}>
                 <Pressable
-                  style={[styles.scheduleButton, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}
+                  style={[styles.scheduleButton, { borderColor: isDark ? '#2f2f35' : '#d8d8df' }]}
                   onPress={() => setActivePicker('date')}
                   testID="scheduled-date-button"
                 >
-                  <MaterialIcons name="calendar-today" size={16} color={isDark ? '#b8b8b8' : '#5f5f5f'} />
+                  <MaterialIcons name="calendar-today" size={16} color={isDark ? '#b8b8c0' : '#5f5f66'} />
                   <ThemedText type="bodyMedium">{formatScheduleDate(scheduledDate)}</ThemedText>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.scheduleButton, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}
+                  style={[styles.scheduleButton, { borderColor: isDark ? '#2f2f35' : '#d8d8df' }]}
                   onPress={() => setActivePicker('time')}
                   testID="scheduled-time-button"
                 >
-                  <MaterialIcons name="schedule" size={16} color={isDark ? '#b8b8b8' : '#5f5f5f'} />
+                  <MaterialIcons name="schedule" size={16} color={isDark ? '#b8b8c0' : '#5f5f66'} />
                   <ThemedText type="bodyMedium">{formatScheduleTime(scheduledTime)}</ThemedText>
                 </Pressable>
               </View>
@@ -434,120 +543,6 @@ export default function CreateSessionScreenV2() {
                 />
               ) : null}
             </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <ThemedText type="labelSmall" lightColor="#8E8E93" darkColor="#636366" style={styles.sectionLabel}>
-              SQUAD
-            </ThemedText>
-            {isRefreshingFriends ? <ActivityIndicator size="small" color="#007AFF" /> : null}
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.squadRow}>
-            <View style={[styles.memberCard, styles.memberCardHost, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}>
-              {user?.avatarHeadshotUrl ? (
-                <Image source={{ uri: user.avatarHeadshotUrl }} style={styles.memberAvatar} />
-              ) : (
-                <View style={[styles.memberAvatar, styles.memberAvatarFallback]} />
-              )}
-              <ThemedText type="bodySmall" numberOfLines={1}>
-                {user?.robloxDisplayName || user?.robloxUsername || 'You'}
-              </ThemedText>
-            </View>
-
-            {selectedFriends.map((friend) => (
-              <Pressable
-                key={friend.id}
-                style={[styles.memberCard, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}
-                onPress={() => handleToggleFriend(friend.id)}
-                accessibilityRole="button"
-                testID={`squad-member-${friend.id}`}
-              >
-                {friend.avatarUrl ? (
-                  <Image source={{ uri: friend.avatarUrl }} style={styles.memberAvatar} />
-                ) : (
-                  <View style={[styles.memberAvatar, styles.memberAvatarFallback]} />
-                )}
-                <ThemedText type="bodySmall" numberOfLines={1}>
-                  {friend.displayName || friend.name}
-                </ThemedText>
-                <View style={styles.removeBadge}>
-                  <MaterialIcons name="close" size={12} color="#fff" />
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {searchVisible ? (
-            <TextInput
-              ref={searchInputRef}
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search friends"
-              autoCapitalize="none"
-              autoCorrect={false}
-              variant="outlined"
-              testID="squad-search-input"
-            />
-          ) : null}
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.friendRail}
-            testID="friend-rail"
-          >
-            <Pressable
-              style={[styles.addCard, styles.searchCard, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}
-              onPress={handleOpenSearch}
-              testID="friend-rail-search-tile"
-            >
-              <MaterialIcons name="search" size={18} color={isDark ? '#b8b8b8' : '#5f5f5f'} />
-              <ThemedText type="bodySmall">Search</ThemedText>
-            </Pressable>
-
-            {isLoadingFriends ? (
-              <View style={[styles.addCard, styles.loadingCard, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}>
-                <ActivityIndicator size="small" color="#007AFF" />
-              </View>
-            ) : null}
-
-            {!isLoadingFriends && robloxNotConnected ? (
-              <View style={[styles.addCard, styles.messageCard, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}>
-                <ThemedText type="bodySmall" lightColor="#8E8E93" darkColor="#636366">
-                  Connect Roblox
-                </ThemedText>
-              </View>
-            ) : null}
-
-            {!isLoadingFriends && !robloxNotConnected && availableFriends.map((friend) => (
-              <Pressable
-                key={friend.id}
-                style={[styles.addCard, { borderColor: isDark ? '#2f2f2f' : '#d8d8d8' }]}
-                onPress={() => handleToggleFriend(friend.id)}
-                testID={`friend-rail-item-${friend.id}`}
-              >
-                {friend.avatarUrl ? (
-                  <Image source={{ uri: friend.avatarUrl }} style={styles.addAvatar} />
-                ) : (
-                  <View style={[styles.addAvatar, styles.memberAvatarFallback]} />
-                )}
-                <ThemedText type="bodySmall" numberOfLines={1} style={styles.addName}>
-                  {friend.displayName || friend.name}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {friendsError ? (
-            <Pressable onPress={() => void refreshFriends()} style={styles.retryRow}>
-              <ThemedText type="bodySmall" style={{ color: '#007AFF' }}>
-                Could not load friends. Tap to retry.
-              </ThemedText>
-            </Pressable>
           ) : null}
         </View>
 
@@ -565,7 +560,8 @@ export default function CreateSessionScreenV2() {
           styles.footer,
           {
             backgroundColor: isDark ? '#000' : '#fff',
-            borderTopColor: isDark ? '#2a2a2a' : '#e0e0e0',
+            borderTopColor: isDark ? '#242428' : '#e6e6eb',
+            paddingBottom: Math.max(12, insets.bottom + 4),
           },
         ]}
       >
@@ -592,66 +588,140 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
-    paddingBottom: 120,
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
   section: {
-    marginBottom: 22,
+    marginBottom: 24,
   },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+  blockTitle: {
     marginBottom: 10,
+    fontWeight: '700',
   },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  gameCard: {
-    borderRadius: 14,
+  heroCard: {
+    borderRadius: 18,
     overflow: 'hidden',
   },
-  gameCardInner: {
+  heroCardInner: {
     flexDirection: 'row',
+    gap: 12,
     alignItems: 'center',
-    gap: 10,
-    padding: 12,
+    padding: 14,
+    minHeight: 132,
   },
-  gameThumbnail: {
-    width: 62,
-    height: 62,
-    borderRadius: 12,
+  heroThumbnail: {
+    width: 104,
+    height: 104,
+    borderRadius: 14,
   },
-  gameThumbnailPlaceholder: {
-    backgroundColor: '#d1d1d6',
+  heroThumbnailPlaceholder: {
+    backgroundColor: '#d5d5dc',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  gameTextWrap: {
+  heroTextWrap: {
     flex: 1,
-    gap: 2,
+    gap: 5,
   },
-  gameTitle: {
-    fontWeight: '600',
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   favoriteList: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 10,
   },
   favoriteRow: {
     paddingVertical: 2,
   },
+  linkInput: {
+    borderRadius: 12,
+  },
   inlineAction: {
     alignSelf: 'flex-start',
     marginTop: 6,
   },
-  textInput: {
-    borderRadius: 10,
+  squadTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  squadRow: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  squadTile: {
+    width: 86,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  addTile: {
+    borderStyle: 'dashed',
+  },
+  addIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#e8f2ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selfTile: {},
+  selectedTile: {
+    backgroundColor: '#ebf8ff',
+  },
+  squadAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  squadName: {
+    textAlign: 'center',
+    width: '100%',
+  },
+  avatarFallback: {
+    backgroundColor: '#d1d1d6',
+  },
+  searchInput: {
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  loadingRow: {
+    paddingVertical: 10,
+  },
+  resultsRow: {
+    gap: 10,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  resultCard: {
+    width: 108,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  resultAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  resultName: {
+    textAlign: 'center',
+    width: '100%',
+  },
+  retryRow: {
+    marginTop: 8,
   },
   scheduleWrap: {
     marginTop: 12,
@@ -667,86 +737,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 11,
     paddingVertical: 10,
     paddingHorizontal: 12,
-  },
-  squadRow: {
-    gap: 10,
-    paddingBottom: 8,
-  },
-  memberCard: {
-    width: 86,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    position: 'relative',
-  },
-  memberCardHost: {
-    borderStyle: 'solid',
-  },
-  memberAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-  },
-  memberAvatarFallback: {
-    backgroundColor: '#d1d1d6',
-  },
-  removeBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#ff3b30',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchInput: {
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  friendRail: {
-    gap: 10,
-    paddingBottom: 4,
-  },
-  addCard: {
-    width: 92,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  searchCard: {
-    backgroundColor: 'transparent',
-  },
-  loadingCard: {
-    height: 92,
-  },
-  messageCard: {
-    width: 132,
-    height: 92,
-  },
-  addAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-  },
-  addName: {
-    textAlign: 'center',
-    width: '100%',
-  },
-  retryRow: {
-    marginTop: 8,
   },
   errorBox: {
     backgroundColor: '#ffebee',
@@ -757,14 +750,13 @@ const styles = StyleSheet.create({
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingTop: 10,
   },
   ctaButton: {
     borderRadius: 14,
     shadowColor: '#34C759',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.24,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 5,
   },

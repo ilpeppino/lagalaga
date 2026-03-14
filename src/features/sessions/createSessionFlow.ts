@@ -66,3 +66,24 @@ export function buildAvailableFriends(input: {
     return name.includes(query) || displayName.includes(query);
   });
 }
+
+export function buildFriendSearchResults(input: {
+  friends: RobloxFriend[];
+  searchQuery: string;
+  limit?: number;
+}): RobloxFriend[] {
+  const query = input.searchQuery.trim().toLowerCase();
+  const limit = input.limit ?? 24;
+
+  const filtered = input.friends.filter((friend) => {
+    if (!query) {
+      return true;
+    }
+
+    const name = friend.name.toLowerCase();
+    const displayName = friend.displayName.toLowerCase();
+    return name.includes(query) || displayName.includes(query);
+  });
+
+  return filtered.slice(0, limit);
+}

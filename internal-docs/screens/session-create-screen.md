@@ -11,22 +11,25 @@
 `Create Session` is now a single-screen squad-builder flow.
 
 Screen structure:
-1. Game card (favorites with Roblox thumbnail, refresh, and paste-link switch)
-2. Editable session name field (initialized from auto-generated title)
-3. Start time controls (`Now` or `Scheduled` with date/time pickers)
-4. Squad section
-- Current user appears first
-- Selected friends appear in Squad row
-- Horizontal add-friends rail below
-- First rail tile is `Search`
-5. `Start Session` CTA
+1. Hero game block (large card with Roblox thumbnail, game title, refresh, and paste-link toggle)
+2. Squad builder block
+- horizontal squad row
+- first tile is `Invite`
+- selected friends appear in the same row
+- tapping selected squad member removes them
+- one search field below (`Search friends`)
+- search results add directly into squad row
+3. Start time block (`Now` / `Scheduled`)
+- date + time controls shown only when `Scheduled` is selected
+4. Sticky bottom `Start Session` CTA
 
 ## Behavior
 - No separate `Session Lobby` step after creation.
 - No visibility selector in this UI.
 - No ranked controls in this UI.
 - No `Invited` section in this UI.
-- Friend tap in add-friends rail selects into Squad directly (no share sheet).
+- No session name input in this UI (title is generated internally).
+- Friend search results and squad row both use direct toggle behavior (no share sheet).
 - Tapping selected Squad member removes them from Squad.
 - Creation payload still includes `invitedRobloxUserIds` from Squad selection.
 - Session visibility is sent as `friends` by default from this flow.

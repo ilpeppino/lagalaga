@@ -689,16 +689,26 @@ LagaLaga implements a **hybrid friends system** that combines native app friends
 
 The session creation flow now uses a single-screen squad-builder pattern:
 
-1. **CreateSessionScreen** (`/sessions/create`) — unified flow with game selection, editable session name, start-time scheduling (`Now` / `Scheduled`), Squad row, and horizontal add-friends rail with `Search` as first tile
+1. **CreateSessionScreen** (`/sessions/create`) — unified 3-block builder:
+- **Game block**: hero game card with Roblox thumbnail + refresh + paste-link fallback
+- **Squad block**: horizontal squad row (first tile is Invite), single `Search friends` field, and direct toggle selection into squad
+- **Start time block**: `Now` / `Scheduled`; date+time controls are conditional and only shown for `Scheduled`
 2. **Session Details Screen** (`/sessions/[id]`) — destination after `Start Session` creates the session
 
 `SessionLobbyScreen` (`/sessions/lobby`) is deprecated in the primary mobile flow.
 
 **Create Screen Squad Model**:
 - Squad row is the source of truth for selected friends (`selectedFriendIds`)
-- Selected friends are moved into Squad row and removed from the add rail
+- Selected friends are shown in the Squad row and can be removed by tapping their tile
 - Tapping a selected Squad member removes them from Squad
-- No share-sheet invite behavior in this flow
+- Search results add directly into Squad (no share sheet invite behavior)
+
+**Removed from Create Session UI**:
+- session name field (title is generated internally)
+- visibility selector
+- invited section
+- host label in squad
+- ranked settings controls
 
 ### Handoff State Tracking
 

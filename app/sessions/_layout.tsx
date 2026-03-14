@@ -1,50 +1,13 @@
-import { Stack, useRouter } from "expo-router";
-import { TouchableOpacity, View, Image, StyleSheet } from "react-native";
-import { useAuth } from "@/src/features/auth/useAuth";
-import { useErrorHandler } from "@/hooks/useErrorHandler";
-import { ThemedText } from "@/components/themed-text";
-import { useState, useEffect } from "react";
-import { apiClient } from "@/src/lib/api";
-import { logger } from "@/src/lib/logger";
+import { Stack } from "expo-router";
 
+/**
+ * Sessions stack layout.
+ *
+ * The index screen (SessionsListScreenV2) renders its own custom header — it
+ * handles the avatar, title, and filter control inline so the page feels like
+ * one continuous surface. Sign-out lives in the Me / Account flow only.
+ */
 export default function SessionsLayout() {
-  const router = useRouter();
-  const { signOut } = useAuth();
-  const { handleError } = useErrorHandler();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string>('User');
-
-  useEffect(() => {
-    // Fetch user data in background
-    const fetchUserData = async () => {
-      try {
-        const userData = await apiClient.auth.me();
-        setAvatarUrl(userData.avatarHeadshotUrl);
-        setDisplayName(userData.robloxDisplayName || userData.robloxUsername || 'User');
-      } catch (error) {
-        // Silently fail - header identity is not critical
-        logger.warn('Failed to fetch user header profile', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    };
-
-    fetchUserData();
-  }, []);
-
-  async function handleSignOut() {
-    try {
-      await signOut();
-      router.replace("/auth/sign-in");
-    } catch (error) {
-      handleError(error, { fallbackMessage: "Failed to sign out" });
-    }
-  }
-
-  function handleOpenMe() {
-    router.push("/me");
-  }
-
   return (
     <Stack
       screenOptions={{
@@ -53,36 +16,8 @@ export default function SessionsLayout() {
         gestureEnabled: true,
       }}
     >
-      <Stack.Screen
-        name="index"
-        options={{
-          headerTitle: '',
-          headerLeft: () => (
-            <View style={styles.headerLeft}>
-              <TouchableOpacity onPress={handleOpenMe} activeOpacity={0.7} style={styles.profileButton}>
-                <Image
-                  source={
-                    avatarUrl
-                      ? { uri: avatarUrl }
-                      : require('@/assets/images/avatar-placeholder.png')
-                  }
-                  style={styles.avatar}
-                />
-              </TouchableOpacity>
-              <ThemedText type="bodyLarge" numberOfLines={1} style={styles.displayName}>
-                {displayName}
-              </ThemedText>
-            </View>
-          ),
-          headerRight: () => (
-            <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
-              <ThemedText type="bodyLarge" lightColor="#007AFF" darkColor="#007AFF">
-                Sign Out
-              </ThemedText>
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      {/* headerShown is overridden to true by the screen when selection mode is active */}
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
       <Stack.Screen name="lobby" options={{ title: "Session Lobby" }} />
       <Stack.Screen name="friend-picker" options={{ title: "Invite Friends" }} />
@@ -91,28 +26,3 @@ export default function SessionsLayout() {
     </Stack>
   );
 }
-
-const styles = StyleSheet.create({
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    maxWidth: 220,
-    paddingHorizontal: 12,
-  },
-  profileButton: {
-    marginRight: 10,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e0e0e0',
-  },
-  displayName: {
-    flexShrink: 1,
-  },
-  signOutButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-  },
-});

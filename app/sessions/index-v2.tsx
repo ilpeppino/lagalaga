@@ -1,17 +1,23 @@
 /**
- * Epic 4 Story 4.3: Browse Sessions UI
+ * Epic 4 Story 4.3: Browse Sessions UI — Option 2 redesign
+ *
+ * Custom header (Sessions / subtitle / avatar), compact pill filter,
+ * simplified session cards, and a grouped bottom action dock.
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   Image,
   FlatList,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -24,10 +30,10 @@ import Animated, {
 import { sessionsAPIStoreV2 } from '@/src/features/sessions/apiStore-v2';
 import type { Session } from '@/src/features/sessions/types-v2';
 import { logger } from '@/src/lib/logger';
-import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Card } from '@/components/ui/paper';
-import { ActivityIndicator, FAB, IconButton, SegmentedButtons } from 'react-native-paper';
+import { Colors } from '@/constants/theme';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ActivityIndicator as PaperActivityIndicator, IconButton } from 'react-native-paper';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
@@ -45,12 +51,17 @@ import {
   isAutoHiddenCompleted,
   sortSessionsForList,
 } from '@/src/features/sessions/filtering';
+import { apiClient } from '@/src/lib/api';
+
+// ---------------------------------------------------------------------------
+// Pure helpers (exported for testing)
+// ---------------------------------------------------------------------------
 
 /**
- * Format a timestamp as relative time (e.g., "in 5m", "2h ago")
- * Moved outside component to avoid recreation on every render
+ * Format a timestamp as relative time (e.g., "in 5m", "2h ago").
+ * Defined at module level to avoid recreation on every render.
  */
-function formatRelativeTime(isoString: string): string {
+export function formatRelativeTime(isoString: string): string {
   const date = new Date(isoString);
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
@@ -71,6 +82,47 @@ function formatRelativeTime(isoString: string): string {
     return `in ${days}d`;
   }
 }
+
+/**
+ * Build the compact metadata string for a session card.
+ * Exported for unit testing.
+ */
+export function buildSessionMetaParts(
+  session: Pick<Session, 'visibility' | 'currentParticipants' | 'maxParticipants' | 'scheduledStart'>,
+  isLive: boolean
+): string[] {
+  const visibilityLabel =
+    session.visibility === 'public'
+      ? 'Public'
+      : session.visibility === 'friends'
+        ? 'Friends'
+        : 'Invite';
+
+  const parts: string[] = [
+    visibilityLabel,
+    `${session.currentParticipants}/${session.maxParticipants}`,
+  ];
+
+  if (session.scheduledStart && !isLive) {
+    parts.push(formatRelativeTime(session.scheduledStart));
+  }
+
+  return parts;
+}
+
+// ---------------------------------------------------------------------------
+// Filter segments
+// ---------------------------------------------------------------------------
+
+const FILTER_SEGMENTS: { value: SessionListFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'starting_soon', label: 'Soon' },
+  { value: 'live', label: 'Live' },
+];
+
+// ---------------------------------------------------------------------------
+// CollapsibleSessionRow (unchanged from previous implementation)
+// ---------------------------------------------------------------------------
 
 function CollapsibleSessionRow({
   sessionId,
@@ -115,7 +167,7 @@ function CollapsibleSessionRow({
     opacity: 0.1 + collapseProgress.value * 0.9,
     transform: [{ scaleY: 0.96 + collapseProgress.value * 0.04 }],
     height: measuredHeight == null ? undefined : measuredHeight * collapseProgress.value,
-    marginTop: 12 * collapseProgress.value,
+    marginTop: 10 * collapseProgress.value,
   }));
 
   return (
@@ -132,11 +184,43 @@ function CollapsibleSessionRow({
   );
 }
 
+// ---------------------------------------------------------------------------
+// SessionsListScreenV2
+// ---------------------------------------------------------------------------
+
 export default function SessionsListScreenV2() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const { presentError } = useErrorHandler();
 
+  const isDark = colorScheme === 'dark';
+  const backgroundColor = Colors[colorScheme].background;
+  const textColor = Colors[colorScheme].text;
+  const tintColor = Colors[colorScheme].tint;
+  const cardColor = isDark ? '#1c1c1e' : '#ffffff';
+  const secondaryTextColor = isDark ? '#b3b3b8' : '#5f6368';
+  const rowBorderColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)';
+  const segmentBg = isDark ? '#2c2c2e' : '#e5e5ea';
+  const segmentActiveBg = isDark ? '#3a3a3c' : '#ffffff';
+
+  // ---------------------------------------------------------------------------
+  // Avatar (fetched in background; non-critical)
+  // ---------------------------------------------------------------------------
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient.auth
+      .me()
+      .then((data) => setAvatarUrl(data.avatarHeadshotUrl))
+      .catch(() => {
+        // Silently fail — header avatar is not critical
+      });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Sessions state
+  // ---------------------------------------------------------------------------
   const [sessions, setSessions] = useState<Session[]>([]);
   const [plannedSessions, setPlannedSessions] = useState<Session[]>([]);
   const [sessionFilter, setSessionFilter] = useState<SessionListFilter>('live');
@@ -146,21 +230,28 @@ export default function SessionsListScreenV2() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Selection mode state
+  // Selection mode
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [collapsingSessionIds, setCollapsingSessionIds] = useState<Set<string>>(new Set());
+
   const [isQuickStarting, setIsQuickStarting] = useState(false);
   const [fallbackThumbnails, setFallbackThumbnails] = useState<Record<number, string>>({});
+
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const sessionsRef = useRef<Session[]>([]);
   const plannedSessionsRef = useRef<Session[]>([]);
-  const deleteBackupsRef = useRef<Record<string, { active: Session | null; planned: Session | null }>>({});
+  const deleteBackupsRef = useRef<
+    Record<string, { active: Session | null; planned: Session | null }>
+  >({});
 
   const LIMIT = 20;
 
+  // ---------------------------------------------------------------------------
+  // Data loading
+  // ---------------------------------------------------------------------------
   const loadSettings = useCallback(async () => {
     try {
       setIsSettingsLoading(true);
@@ -175,82 +266,87 @@ export default function SessionsListScreenV2() {
     }
   }, []);
 
-  const loadAllSessions = useCallback(async (refresh = false) => {
-    try {
-      if (refresh) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-      }
-      setLoadError(null);
-
-      const statusesToFetch: ('active' | 'scheduled')[] =
-        sessionFilter === 'live'
-          ? ['active']
-          : sessionFilter === 'starting_soon'
-            ? ['scheduled']
-            : ['active', 'scheduled'];
-
-      const [sessionResults, plannedResult] = await Promise.all([
-        Promise.allSettled(
-          statusesToFetch.map((status) =>
-            sessionsAPIStoreV2.listSessions({
-              status,
-              limit: LIMIT,
-              offset: 0,
-            })
-          )
-        ),
-        Promise.allSettled([
-          sessionsAPIStoreV2.listMyPlannedSessions({
-            limit: LIMIT,
-            offset: 0,
-          }),
-        ]),
-      ]);
-
-      const fetchedSessions = new Map<string, Session>();
-      sessionResults.forEach((result, index) => {
-        const status = statusesToFetch[index];
-        if (result.status === 'fulfilled') {
-          result.value.sessions.forEach((session) => fetchedSessions.set(session.id, session));
+  const loadAllSessions = useCallback(
+    async (refresh = false) => {
+      try {
+        if (refresh) {
+          setIsRefreshing(true);
         } else {
-          logger.error(`Failed to load ${status} sessions`, {
-            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          setIsLoading(true);
+        }
+        setLoadError(null);
+
+        const statusesToFetch: ('active' | 'scheduled')[] =
+          sessionFilter === 'live'
+            ? ['active']
+            : sessionFilter === 'starting_soon'
+              ? ['scheduled']
+              : ['active', 'scheduled'];
+
+        const [sessionResults, plannedResult] = await Promise.all([
+          Promise.allSettled(
+            statusesToFetch.map((status) =>
+              sessionsAPIStoreV2.listSessions({ status, limit: LIMIT, offset: 0 })
+            )
+          ),
+          Promise.allSettled([
+            sessionsAPIStoreV2.listMyPlannedSessions({ limit: LIMIT, offset: 0 }),
+          ]),
+        ]);
+
+        const fetchedSessions = new Map<string, Session>();
+        sessionResults.forEach((result, index) => {
+          const status = statusesToFetch[index];
+          if (result.status === 'fulfilled') {
+            result.value.sessions.forEach((session) =>
+              fetchedSessions.set(session.id, session)
+            );
+          } else {
+            logger.error(`Failed to load ${status} sessions`, {
+              error:
+                result.reason instanceof Error
+                  ? result.reason.message
+                  : String(result.reason),
+            });
+          }
+        });
+
+        if (fetchedSessions.size > 0) {
+          setSessions(Array.from(fetchedSessions.values()).sort(sortSessionsForList));
+        } else if (sessionResults.every((result) => result.status === 'rejected')) {
+          setSessions([]);
+        }
+
+        const plannedSessionsResult = plannedResult[0];
+        if (plannedSessionsResult.status === 'fulfilled') {
+          setPlannedSessions(plannedSessionsResult.value.sessions);
+        } else {
+          logger.error('Failed to load planned sessions', {
+            error:
+              plannedSessionsResult.reason instanceof Error
+                ? plannedSessionsResult.reason.message
+                : String(plannedSessionsResult.reason),
           });
         }
-      });
 
-      if (fetchedSessions.size > 0) {
-        setSessions(Array.from(fetchedSessions.values()).sort(sortSessionsForList));
-      } else if (sessionResults.every((result) => result.status === 'rejected')) {
-        setSessions([]);
-      }
-
-      const plannedSessionsResult = plannedResult[0];
-      if (plannedSessionsResult.status === 'fulfilled') {
-        setPlannedSessions(plannedSessionsResult.value.sessions);
-      } else {
-        logger.error('Failed to load planned sessions', {
-          error: plannedSessionsResult.reason instanceof Error
-            ? plannedSessionsResult.reason.message
-            : String(plannedSessionsResult.reason),
+        if (
+          sessionResults.every((result) => result.status === 'rejected') &&
+          plannedSessionsResult.status === 'rejected'
+        ) {
+          setLoadError('Failed to load sessions');
+        }
+      } catch (error) {
+        logger.error('Failed to load sessions list', {
+          error: error instanceof Error ? error.message : String(error),
         });
-      }
-
-      if (sessionResults.every((result) => result.status === 'rejected') && plannedSessionsResult.status === 'rejected') {
         setLoadError('Failed to load sessions');
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
-    } catch (error) {
-      logger.error('Failed to load sessions list', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      setLoadError('Failed to load sessions');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [sessionFilter]); // LIMIT is a constant, no need in deps
+    },
+    [sessionFilter]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -272,62 +368,81 @@ export default function SessionsListScreenV2() {
     setSelectedIds(new Set());
   }, [sessionFilter]);
 
+  // ---------------------------------------------------------------------------
+  // Session CRUD handlers
+  // ---------------------------------------------------------------------------
   const handleRefresh = useCallback(() => {
     loadAllSessions(true);
   }, [loadAllSessions]);
 
-  const handleDeleteSession = useCallback(async (sessionId: string) => {
-    if (deletingSessionIds.has(sessionId) || collapsingSessionIds.has(sessionId)) return;
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      if (deletingSessionIds.has(sessionId) || collapsingSessionIds.has(sessionId)) return;
 
-    const activeBackup = sessionsRef.current.find((session) => session.id === sessionId) ?? null;
-    const plannedBackup = plannedSessionsRef.current.find((session) => session.id === sessionId) ?? null;
-    if (!activeBackup && !plannedBackup) return;
+      const activeBackup =
+        sessionsRef.current.find((session) => session.id === sessionId) ?? null;
+      const plannedBackup =
+        plannedSessionsRef.current.find((session) => session.id === sessionId) ?? null;
+      if (!activeBackup && !plannedBackup) return;
 
-    deleteBackupsRef.current[sessionId] = { active: activeBackup, planned: plannedBackup };
+      deleteBackupsRef.current[sessionId] = { active: activeBackup, planned: plannedBackup };
 
-    setDeletingSessionIds((current) => {
-      const next = new Set(current);
-      next.add(sessionId);
-      return next;
-    });
-    setCollapsingSessionIds((current) => {
-      const next = new Set(current);
-      next.add(sessionId);
-      return next;
-    });
-    swipeableRefs.current[sessionId]?.close();
-  }, [collapsingSessionIds, deletingSessionIds]);
-
-  const handleCollapsedDelete = useCallback(async (sessionId: string) => {
-    setSessions((prev) => prev.filter((session) => session.id !== sessionId));
-    setPlannedSessions((prev) => prev.filter((session) => session.id !== sessionId));
-
-    try {
-      await sessionsAPIStoreV2.deleteSession(sessionId);
-      logger.info('Session deleted successfully', { sessionId });
-    } catch (error) {
-      const backup = deleteBackupsRef.current[sessionId];
-      if (backup?.active) {
-        setSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, backup.active!]));
-      }
-      if (backup?.planned) {
-        setPlannedSessions((prev) => (prev.some((session) => session.id === sessionId) ? prev : [...prev, backup.planned!]));
-      }
-      presentError(error, { fallbackMessage: 'Failed to delete session. Please try again.' });
-    } finally {
-      delete deleteBackupsRef.current[sessionId];
       setDeletingSessionIds((current) => {
         const next = new Set(current);
-        next.delete(sessionId);
+        next.add(sessionId);
         return next;
       });
       setCollapsingSessionIds((current) => {
         const next = new Set(current);
-        next.delete(sessionId);
+        next.add(sessionId);
         return next;
       });
-    }
-  }, [presentError]);
+      swipeableRefs.current[sessionId]?.close();
+    },
+    [collapsingSessionIds, deletingSessionIds]
+  );
+
+  const handleCollapsedDelete = useCallback(
+    async (sessionId: string) => {
+      setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+      setPlannedSessions((prev) => prev.filter((session) => session.id !== sessionId));
+
+      try {
+        await sessionsAPIStoreV2.deleteSession(sessionId);
+        logger.info('Session deleted successfully', { sessionId });
+      } catch (error) {
+        const backup = deleteBackupsRef.current[sessionId];
+        if (backup?.active) {
+          setSessions((prev) =>
+            prev.some((session) => session.id === sessionId)
+              ? prev
+              : [...prev, backup.active!]
+          );
+        }
+        if (backup?.planned) {
+          setPlannedSessions((prev) =>
+            prev.some((session) => session.id === sessionId)
+              ? prev
+              : [...prev, backup.planned!]
+          );
+        }
+        presentError(error, { fallbackMessage: 'Failed to delete session. Please try again.' });
+      } finally {
+        delete deleteBackupsRef.current[sessionId];
+        setDeletingSessionIds((current) => {
+          const next = new Set(current);
+          next.delete(sessionId);
+          return next;
+        });
+        setCollapsingSessionIds((current) => {
+          const next = new Set(current);
+          next.delete(sessionId);
+          return next;
+        });
+      }
+    },
+    [presentError]
+  );
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -337,18 +452,14 @@ export default function SessionsListScreenV2() {
       const idsToDelete = Array.from(selectedIds);
       const deletedCount = await sessionsAPIStoreV2.bulkDeleteSessions(idsToDelete);
 
-      // Optimistically remove from UI
-      setSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
-      setPlannedSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
-
-      // Exit selection mode
+      setSessions((prev) => prev.filter((s) => !selectedIds.has(s.id)));
+      setPlannedSessions((prev) => prev.filter((s) => !selectedIds.has(s.id)));
       setSelectionMode(false);
       setSelectedIds(new Set());
 
       logger.info('Sessions deleted successfully', { count: deletedCount });
     } catch (error) {
       presentError(error);
-      // Reload to ensure consistency
       await loadAllSessions();
     } finally {
       setIsDeleting(false);
@@ -361,7 +472,7 @@ export default function SessionsListScreenV2() {
   }, []);
 
   const handleToggleSelection = useCallback((sessionId: string) => {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(sessionId)) {
         newSet.delete(sessionId);
@@ -371,8 +482,6 @@ export default function SessionsListScreenV2() {
       return newSet;
     });
   }, []);
-
-  const plannedSessionIds = useMemo(() => new Set(plannedSessions.map((session) => session.id)), [plannedSessions]);
 
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -398,6 +507,14 @@ export default function SessionsListScreenV2() {
     }
   }, [presentError, router]);
 
+  // ---------------------------------------------------------------------------
+  // Derived data
+  // ---------------------------------------------------------------------------
+  const plannedSessionIds = useMemo(
+    () => new Set(plannedSessions.map((session) => session.id)),
+    [plannedSessions]
+  );
+
   const mergedSessions = useMemo(() => {
     const uniqueSessions = new Map<string, Session>();
     sessions.forEach((session) => uniqueSessions.set(session.id, session));
@@ -421,15 +538,16 @@ export default function SessionsListScreenV2() {
     );
   }, [plannedSessions, sessionFilter, sessionSettings, sessions]);
 
-  const eligiblePlannedSessionIds = useMemo(() => {
-    return mergedSessions
-      .filter((session) => plannedSessionIds.has(session.id))
-      .map((session) => session.id);
-  }, [mergedSessions, plannedSessionIds]);
+  const eligiblePlannedSessionIds = useMemo(
+    () =>
+      mergedSessions
+        .filter((session) => plannedSessionIds.has(session.id))
+        .map((session) => session.id),
+    [mergedSessions, plannedSessionIds]
+  );
 
   const handleToggleAll = useCallback(() => {
     const allSelected = eligiblePlannedSessionIds.every((id) => selectedIds.has(id));
-
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
@@ -437,44 +555,9 @@ export default function SessionsListScreenV2() {
     }
   }, [eligiblePlannedSessionIds, selectedIds]);
 
-  useEffect(() => {
-    logger.info('Sessions list filter changed', { filter: sessionFilter });
-  }, [sessionFilter]);
-
-  useEffect(() => {
-    logger.debug('Sessions list filters applied', {
-      filter: sessionFilter,
-      visibleCount: mergedSessions.length,
-      soonWindowHours: sessionSettings.startingSoonWindowHours,
-    });
-  }, [mergedSessions.length, sessionFilter, sessionSettings.startingSoonWindowHours]);
-
-  useEffect(() => {
-    if (!__DEV__) return;
-
-    const uniqueSessions = new Map<string, Session>();
-    sessions.forEach((session) => uniqueSessions.set(session.id, session));
-    plannedSessions.forEach((session) => {
-      if (!uniqueSessions.has(session.id)) {
-        uniqueSessions.set(session.id, session);
-      }
-    });
-
-    const allSessions = Array.from(uniqueSessions.values());
-    const autoCompletedCount = allSessions.filter((session) => isAutoCompleted(session, sessionSettings)).length;
-    const autoHiddenCompletedCount = allSessions.filter((session) =>
-      isAutoHiddenCompleted(session, sessionSettings)
-    ).length;
-
-    if (autoCompletedCount > 0 || autoHiddenCompletedCount > 0) {
-      logger.debug('Sessions hidden by local settings', {
-        filter: sessionFilter,
-        autoCompletedCount,
-        autoHiddenCompletedCount,
-      });
-    }
-  }, [plannedSessions, sessionFilter, sessionSettings, sessions]);
-
+  // ---------------------------------------------------------------------------
+  // Fallback thumbnail fetching (unchanged)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
     const pendingIds = Array.from(
@@ -495,38 +578,84 @@ export default function SessionsListScreenV2() {
           pendingIds.slice(i, i + BATCH_SIZE).map(async (placeId) => {
             const url = await getRobloxGameThumbnail(placeId).catch(() => null);
             if (!url || cancelled) return;
-            setFallbackThumbnails((prev) => (prev[placeId] ? prev : { ...prev, [placeId]: url }));
+            setFallbackThumbnails((prev) =>
+              prev[placeId] ? prev : { ...prev, [placeId]: url }
+            );
           })
         );
       }
     };
 
     void fetchBatched();
-
     return () => {
       cancelled = true;
     };
   }, [mergedSessions, fallbackThumbnails]);
 
+  // ---------------------------------------------------------------------------
+  // Dev-only diagnostics
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    logger.info('Sessions list filter changed', { filter: sessionFilter });
+  }, [sessionFilter]);
+
+  useEffect(() => {
+    logger.debug('Sessions list filters applied', {
+      filter: sessionFilter,
+      visibleCount: mergedSessions.length,
+      soonWindowHours: sessionSettings.startingSoonWindowHours,
+    });
+  }, [mergedSessions.length, sessionFilter, sessionSettings.startingSoonWindowHours]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    const uniqueSessions = new Map<string, Session>();
+    sessions.forEach((s) => uniqueSessions.set(s.id, s));
+    plannedSessions.forEach((s) => {
+      if (!uniqueSessions.has(s.id)) uniqueSessions.set(s.id, s);
+    });
+    const allSessions = Array.from(uniqueSessions.values());
+    const autoCompletedCount = allSessions.filter((s) =>
+      isAutoCompleted(s, sessionSettings)
+    ).length;
+    const autoHiddenCompletedCount = allSessions.filter((s) =>
+      isAutoHiddenCompleted(s, sessionSettings)
+    ).length;
+    if (autoCompletedCount > 0 || autoHiddenCompletedCount > 0) {
+      logger.debug('Sessions hidden by local settings', {
+        filter: sessionFilter,
+        autoCompletedCount,
+        autoHiddenCompletedCount,
+      });
+    }
+  }, [plannedSessions, sessionFilter, sessionSettings, sessions]);
+
+  // ---------------------------------------------------------------------------
+  // Card renderer
+  // ---------------------------------------------------------------------------
   const renderSession = ({ item }: { item: Session }) => {
-    const isFull = item.currentParticipants >= item.maxParticipants;
     const isPlanned = plannedSessionIds.has(item.id);
     const sessionStatusUi = getSessionLiveBadge(item);
     const isLive = sessionStatusUi.isLive;
     const isSelected = selectedIds.has(item.id);
     const isDeletingSession = deletingSessionIds.has(item.id);
     const thumbnailUrl = item.game.thumbnailUrl || fallbackThumbnails[item.game.placeId];
-    const visibilityLabel =
-      item.visibility === 'public' ? 'Public' : item.visibility === 'friends' ? 'Friends Only' : 'Invite Only';
+
+    const metaParts = buildSessionMetaParts(item, isLive);
+    const metaText = metaParts.join(' · ');
+
+    const liveCardBg = isDark ? '#0a2218' : '#f0fdf4';
+    const cardBg = isLive ? liveCardBg : cardColor;
 
     const sessionCard = (
-      <Card
+      <TouchableOpacity
+        activeOpacity={0.75}
         style={[
-          styles.sessionCard,
-          isLive && styles.sessionCardLive,
-          isSelected && styles.sessionCardSelected,
+          styles.card,
+          { backgroundColor: cardBg },
+          isLive && styles.cardLiveAccent,
+          isSelected && [styles.cardSelected, { borderColor: tintColor }],
         ]}
-        mode="elevated"
         onPress={() => {
           if (selectionMode && isPlanned) {
             handleToggleSelection(item.id);
@@ -535,118 +664,79 @@ export default function SessionsListScreenV2() {
           }
         }}
         onLongPress={isPlanned ? () => handleLongPress(item.id) : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.title || item.game.gameName || 'Roblox Session'}${isLive ? ', live' : ''}${isPlanned ? ', you host' : ''}`}
       >
-        <View style={styles.sessionCardContent}>
-          {isPlanned && selectionMode && (
-            <View style={styles.checkboxContainer}>
-              <View style={[
+        {/* Selection checkbox */}
+        {isPlanned && selectionMode ? (
+          <View style={styles.checkboxWrap}>
+            <View
+              style={[
                 styles.checkbox,
-                isSelected && styles.checkboxSelected,
-              ]}>
-                {isSelected && (
-                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                    ✓
-                  </ThemedText>
-                )}
-              </View>
+                isSelected && { backgroundColor: tintColor, borderColor: tintColor },
+                !isSelected && { borderColor: rowBorderColor },
+              ]}
+            >
+              {isSelected ? (
+                <Text style={styles.checkmark}>✓</Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        {/* Thumbnail */}
+        <View style={styles.thumbnail}>
+          {thumbnailUrl ? (
+            <Image source={{ uri: thumbnailUrl }} style={styles.thumbnailImg} resizeMode="cover" />
+          ) : (
+            <View style={[styles.thumbnailImg, styles.thumbnailPlaceholder]}>
+              <Text style={[styles.thumbnailInitial, { color: secondaryTextColor }]}>
+                {item.game.gameName?.[0]?.toUpperCase() || '?'}
+              </Text>
             </View>
           )}
+        </View>
 
-          <View style={styles.thumbnailContainer}>
-            {thumbnailUrl ? (
-              <Image source={{ uri: thumbnailUrl }} style={styles.thumbnailImage} resizeMode="cover" />
-            ) : (
-              <View style={[styles.thumbnailImage, styles.thumbnailPlaceholder]}>
-                <ThemedText
-                  type="displaySmall"
-                  lightColor="#999"
-                  darkColor="#666"
-                  style={styles.thumbnailPlaceholderText}
-                >
-                  {item.game.gameName?.[0] || '?'}
-                </ThemedText>
+        {/* Session info */}
+        <View style={styles.cardInfo}>
+          {/* Title row + "You host" chip */}
+          <View style={styles.cardTitleRow}>
+            <Text
+              style={[styles.cardTitle, { color: textColor }]}
+              numberOfLines={1}
+            >
+              {item.title || item.game.gameName || 'Roblox Session'}
+            </Text>
+            {isPlanned && !selectionMode ? (
+              <View style={[styles.youHostChip, { borderColor: tintColor }]}>
+                <Text style={[styles.youHostText, { color: tintColor }]}>You host</Text>
               </View>
-            )}
+            ) : null}
           </View>
 
-          <View style={styles.sessionInfo}>
-            <View style={styles.topRow}>
-              <View style={styles.titleRow}>
-                <ThemedText
-                  type="titleMedium"
-                  lightColor="#333"
-                  darkColor="#fff"
-                  numberOfLines={1}
-                  style={styles.title}
-                >
-                  {item.title || item.game.gameName || 'Roblox Session'}
-                </ThemedText>
-                {isLive && (
-                  <View style={styles.liveIndicatorWrap}>
-                    <LivePulseDot color={sessionUiColors.live} />
-                  </View>
-                )}
-                {isLive && (
-                  <View style={[styles.liveBadge, { backgroundColor: sessionStatusUi.color }]}>
-                    <ThemedText type="labelSmall" lightColor={sessionStatusUi.textColor} darkColor={sessionStatusUi.textColor}>
-                      {sessionStatusUi.label}
-                    </ThemedText>
-                  </View>
-                )}
-              </View>
-              {isPlanned && (
-                <View style={styles.hostBadge}>
-                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                    Host
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.participants}>
-              <ThemedText
-                type="labelMedium"
-                lightColor={isFull ? "#ff3b30" : "#007AFF"}
-                darkColor={isFull ? "#ff453a" : "#0a84ff"}
-                style={styles.participantText}
-              >
-                {item.currentParticipants}/{item.maxParticipants} players
-              </ThemedText>
-              {isFull && (
-                <View style={styles.fullBadge}>
-                  <ThemedText type="labelSmall" lightColor="#fff" darkColor="#fff">
-                    FULL
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.metadataRow}>
-              <ThemedText type="labelSmall" lightColor="#666" darkColor="#aaa">
-                {visibilityLabel}
-              </ThemedText>
-              {item.scheduledStart && (
-                <>
-                  <ThemedText
-                    type="labelSmall"
-                    lightColor="#666"
-                    darkColor="#aaa"
-                    style={styles.metadataSeparator}
-                  >
-                    •
-                  </ThemedText>
-                  <ThemedText type="labelSmall" lightColor="#666" darkColor="#aaa">
-                    {formatRelativeTime(item.scheduledStart)}
-                  </ThemedText>
-                </>
-              )}
-            </View>
+          {/* Compact metadata row */}
+          <View style={styles.metaRow}>
+            {isLive ? (
+              <>
+                <LivePulseDot size={7} color={sessionUiColors.live} />
+                <Text style={[styles.metaLive, { color: sessionUiColors.live }]}>Live</Text>
+                {metaText.length > 0 ? (
+                  <Text style={[styles.metaDot, { color: secondaryTextColor }]}> · </Text>
+                ) : null}
+              </>
+            ) : null}
+            <Text style={[styles.metaText, { color: secondaryTextColor }]}>{metaText}</Text>
           </View>
         </View>
-      </Card>
+
+        {/* Trailing chevron */}
+        {!selectionMode ? (
+          <IconSymbol name="chevron.right" size={16} color={rowBorderColor} style={styles.chevron} />
+        ) : null}
+      </TouchableOpacity>
     );
 
-    // Wrap in Swipeable only for planned sessions when not in selection mode
+    // Swipeable delete — planned sessions on native only
     if (isPlanned && !selectionMode && Platform.OS !== 'web') {
       return (
         <View style={styles.swipeableWrapper}>
@@ -659,9 +749,7 @@ export default function SessionsListScreenV2() {
                 {isDeletingSession ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <ThemedText type="labelLarge" lightColor="#fff" darkColor="#fff">
-                    Delete
-                  </ThemedText>
+                  <Text style={styles.deleteActionText}>Delete</Text>
                 )}
               </View>
             )}
@@ -682,22 +770,19 @@ export default function SessionsListScreenV2() {
       );
     }
 
-    // For web or when in selection mode, provide a simple delete button (optional)
     if (isPlanned && !selectionMode && Platform.OS === 'web') {
       return (
         <View style={styles.webDeleteContainer}>
           {sessionCard}
           <TouchableOpacity
-            style={[styles.webDeleteButton, isDeletingSession && styles.webDeleteButtonDisabled]}
+            style={[styles.webDeleteButton, isDeletingSession && { opacity: 0.6 }]}
             onPress={() => handleDeleteSession(item.id)}
             disabled={isDeletingSession}
           >
             {isDeletingSession ? (
               <ActivityIndicator size="small" color="#ff3b30" />
             ) : (
-              <ThemedText type="labelSmall" lightColor="#ff3b30" darkColor="#ff453a">
-                Delete
-              </ThemedText>
+              <Text style={{ color: '#ff3b30', fontSize: 13 }}>Delete</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -707,21 +792,60 @@ export default function SessionsListScreenV2() {
     return sessionCard;
   };
 
+  // ---------------------------------------------------------------------------
+  // Derived display values
+  // ---------------------------------------------------------------------------
+  const allPlannedSelected =
+    eligiblePlannedSessionIds.length > 0 &&
+    eligiblePlannedSessionIds.every((id) => selectedIds.has(id));
+
+  // Dock height for FlatList bottom padding
+  const DOCK_HEIGHT = 72;
+  const listBottomPadding = insets.bottom + DOCK_HEIGHT + 20;
+
+  // ---------------------------------------------------------------------------
+  // Loading state (initial only — before any data arrives)
+  // ---------------------------------------------------------------------------
   if (isLoading && mergedSessions.length === 0) {
     return (
-      <View style={styles.centered}>
-        <LagaLoadingSpinner size={56} label="Loading sessions..." />
+      <View style={[styles.container, { backgroundColor }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        {/* Header still shown during load so screen doesn't jump */}
+        <View style={[styles.headerArea, { paddingTop: insets.top + 8, backgroundColor }]}>
+          <SessionsHeader
+            avatarUrl={avatarUrl}
+            tintColor={tintColor}
+            textColor={textColor}
+            secondaryTextColor={secondaryTextColor}
+            cardColor={cardColor}
+            onAvatarPress={() => router.push('/me')}
+          />
+          <FilterControl
+            value={sessionFilter}
+            onChange={setSessionFilter}
+            isDark={isDark}
+            tintColor={tintColor}
+            secondaryTextColor={secondaryTextColor}
+            segmentBg={segmentBg}
+            segmentActiveBg={segmentActiveBg}
+          />
+        </View>
+        <View style={styles.centered}>
+          <LagaLoadingSpinner size={56} label="Loading sessions..." />
+        </View>
       </View>
     );
   }
 
-  const allPlannedSelected = eligiblePlannedSessionIds.length > 0 &&
-    eligiblePlannedSessionIds.every((id) => selectedIds.has(id));
-
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
   return (
-    <View style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#000' : '#f8f9fa' }]}>
+    <View style={[styles.container, { backgroundColor }]}>
+      {/* Stack header — only visible in selection mode */}
       <Stack.Screen
         options={{
+          headerShown: selectionMode,
           title: selectionMode ? `${selectedIds.size} Selected` : '',
           ...(selectionMode
             ? {
@@ -750,6 +874,31 @@ export default function SessionsListScreenV2() {
             : {}),
         }}
       />
+
+      {/* Custom sticky header — hidden in selection mode */}
+      {!selectionMode ? (
+        <View style={[styles.headerArea, { paddingTop: insets.top + 8, backgroundColor }]}>
+          <SessionsHeader
+            avatarUrl={avatarUrl}
+            tintColor={tintColor}
+            textColor={textColor}
+            secondaryTextColor={secondaryTextColor}
+            cardColor={cardColor}
+            onAvatarPress={() => router.push('/me')}
+          />
+          <FilterControl
+            value={sessionFilter}
+            onChange={setSessionFilter}
+            isDark={isDark}
+            tintColor={tintColor}
+            secondaryTextColor={secondaryTextColor}
+            segmentBg={segmentBg}
+            segmentActiveBg={segmentActiveBg}
+          />
+        </View>
+      ) : null}
+
+      {/* Session list */}
       <FlatList
         data={mergedSessions}
         keyExtractor={(item) => item.id}
@@ -762,81 +911,189 @@ export default function SessionsListScreenV2() {
             {renderSession({ item })}
           </CollapsibleSessionRow>
         )}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: listBottomPadding }]}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}
         keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={(
-          <>
-            <View style={[styles.sectionHeader, { backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#fff' }]}>
-              <ThemedText type="headlineSmall">Sessions</ThemedText>
+        ListHeaderComponent={
+          loadError ? (
+            <View style={[styles.errorContainer, { backgroundColor: isDark ? '#3b1212' : '#ffebee' }]}>
+              <Text style={{ color: isDark ? '#ff8a80' : '#c62828', fontSize: 14 }}>
+                {loadError}
+              </Text>
             </View>
-            <View style={styles.segmentedWrap}>
-              <SegmentedButtons
-                value={sessionFilter}
-                onValueChange={(value) => {
-                  setSessionFilter(value as SessionListFilter);
-                }}
-                buttons={[
-                  { value: 'all', label: 'All' },
-                  { value: 'starting_soon', label: 'Starting soon' },
-                  { value: 'live', label: 'Live' },
-                ]}
-              />
-              {isSettingsLoading ? (
-                <ThemedText type="labelSmall" lightColor="#666" darkColor="#aaa" style={styles.settingsHint}>
-                  Loading filter settings...
-                </ThemedText>
-              ) : null}
-            </View>
-
-            {loadError && (
-              <View style={styles.errorContainer}>
-                <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff5252">
-                  {loadError}
-                </ThemedText>
-              </View>
-            )}
-          </>
-        )}
-        ListEmptyComponent={!isLoading ? (
-          <Animated.View
-            entering={FadeInDown.duration(230).withInitialValues({
-              opacity: 0,
-              transform: [{ translateY: 10 }],
-            })}
-            style={styles.sectionEmpty}
-          >
-            <ThemedText type="bodyMedium" lightColor="#666" darkColor="#aaa">
-              No sessions yet
-            </ThemedText>
-          </Animated.View>
-        ) : null}
+          ) : null
+        }
+        ListEmptyComponent={
+          !isLoading ? (
+            <Animated.View
+              entering={FadeInDown.duration(230).withInitialValues({
+                opacity: 0,
+                transform: [{ translateY: 10 }],
+              })}
+              style={styles.emptyState}
+            >
+              <Text style={[styles.emptyText, { color: secondaryTextColor }]}>
+                No sessions yet
+              </Text>
+            </Animated.View>
+          ) : null
+        }
       />
 
-      {!selectionMode && (
-        <View style={styles.fabStack}>
-          <FAB
-            icon="flash"
-            label={isQuickStarting ? 'Starting...' : 'Quick Play'}
-            style={styles.quickPlayFab}
-            color="#fff"
-            loading={isQuickStarting}
-            disabled={isQuickStarting}
+      {/* Bottom action dock — hidden in selection mode */}
+      {!selectionMode ? (
+        <View
+          style={[
+            styles.bottomDock,
+            {
+              paddingBottom: insets.bottom + 12,
+              backgroundColor: isDark ? '#1c1c1e' : '#ffffff',
+              borderTopColor: rowBorderColor,
+            },
+          ]}
+        >
+          {/* Quick Play */}
+          <TouchableOpacity
+            style={[styles.dockButton, styles.quickPlayButton]}
             onPress={handleQuickPlay}
-          />
-          <FAB
-            icon="plus"
-            style={styles.fab}
-            color="#fff"
+            disabled={isQuickStarting}
+            accessibilityRole="button"
+            accessibilityLabel={isQuickStarting ? 'Starting session…' : 'Quick Play'}
+          >
+            {isQuickStarting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <IconSymbol name="bolt.fill" size={18} color="#fff" />
+            )}
+            <Text style={styles.dockButtonText}>
+              {isQuickStarting ? 'Starting…' : 'Quick Play'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Create */}
+          <TouchableOpacity
+            style={[styles.dockButton, styles.createButton, { borderColor: tintColor }]}
             onPress={() => router.push('/sessions/create')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Create session"
+          >
+            <IconSymbol name="plus" size={18} color={tintColor} />
+            <Text style={[styles.dockButtonText, { color: tintColor }]}>Create</Text>
+          </TouchableOpacity>
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sub-components (defined outside to avoid re-creation on render)
+// ---------------------------------------------------------------------------
+
+function SessionsHeader({
+  avatarUrl,
+  tintColor,
+  textColor,
+  secondaryTextColor,
+  cardColor,
+  onAvatarPress,
+}: {
+  avatarUrl: string | null;
+  tintColor: string;
+  textColor: string;
+  secondaryTextColor: string;
+  cardColor: string;
+  onAvatarPress: () => void;
+}) {
+  return (
+    <View style={styles.headerRow}>
+      <View style={styles.headerText}>
+        <Text style={[styles.headerTitle, { color: textColor }]}>Sessions</Text>
+        <Text style={[styles.headerSubtitle, { color: secondaryTextColor }]}>
+          Your Roblox sessions
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        onPress={onAvatarPress}
+        style={styles.avatarButton}
+        accessibilityRole="button"
+        accessibilityLabel="Open profile"
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        {avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+        ) : (
+          <View style={[styles.headerAvatarPlaceholder, { backgroundColor: cardColor }]}>
+            <IconSymbol name="person.fill" size={20} color={tintColor} />
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function FilterControl({
+  value,
+  onChange,
+  isDark,
+  tintColor,
+  secondaryTextColor,
+  segmentBg,
+  segmentActiveBg,
+}: {
+  value: SessionListFilter;
+  onChange: (v: SessionListFilter) => void;
+  isDark: boolean;
+  tintColor: string;
+  secondaryTextColor: string;
+  segmentBg: string;
+  segmentActiveBg: string;
+}) {
+  return (
+    <View style={[styles.filterControl, { backgroundColor: segmentBg }]}>
+      {FILTER_SEGMENTS.map((seg) => {
+        const isActive = value === seg.value;
+        return (
+          <TouchableOpacity
+            key={seg.value}
+            style={[
+              styles.filterSegment,
+              isActive && [
+                styles.filterSegmentActive,
+                { backgroundColor: segmentActiveBg },
+              ],
+            ]}
+            onPress={() => onChange(seg.value)}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: isActive }}
+            accessibilityLabel={seg.label}
+          >
+            {seg.value === 'live' ? (
+              <LivePulseDot
+                size={6}
+                color={isActive ? sessionUiColors.live : secondaryTextColor}
+              />
+            ) : null}
+            <Text
+              style={[
+                styles.filterLabel,
+                { color: isActive ? tintColor : secondaryTextColor },
+              ]}
+            >
+              {seg.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -847,172 +1104,222 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  loadingText: {
-    marginTop: 12,
+
+  // ---- Header ----
+  headerArea: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerText: {
+    gap: 2,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  avatarButton: {
+    borderRadius: 999,
+  },
+  headerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#e0e0e0',
+  },
+  headerAvatarPlaceholder: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  sectionHeader: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+
+  // ---- Filter ----
+  filterControl: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
   },
-  segmentedWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 6,
+  filterSegment: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 5,
   },
-  settingsHint: {
-    paddingLeft: 4,
+  filterSegmentActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  sectionEmpty: {
-    padding: 20,
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // ---- List ----
+  list: {
+    paddingTop: 8,
+  },
+  emptyState: {
+    padding: 32,
     alignItems: 'center',
   },
-  sessionRowContainer: {
-    paddingHorizontal: 16,
+  emptyText: {
+    fontSize: 15,
   },
   errorContainer: {
     margin: 16,
     padding: 12,
-    backgroundColor: '#ffebee',
     borderRadius: 8,
   },
-  list: {
-    paddingBottom: 80,
+  sessionRowContainer: {
+    paddingHorizontal: 16,
   },
-  swipeableWrapper: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  sessionCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sessionCardLive: {
-    borderWidth: 1,
-    borderColor: sessionUiColors.live,
-    elevation: 5,
-  },
-  sessionCardSelected: {
-    backgroundColor: '#e3f2fd',
-  },
-  sessionCardContent: {
+
+  // ---- Cards ----
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 112,
+    borderRadius: 14,
+    overflow: 'hidden',
+    minHeight: 80,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  checkboxContainer: {
-    justifyContent: 'center',
+  cardLiveAccent: {
+    borderLeftWidth: 3,
+    borderLeftColor: sessionUiColors.live,
+  },
+  cardSelected: {
+    borderWidth: 2,
+  },
+  checkboxWrap: {
+    width: 44,
     alignItems: 'center',
-    width: 40,
-    paddingLeft: 8,
+    justifyContent: 'center',
   },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#007AFF',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  checkboxSelected: {
-    backgroundColor: '#007AFF',
+  checkmark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  thumbnailContainer: {
-    width: 88,
-    height: 88,
-    marginLeft: 12,
-    marginVertical: 12,
-    borderRadius: 10,
+  thumbnail: {
+    width: 76,
+    height: 76,
+    margin: 10,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#e0e0e0',
+    flexShrink: 0,
   },
-  thumbnailImage: {
+  thumbnailImg: {
     width: '100%',
     height: '100%',
   },
   thumbnailPlaceholder: {
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  thumbnailPlaceholderText: {
-    // Font from displaySmall token
+  thumbnailInitial: {
+    fontSize: 28,
+    fontWeight: '700',
   },
-  sessionInfo: {
+  cardInfo: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingRight: 6,
+    gap: 5,
     justifyContent: 'center',
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
     minWidth: 0,
   },
-  title: {
+  cardTitle: {
     flex: 1,
-    marginRight: 8,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
-  liveBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  youHostChip: {
+    borderWidth: 1,
     borderRadius: 999,
-  },
-  liveIndicatorWrap: {
-    marginRight: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hostBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
+    flexShrink: 0,
   },
-  metadataRow: {
+  youHostText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  metadataSeparator: {
-    marginHorizontal: 8,
+  metaLive: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  participants: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+  metaDot: {
+    fontSize: 12,
   },
-  participantText: {
-    // Font from labelMedium token
+  metaText: {
+    fontSize: 12,
   },
-  fullBadge: {
-    marginLeft: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: '#ff3b30',
-    borderRadius: 4,
+  chevron: {
+    paddingRight: 12,
+    flexShrink: 0,
+  },
+
+  // ---- Swipe delete ----
+  swipeableWrapper: {
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   deleteAction: {
     backgroundColor: '#ff3b30',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 104,
+    width: 88,
     height: '100%',
+  },
+  deleteActionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   webDeleteContainer: {
     position: 'relative',
@@ -1027,29 +1334,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ff3b30',
   },
-  webDeleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  footer: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  fabStack: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
+
+  // ---- Bottom dock ----
+  bottomDock: {
+    flexDirection: 'row',
     gap: 12,
-    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  quickPlayFab: {
+  dockButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 12,
+  },
+  quickPlayButton: {
     backgroundColor: '#10b981',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  fab: {
-    backgroundColor: '#007AFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
+  createButton: {
+    borderWidth: 1.5,
+  },
+  dockButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

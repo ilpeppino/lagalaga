@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput as RNTextInput,
   UIManager,
   View,
 } from 'react-native';
@@ -96,7 +97,7 @@ export default function CreateSessionScreenV2() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const searchInputRef = useRef<{ focus?: () => void } | null>(null);
+  const searchInputRef = useRef<RNTextInput | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {

@@ -23,6 +23,9 @@ export function resolveHaloColor(state: {
 
 export type SyncFeedbackState = 'idle' | 'success' | 'error';
 
+export const PROFILE_NAME_MAX_WIDTH = 112;
+export const PROFILE_NAME_MINIMUM_FONT_SCALE = 0.72;
+
 export function resolveConnectorDotColor(state: {
   syncing: boolean;
   syncError: boolean;
@@ -50,4 +53,16 @@ export function resolveSyncA11yLabel(state: {
   if (state.feedback === 'success') return 'Roblox sync complete';
   if (state.feedback === 'error') return 'Roblox sync failed';
   return 'Sync Roblox data';
+}
+
+export function resolvePrimaryProfileName(input: {
+  robloxDisplayName: string | null;
+  robloxUsername: string | null;
+  appDisplayName: string;
+}): string {
+  return (
+    input.robloxDisplayName?.trim() ||
+    input.robloxUsername?.trim() ||
+    input.appDisplayName
+  );
 }

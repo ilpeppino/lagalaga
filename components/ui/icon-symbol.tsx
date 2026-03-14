@@ -20,6 +20,8 @@ const MAPPING = {
   'chevron.left': 'chevron-left',
   'chevron.right': 'chevron-right',
   'person.fill': 'person',
+  'bolt.fill': 'bolt',
+  plus: 'add',
   'arrow.clockwise': 'autorenew',
   'minus.circle': 'remove-circle-outline',
   'apple.logo': 'apple',

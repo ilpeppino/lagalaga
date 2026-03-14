@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { AppHeaderTitle } from '@/components/navigation/AppHeaderTitle';
 
 /**
  * Sessions stack layout.
@@ -14,6 +15,10 @@ export default function SessionsLayout() {
         animation: 'slide_from_right',
         animationDuration: 220,
         gestureEnabled: true,
+        headerTitle: ({ children }) => (
+          <AppHeaderTitle title={typeof children === 'string' ? children : ''} />
+        ),
+        headerTitleAlign: 'center',
       }}
     >
       {/* headerShown is overridden to true by the screen when selection mode is active */}

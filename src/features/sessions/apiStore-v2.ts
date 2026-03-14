@@ -220,7 +220,7 @@ class SessionsAPIStoreV2 {
       try {
         const response = await fetchWithAuth<{
           success: boolean;
-          data: { userPresences: Array<RobloxFriendPresence & { userId: number }> };
+          data: { userPresences: (RobloxFriendPresence & { userId: number })[] };
         }>('/api/roblox/presence', {
           method: 'POST',
           body: JSON.stringify({ userIds: chunk }),

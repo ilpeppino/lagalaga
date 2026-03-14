@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import {
+  PROFILE_NAME_MAX_WIDTH,
+  PROFILE_NAME_MINIMUM_FONT_SCALE,
   resolveConnectorDotColor,
   resolveHaloColor,
+  resolvePrimaryProfileName,
   resolveSyncA11yLabel,
   resolveSyncIconName,
 } from '../meHelpers';
@@ -72,4 +77,53 @@ test('resolveSyncA11yLabel: error label after failed sync', () => {
     resolveSyncA11yLabel({ connected: true, syncing: false, feedback: 'error' }),
     'Roblox sync failed'
   );
+});
+
+test('resolvePrimaryProfileName: prefers Roblox display name', () => {
+  assert.equal(
+    resolvePrimaryProfileName({
+      robloxDisplayName: 'Display Name',
+      robloxUsername: 'robloxUser',
+      appDisplayName: 'App Name',
+    }),
+    'Display Name'
+  );
+});
+
+test('resolvePrimaryProfileName: falls back to Roblox username', () => {
+  assert.equal(
+    resolvePrimaryProfileName({
+      robloxDisplayName: '   ',
+      robloxUsername: 'robloxUser',
+      appDisplayName: 'App Name',
+    }),
+    'robloxUser'
+  );
+});
+
+test('resolvePrimaryProfileName: falls back to app display name', () => {
+  assert.equal(
+    resolvePrimaryProfileName({
+      robloxDisplayName: null,
+      robloxUsername: null,
+      appDisplayName: 'App Name',
+    }),
+    'App Name'
+  );
+});
+
+test('profile name config: width and minimum font scale stay readable', () => {
+  assert.equal(PROFILE_NAME_MAX_WIDTH, 112);
+  assert.equal(PROFILE_NAME_MINIMUM_FONT_SCALE, 0.72);
+});
+
+test('Me header renders a single auto-fitting username label (source guard)', () => {
+  const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
+  const source = fs.readFileSync(meScreenPath, 'utf8');
+
+  assert.match(source, /numberOfLines=\{1\}/);
+  assert.match(source, /adjustsFontSizeToFit/);
+  assert.match(source, /minimumFontScale=\{PROFILE_NAME_MINIMUM_FONT_SCALE\}/);
+  assert.match(source, /width:\s*PROFILE_NAME_MAX_WIDTH/);
+  assert.doesNotMatch(source, /@\{robloxAccountName\}/);
 });

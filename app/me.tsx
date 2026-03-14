@@ -38,8 +38,11 @@ import {
   saveSessionSettings,
 } from '@/src/lib/sessionSettings';
 import {
+  PROFILE_NAME_MAX_WIDTH,
+  PROFILE_NAME_MINIMUM_FONT_SCALE,
   resolveConnectorDotColor,
   resolveHaloColor,
+  resolvePrimaryProfileName,
   resolveSyncA11yLabel,
   resolveSyncIconName,
 } from '@/src/lib/meHelpers';
@@ -520,12 +523,11 @@ export default function MeScreen() {
     );
   }
 
-  const primaryName =
-    data.roblox.displayName?.trim() ||
-    data.roblox.username?.trim() ||
-    data.appUser.displayName;
-  const robloxAccountName =
-    data.roblox.username?.trim() || data.roblox.displayName?.trim() || null;
+  const primaryName = resolvePrimaryProfileName({
+    robloxDisplayName: data.roblox.displayName,
+    robloxUsername: data.roblox.username,
+    appDisplayName: data.appUser.displayName,
+  });
 
   const showAccountSection =
     (Platform.OS === 'ios' && data.roblox.connected) ||
@@ -654,12 +656,14 @@ export default function MeScreen() {
 
           {/* Username */}
           <View style={styles.avatarIdentityMeta}>
-            <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
-            {data.roblox.connected && robloxAccountName ? (
-              <Text style={[styles.robloxSubtitle, { color: secondaryTextColor }]}>
-                @{robloxAccountName}
-              </Text>
-            ) : null}
+            <Text
+              style={[styles.profileName, { color: textColor }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={PROFILE_NAME_MINIMUM_FONT_SCALE}
+            >
+              {primaryName}
+            </Text>
           </View>
         </View>
 
@@ -1062,7 +1066,8 @@ const styles = StyleSheet.create({
     paddingTop: 28,
   },
   avatarIdentityMeta: {
-    width: 112,
+    width: PROFILE_NAME_MAX_WIDTH,
+    maxWidth: PROFILE_NAME_MAX_WIDTH,
     alignItems: 'center',
   },
   robloxBadge: {
@@ -1102,11 +1107,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.3,
     textAlign: 'center',
-  },
-  robloxSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    textAlign: 'center',
+    width: '100%',
   },
   // Cards
   card: {

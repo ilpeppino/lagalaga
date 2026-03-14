@@ -121,10 +121,10 @@ export interface ReadinessSummary {
 }
 
 export function getReadinessSummary(
-  participants: Array<{
+  participants: {
     state: string;
     handoffState?: ParticipantHandoffState | null;
-  }>
+  }[]
 ): ReadinessSummary {
   const active = participants.filter(
     (p) => p.state !== 'left' && p.state !== 'kicked'

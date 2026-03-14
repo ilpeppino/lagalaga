@@ -7,6 +7,7 @@
  */
 
 import type { ErrorSeverity } from '../../shared/errors/codes';
+import { presentError } from './errorPresenter';
 
 export class ApiError extends Error {
   public readonly code: string;
@@ -122,9 +123,7 @@ export function isNetworkError(error: unknown): error is NetworkError {
  * Returns a presentError function that can be used to display errors.
  */
 export function useErrorHandler() {
-  // Import presentError dynamically to avoid circular dependency
-  const { presentError: _presentError } = require('./errorPresenter');
   return {
-    presentError: _presentError,
+    presentError,
   };
 }

@@ -35,7 +35,6 @@ export function GoogleSignInButton({
           <ActivityIndicator size={18} color="#4285F4" />
         ) : (
           <Image
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             source={require('@/assets/images/google-logo.png')}
             style={styles.logo}
             resizeMode="contain"

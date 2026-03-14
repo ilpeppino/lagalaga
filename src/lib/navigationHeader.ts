@@ -1,0 +1,4 @@
+export const APP_HEADER_TITLE_FONT_FAMILY = 'BitcountSingle-Regular';
+export const APP_HEADER_TITLE_MINIMUM_FONT_SCALE = 0.8;
+export const APP_HEADER_TITLE_MAX_WIDTH = '72%';
+export const APP_HEADER_TITLE_HORIZONTAL_PADDING = 12;

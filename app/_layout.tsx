@@ -24,6 +24,7 @@ import {
 import { setRobloxNotConnectedHandler, setAuthFailureHandler } from '@/src/lib/api';
 import { handleRobloxNotConnectedError } from '@/src/lib/robloxGateController';
 import { shouldRequireRobloxConnection } from '@/src/features/auth/robloxConnectionGate';
+import { AppHeaderTitle } from '@/components/navigation/AppHeaderTitle';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -126,7 +127,14 @@ function ThemedAppShell() {
       <FavoritesForegroundRefreshBridge />
       <PaperProvider theme={paperTheme}>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
+          <Stack
+            screenOptions={{
+              headerTitle: ({ children }) => (
+                <AppHeaderTitle title={typeof children === 'string' ? children : ''} />
+              ),
+              headerTitleAlign: 'center',
+            }}
+          >
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen
               name="auth"

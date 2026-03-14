@@ -33,7 +33,7 @@ import { logger } from '@/src/lib/logger';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { ActivityIndicator as PaperActivityIndicator, IconButton } from 'react-native-paper';
+import { IconButton } from 'react-native-paper';
 import { LagaLoadingSpinner } from '@/components/ui/LagaLoadingSpinner';
 import { useErrorHandler } from '@/src/lib/errors';
 import { getRobloxGameThumbnail } from '@/src/lib/robloxGameThumbnail';
@@ -52,6 +52,11 @@ import {
   sortSessionsForList,
 } from '@/src/features/sessions/filtering';
 import { apiClient } from '@/src/lib/api';
+import {
+  APP_HEADER_TITLE_FONT_FAMILY,
+  APP_HEADER_TITLE_MAX_WIDTH,
+  APP_HEADER_TITLE_MINIMUM_FONT_SCALE,
+} from '@/src/lib/navigationHeader';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for testing)
@@ -225,7 +230,6 @@ export default function SessionsListScreenV2() {
   const [plannedSessions, setPlannedSessions] = useState<Session[]>([]);
   const [sessionFilter, setSessionFilter] = useState<SessionListFilter>('live');
   const [sessionSettings, setSessionSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
-  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -254,15 +258,12 @@ export default function SessionsListScreenV2() {
   // ---------------------------------------------------------------------------
   const loadSettings = useCallback(async () => {
     try {
-      setIsSettingsLoading(true);
       const loaded = await loadSessionSettings();
       setSessionSettings(loaded);
     } catch (error) {
       logger.warn('Failed to load session settings on sessions list', {
         error: error instanceof Error ? error.message : String(error),
       });
-    } finally {
-      setIsSettingsLoading(false);
     }
   }, []);
 
@@ -1009,7 +1010,14 @@ function SessionsHeader({
   return (
     <View style={styles.headerRow}>
       <View style={styles.headerText}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Sessions</Text>
+        <Text
+          style={[styles.headerTitle, { color: textColor }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={APP_HEADER_TITLE_MINIMUM_FONT_SCALE}
+        >
+          Sessions
+        </Text>
         <Text style={[styles.headerSubtitle, { color: secondaryTextColor }]}>
           Your Roblox sessions
         </Text>
@@ -1118,11 +1126,14 @@ const styles = StyleSheet.create({
   },
   headerText: {
     gap: 2,
+    maxWidth: APP_HEADER_TITLE_MAX_WIDTH,
+    paddingRight: 8,
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: '700',
+    fontFamily: APP_HEADER_TITLE_FONT_FAMILY,
     letterSpacing: -0.5,
+    lineHeight: 32,
   },
   headerSubtitle: {
     fontSize: 13,

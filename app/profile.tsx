@@ -29,7 +29,7 @@ export default function ProfileScreen() {
     sessionsJoined: number;
     streakDays: number;
   } | null>(null);
-  const [achievements, setAchievements] = useState<Array<{ code: string; unlockedAt: string }>>([]);
+  const [achievements, setAchievements] = useState<{ code: string; unlockedAt: string }[]>([]);
 
   const openSafetyReport = () => {
     router.push('/safety-report');

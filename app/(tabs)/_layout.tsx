@@ -5,6 +5,7 @@ import { TouchableOpacity } from 'react-native';
 import * as Linking from "expo-linking";
 
 import { HapticTab } from '@/components/haptic-tab';
+import { AppHeaderTitle } from '@/components/navigation/AppHeaderTitle';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -53,6 +54,10 @@ export default function TabLayout() {
         headerShown: true,
         tabBarButton: HapticTab,
         headerRight: () => <UserIconButton />,
+        headerTitle: ({ children }) => (
+          <AppHeaderTitle title={typeof children === 'string' ? children : ''} />
+        ),
+        headerTitleAlign: 'center',
       }}>
       <Tabs.Screen
         name="index"

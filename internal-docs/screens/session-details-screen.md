@@ -26,7 +26,8 @@ Component: SessionDetailScreenV2 (type: React Function Component)
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ Title And Status                                  │  │
-│  │ types: View, ThemedText, LivePulseDot, badge rows │  │
+│  │ types: View, ThemedText, LivePulseDot, single LIVE│  │
+│  │ chip, host username metadata                      │  │
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ Primary Actions                                   │  │
@@ -38,15 +39,20 @@ Component: SessionDetailScreenV2 (type: React Function Component)
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ Players List                                      │  │
-│  │ type: mapped View rows (participant + placeholders│  │
-│  │ for invited/unfilled slots), optional empty state │  │
+│  │ type: mapped View rows (host first + joined users)│  │
+│  │ with host highlight + state badges                │  │
+│  └────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Invited Section                                   │  │
+│  │ type: invited rows with "Invited" badge + Share   │  │
+│  │ Invite action                                     │  │
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │ Footer Sections (conditional)                     │  │
 │  │ types:                                            │  │
-│  │ - Invite section (Share Invite button)            │  │
 │  │ - Host tools (Submit Result / Connect Roblox)     │  │
 │  │ - Stuck players card (Copy Host Tip)              │  │
+│  │ - Bottom text link: Safety & Report               │  │
 │  └────────────────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────┤
 │ Overlay Dialog Layer (conditional)                       │
@@ -64,9 +70,16 @@ Component: SessionDetailScreenV2 (type: React Function Component)
 - `Join Session`
 - `Launch Roblox`
 - `Open Join Handoff`
+- `LIVE`
+- `Players • X / Y`
+- `Invited`
 - `Share Invite`
+- `HOST`
+- `In session`
+- `Invited`
 - `Host tools`
 - `Submit Result`
 - `Connect Roblox for Presence`
 - `Copy Host Tip`
+- `Safety & Report` (text link)
 - `Select Winner`

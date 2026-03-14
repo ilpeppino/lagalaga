@@ -11,6 +11,7 @@ import {
   Share,
   Image,
   useWindowDimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -29,14 +30,20 @@ import { Dialog, Portal, RadioButton } from 'react-native-paper';
 import type { RobloxPresencePayload } from '@/src/features/sessions/apiStore-v2';
 import { LivePulseDot } from '@/components/LivePulseDot';
 import {
-  getHostPresenceLabel,
-  getLiveStatusSublabel,
-  getPresenceUi,
   getSessionLiveBadge,
+  getPresenceUi,
   sessionUiColors,
 } from '@/src/ui/sessionStatusUi';
 import { OAUTH_STORAGE_KEYS, oauthTransientStorage } from '@/src/lib/oauthTransientStorage';
 import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
+import {
+  buildSessionRoster,
+  getDisplayName,
+  getInitials,
+  getParticipantStateBadge,
+  getSessionStateChips,
+  isHostParticipant,
+} from '@/src/lib/sessionDetailsHelpers';
 
 export default function SessionDetailScreenV2() {
   const { id, inviteLink: paramInviteLink, justCreated } = useLocalSearchParams<{
@@ -243,34 +250,6 @@ export default function SessionDetailScreenV2() {
     )
   );
 
-  const getParticipantStatusLabel = (participant: SessionDetail['participants'][number]): string | null => {
-    if (participant.handoffState === 'rsvp_joined') return 'Joined';
-    if (participant.handoffState === 'opened_roblox') return 'Opening';
-    if (participant.handoffState === 'confirmed_in_game') return 'In Game';
-    if (participant.handoffState === 'stuck') return 'Stuck';
-    if (participant.state === 'joined') return 'Joined';
-    if (participant.state === 'invited') return 'Invited';
-    if (participant.state === 'left') return 'Left';
-    if (participant.state === 'kicked') return 'Removed';
-    return null;
-  };
-
-  const getParticipantName = (participant: SessionDetail['participants'][number]): string => {
-    const preferred = participant.displayName?.trim();
-    return preferred && preferred.length > 0 ? preferred : participant.userId;
-  };
-
-  const getParticipantInitials = (participant: SessionDetail['participants'][number]): string => {
-    const name = getParticipantName(participant);
-    const initials = name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? '')
-      .join('');
-    return initials || name.substring(0, 2).toUpperCase();
-  };
-
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }]}>
@@ -305,46 +284,40 @@ export default function SessionDetailScreenV2() {
   const isHost = user?.id === session.hostId;
   const stuckParticipants = session.participants.filter((participant) => participant.handoffState === 'stuck');
   const joinedParticipants = session.participants.filter((participant) => participant.state === 'joined');
-  const participantUserIds = new Set(session.participants.map((participant) => participant.userId));
-  const unresolvedInvitedUsers = (session.invitedRobloxUsers ?? [])
-    .filter((invitedUser) => !invitedUser.appUserId || !participantUserIds.has(invitedUser.appUserId));
-  const invitedPlaceholderCount = Math.max(session.maxParticipants - session.participants.length, 0);
-  const genericPlaceholderCount = Math.max(invitedPlaceholderCount - unresolvedInvitedUsers.length, 0);
-  const displayedInvitedPlaceholderCount = unresolvedInvitedUsers.length + genericPlaceholderCount;
-  const totalDisplayedPlayers = session.participants.length + displayedInvitedPlaceholderCount;
+  const roster = buildSessionRoster(session);
   const sessionStatusUi = getSessionLiveBadge(session);
+  const sessionStateChips = getSessionStateChips(sessionStatusUi.isLive);
   const hostPresenceUi = getPresenceUi(hostPresence);
-  const hostPresenceLabel = getHostPresenceLabel(hostPresence);
-  const liveStatusSublabel = getLiveStatusSublabel(session, hostPresence);
   const renderParticipantRow = (participant: SessionDetail['participants'][number]) => (
     <View
+      key={participant.userId}
       style={[
         styles.participant,
+        isHostParticipant(participant, session.hostId) && styles.hostParticipant,
         { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
       ]}
+      accessibilityLabel={`${getDisplayName(participant.displayName, participant.userId)}, ${getParticipantStateBadge(participant, session.hostId) ?? 'Player'}`}
     >
       <View style={styles.participantAvatar}>
         <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-          {getParticipantInitials(participant)}
+          {getInitials(participant.displayName ?? participant.userId)}
         </ThemedText>
       </View>
       <View style={styles.participantInfo}>
         <ThemedText type="bodyLarge">
-          {getParticipantName(participant)}
-        </ThemedText>
-        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
-          {participant.userId === session.hostId ? 'Host' : 'Member'}
+          {getDisplayName(participant.displayName, participant.userId)}
         </ThemedText>
       </View>
-      {getParticipantStatusLabel(participant) && (
+      {getParticipantStateBadge(participant, session.hostId) && (
         <View style={styles.handoffBadge}>
           <ThemedText
             type="labelSmall"
             lightColor="#fff"
             darkColor="#fff"
             style={styles.handoffBadgeText}
+            accessibilityLabel={`${getParticipantStateBadge(participant, session.hostId)} badge`}
           >
-            {getParticipantStatusLabel(participant)}
+            {getParticipantStateBadge(participant, session.hostId)}
           </ThemedText>
         </View>
       )}
@@ -352,31 +325,28 @@ export default function SessionDetailScreenV2() {
   );
 
   const shouldRenderFooter = Boolean(
-    session.inviteLink ||
     (isHost && session.isRanked) ||
     hostPresenceUi.isUnavailable ||
     (isHost && stuckParticipants.length > 0)
   );
 
-  const renderInvitedPlaceholderRow = (index: number, displayName?: string | null) => (
+  const renderInvitedRow = (entry: { key: string; displayName: string; initials: string }) => (
     <View
-      key={`invited-placeholder-${index}`}
+      key={entry.key}
       style={[
         styles.participant,
         { borderBottomColor: colorScheme === 'dark' ? '#222' : '#f0f0f0' }
       ]}
+      accessibilityLabel={`${entry.displayName}, Invited`}
     >
       <View style={[styles.participantAvatar, styles.invitedPlaceholderAvatar]}>
         <ThemedText type="titleMedium" lightColor="#fff" darkColor="#fff">
-          ?
+          {entry.initials}
         </ThemedText>
       </View>
       <View style={styles.participantInfo}>
         <ThemedText type="bodyLarge">
-          {displayName?.trim() || 'Invited player'}
-        </ThemedText>
-        <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.participantRole}>
-          Member
+          {entry.displayName}
         </ThemedText>
       </View>
       <View style={styles.handoffBadge}>
@@ -385,6 +355,7 @@ export default function SessionDetailScreenV2() {
           lightColor="#fff"
           darkColor="#fff"
           style={styles.handoffBadgeText}
+          accessibilityLabel="Invited badge"
         >
           Invited
         </ThemedText>
@@ -428,49 +399,18 @@ export default function SessionDetailScreenV2() {
           <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} lightColor="#666" darkColor="#999" style={styles.gameName}>
             {session.game.gameName || 'Game'}
           </ThemedText>
-          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostPresence}>
-            {hostPresenceLabel}
+          <ThemedText type="bodyMedium" lightColor="#666" darkColor="#999" style={styles.hostMeta}>
+            {`🦇 ${session.host?.robloxUsername || 'Unknown host'}`}
           </ThemedText>
 
           <View style={styles.badges}>
-            <View style={[styles.badge, { backgroundColor: sessionStatusUi.color }]}>
-              <ThemedText
-                type="labelMedium"
-                lightColor={sessionStatusUi.textColor}
-                darkColor={sessionStatusUi.textColor}
-                style={styles.badgeText}
-              >
-                {sessionStatusUi.label}
-              </ThemedText>
-            </View>
-            {liveStatusSublabel && (
-              <View style={[styles.badge, styles.liveSublabelBadge]}>
+            {sessionStateChips.map((chipLabel) => (
+              <View key={chipLabel} style={[styles.badge, { backgroundColor: sessionUiColors.live }]}>
                 <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                  {liveStatusSublabel}
+                  {chipLabel}
                 </ThemedText>
               </View>
-            )}
-            {session.visibility !== 'public' && (
-              <View style={[styles.badge, styles.visibilityBadge]}>
-                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                  {session.visibility === 'friends' ? 'FRIENDS' : 'INVITE ONLY'}
-                </ThemedText>
-              </View>
-            )}
-            {session.isRanked && (
-              <View style={[styles.badge, styles.rankedBadge]}>
-                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                  RANKED
-                </ThemedText>
-              </View>
-            )}
-            {isFull && (
-              <View style={[styles.badge, styles.fullBadge]}>
-                <ThemedText type="labelMedium" lightColor="#fff" darkColor="#fff" style={styles.badgeText}>
-                  FULL
-                </ThemedText>
-              </View>
-            )}
+            ))}
           </View>
         </View>
 
@@ -520,73 +460,55 @@ export default function SessionDetailScreenV2() {
           { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
         ]}>
           <ThemedText type={isCompact ? 'titleMedium' : 'titleLarge'} style={styles.sectionTitle}>
-            Players ({totalDisplayedPlayers} / {session.maxParticipants})
+            Players • {roster.joinedCount} / {session.maxParticipants}
           </ThemedText>
         </View>
 
         <View style={styles.playersListContainer}>
-          {session.participants.length > 0 ? (
+          {roster.activeParticipants.length > 0 ? (
             <>
-              {session.participants.map((participant) => (
-                <View key={participant.userId}>
-                  {renderParticipantRow(participant)}
-                </View>
-              ))}
-              {unresolvedInvitedUsers.map((invitedUser, index) =>
-                renderInvitedPlaceholderRow(index, invitedUser.displayName)
-              )}
-              {Array.from({ length: genericPlaceholderCount }).map((_, index) =>
-                renderInvitedPlaceholderRow(unresolvedInvitedUsers.length + index)
-              )}
+              {roster.activeParticipants.map((participant) => renderParticipantRow(participant))}
             </>
           ) : (
-            <>
-              {unresolvedInvitedUsers.map((invitedUser, index) =>
-                renderInvitedPlaceholderRow(index, invitedUser.displayName)
-              )}
-              {Array.from({ length: genericPlaceholderCount }).map((_, index) =>
-                renderInvitedPlaceholderRow(unresolvedInvitedUsers.length + index)
-              )}
-              {displayedInvitedPlaceholderCount === 0 ? (
-                <View style={styles.emptyState}>
-                  <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
-                    No participants yet.
-                  </ThemedText>
-                </View>
-              ) : null}
-            </>
+            <View style={styles.emptyState}>
+              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
+                No players in session yet.
+              </ThemedText>
+            </View>
+          )}
+        </View>
+        <View style={[
+          styles.section,
+          isCompact && styles.sectionCompact,
+          { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
+        ]}>
+          <ThemedText type="titleMedium" style={styles.sectionTitle}>
+            Invited
+          </ThemedText>
+          {roster.invitedEntries.length > 0 ? (
+            roster.invitedEntries.map((entry) => renderInvitedRow(entry))
+          ) : (
+            <View style={styles.emptyState}>
+              <ThemedText type="bodyLarge" lightColor="#666" darkColor="#999">
+                No invited users yet.
+              </ThemedText>
+            </View>
+          )}
+          {session.inviteLink && (
+            <Button
+              title="Share Invite"
+              variant="outlined"
+              textColor="#007AFF"
+              style={[
+                styles.shareButton,
+                { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
+              ]}
+              onPress={() => handleShare()}
+            />
           )}
         </View>
         {shouldRenderFooter ? (
           <View style={styles.playersListFooter}>
-            <View style={[styles.footerSections, isCompact && styles.footerSectionsCompact]}>
-              <View style={[
-                styles.section,
-                isCompact && styles.sectionCompact,
-                { borderTopColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }
-              ]}>
-                {session.inviteLink && (
-                  <Button
-                    title="Share Invite"
-                    variant="outlined"
-                    textColor="#007AFF"
-                    style={[
-                      styles.shareButton,
-                      { backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f0f0f0' }
-                    ]}
-                    onPress={() => handleShare()}
-                  />
-                )}
-                <Button
-                  title="Safety & Report"
-                  variant="outlined"
-                  textColor="#c62828"
-                  style={styles.safetyButton}
-                  onPress={handleOpenSafetyReport}
-                />
-              </View>
-            </View>
-
             {(isHost && session.isRanked) || hostPresenceUi.isUnavailable ? (
               <View style={[
                 styles.section,
@@ -632,7 +554,7 @@ export default function SessionDetailScreenV2() {
                 </ThemedText>
                 {stuckParticipants.map((participant) => (
                   <ThemedText key={`stuck-${participant.userId}`} type="bodyMedium" style={styles.stuckUserText}>
-                    {getParticipantName(participant)}
+                    {getDisplayName(participant.displayName, participant.userId)}
                   </ThemedText>
                 ))}
                 <Button
@@ -646,6 +568,11 @@ export default function SessionDetailScreenV2() {
             )}
           </View>
         ) : null}
+        <TouchableOpacity style={styles.safetyLinkContainer} onPress={handleOpenSafetyReport} accessibilityRole="button">
+          <ThemedText type="bodyMedium" lightColor="#c62828" darkColor="#ff7b72" style={styles.safetyLinkText}>
+            Safety & Report
+          </ThemedText>
+        </TouchableOpacity>
       </ScrollView>
 
       {isResultDialogVisible ? (
@@ -656,7 +583,7 @@ export default function SessionDetailScreenV2() {
               {joinedParticipants.map((participant) => (
                 <RadioButton.Item
                   key={`winner-${participant.userId}`}
-                  label={`${getParticipantName(participant)}${participant.userId === session.hostId ? ' (Host)' : ''}`}
+                  label={`${getDisplayName(participant.displayName, participant.userId)}${participant.userId === session.hostId ? ' (Host)' : ''}`}
                   value={participant.userId}
                   status={selectedWinnerId === participant.userId ? 'checked' : 'unchecked'}
                   onPress={() => setSelectedWinnerId(participant.userId)}
@@ -749,7 +676,7 @@ const styles = StyleSheet.create({
   gameName: {
     marginBottom: 12,
   },
-  hostPresence: {
+  hostMeta: {
     marginBottom: 10,
   },
   badges: {
@@ -767,18 +694,6 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     flexShrink: 1,
-  },
-  visibilityBadge: {
-    backgroundColor: '#007AFF',
-  },
-  liveSublabelBadge: {
-    backgroundColor: sessionUiColors.warning,
-  },
-  fullBadge: {
-    backgroundColor: '#ff3b30',
-  },
-  rankedBadge: {
-    backgroundColor: '#FF6B00',
   },
   primaryActions: {
     paddingTop: 14,
@@ -815,18 +730,18 @@ const styles = StyleSheet.create({
   playersListContainer: {
     width: '100%',
   },
-  footerSections: {
-    paddingBottom: 12,
-    flexShrink: 0,
-  },
-  footerSectionsCompact: {
-    paddingBottom: 8,
-  },
   participant: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+    marginBottom: 4,
+  },
+  hostParticipant: {
+    backgroundColor: 'rgba(52, 120, 246, 0.10)',
   },
   participantAvatar: {
     width: 40,
@@ -843,9 +758,6 @@ const styles = StyleSheet.create({
   participantInfo: {
     flex: 1,
     marginRight: 10,
-  },
-  participantRole: {
-    textTransform: 'capitalize',
   },
   handoffBadge: {
     paddingHorizontal: 14,
@@ -870,10 +782,7 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     borderRadius: 8,
-  },
-  safetyButton: {
-    borderRadius: 8,
-    marginTop: 10,
+    marginTop: 12,
   },
   hostToolsTitle: {
     marginBottom: 8,
@@ -927,5 +836,13 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     paddingVertical: 12,
+  },
+  safetyLinkContainer: {
+    paddingTop: 12,
+    paddingBottom: 10,
+    alignItems: 'center',
+  },
+  safetyLinkText: {
+    textDecorationLine: 'underline',
   },
 });

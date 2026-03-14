@@ -47,7 +47,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -68,7 +68,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -103,7 +103,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -139,7 +139,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -155,7 +155,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -173,7 +173,7 @@ export function buildMeRoutes(deps: MeRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );

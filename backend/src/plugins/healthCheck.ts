@@ -61,11 +61,9 @@ export async function healthCheckPlugin(fastify: FastifyInstance) {
         status: overallStatus,
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        // Only expose version and environment in non-production to avoid information disclosure
-        ...(isProduction ? {} : {
-          environment: fastify.config.NODE_ENV,
-          version: process.env.npm_package_version || '1.0.0',
-        }),
+        version: process.env.npm_package_version || '1.0.0',
+        // Environment is non-sensitive only outside production
+        ...(!isProduction ? { environment: fastify.config.NODE_ENV } : {}),
         checks,
       });
     });

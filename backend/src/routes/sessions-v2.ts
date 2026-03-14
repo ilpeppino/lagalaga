@@ -125,7 +125,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.status(201).send({
         success: true,
         data: result,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -172,7 +172,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: result,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -210,7 +210,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: result,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -256,7 +256,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: { session },
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -311,7 +311,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
           session,
           participantState: participant.state,
         },
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -345,7 +345,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: summary,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -396,7 +396,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: result,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -450,7 +450,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: result,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -515,7 +515,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
 
       return reply.send({
         success: true,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -554,7 +554,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
         return reply.send({
           success: true,
           data: result,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -623,7 +623,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
             maxParticipants: invite.session.max_participants,
           },
         },
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -662,7 +662,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
 
       return reply.send({
         success: true,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );
@@ -713,7 +713,7 @@ export function buildSessionsRoutesV2(deps: SessionsRoutesV2Deps = {}) {
       return reply.send({
         success: true,
         data: { deletedCount },
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     }
   );

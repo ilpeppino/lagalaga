@@ -1,7 +1,10 @@
 import { getSupabase } from '../config/supabase.js';
 import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/errors.js';
+import { chunkArray } from '../lib/arrays.js';
+import { TtlCache } from '../lib/ttlCache.js';
 import { RobloxLinkNormalizer } from './roblox-link-normalizer.js';
 import { RobloxEnrichmentService } from './roblox-enrichment.service.js';
+import { RobloxFriendsCacheService } from './roblox-friends-cache.service.js';
 import { PushNotificationService } from './pushNotificationService.js';
 import { logger } from '../lib/logger.js';
 import { sanitize } from '../lib/sanitizer.js';
@@ -71,10 +74,33 @@ export function generateInviteCode(): string {
 export class SessionServiceV2 {
   private normalizer: RobloxLinkNormalizer;
   private enrichmentService: RobloxEnrichmentService;
+  // 60-second TTL — game metadata (canonical URLs) rarely changes
+  private readonly gamesCache = new TtlCache<number, Record<string, unknown>>(60_000);
+  private readonly friendsCacheService: RobloxFriendsCacheService;
 
   constructor() {
     this.normalizer = new RobloxLinkNormalizer();
     this.enrichmentService = new RobloxEnrichmentService();
+    this.friendsCacheService = new RobloxFriendsCacheService();
+  }
+
+  private async getGameByPlaceId(placeId: number): Promise<Record<string, unknown> | null> {
+    const cached = this.gamesCache.get(placeId);
+    if (cached) {
+      metrics.incrementCounter('games_cache_hits_total');
+      return cached;
+    }
+    metrics.incrementCounter('games_cache_misses_total');
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from('games')
+      .select('*')
+      .eq('place_id', placeId)
+      .single();
+    if (data) {
+      this.gamesCache.set(placeId, data);
+    }
+    return data ?? null;
   }
 
   private isMissingHandoffStateColumn(error: { message?: string } | null | undefined): boolean {
@@ -358,10 +384,18 @@ export class SessionServiceV2 {
         throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to store invited Roblox users: ${invitedError.message}`);
       }
 
-      const { data: resolvedUsers, error: resolveError } = await supabase
-        .from('app_users')
-        .select('id, roblox_user_id')
-        .in('roblox_user_id', invitedRobloxUserIds);
+      // Cap each IN-query batch to 500 rows to prevent query timeouts on large invite lists.
+      const INVITED_BATCH_SIZE = 500;
+      let resolvedUsers: { id: string; roblox_user_id: string }[] = [];
+      let resolveError: { message: string } | null = null;
+      for (const chunk of chunkArray(invitedRobloxUserIds, INVITED_BATCH_SIZE)) {
+        const { data: chunkData, error: chunkError } = await supabase
+          .from('app_users')
+          .select('id, roblox_user_id')
+          .in('roblox_user_id', chunk);
+        if (chunkError) { resolveError = chunkError; break; }
+        resolvedUsers = resolvedUsers.concat(chunkData ?? []);
+      }
 
       if (resolveError) {
         logger.warn(
@@ -436,16 +470,11 @@ export class SessionServiceV2 {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create invite: ${inviteError.message}`);
     }
 
-    // Step 6: Get game data for response (if we have placeId)
+    // Step 6: Get game data for response (if we have placeId) — served from cache when available
     let gameData: any = null;
     const placeIdForGame = normalized?.placeId ?? placeIdForSession;
     if (placeIdForGame !== null) {
-      const { data } = await supabase
-        .from('games')
-        .select('*')
-        .eq('place_id', placeIdForGame)
-        .single();
-      gameData = data;
+      gameData = await this.getGameByPlaceId(placeIdForGame);
     }
 
     const canonicalUrl = normalized?.canonicalWebUrl ?? share?.canonicalUrl ?? input.robloxUrl;
@@ -998,33 +1027,39 @@ export class SessionServiceV2 {
     const invitedRobloxUserIds = Array.from(
       new Set((invitedRobloxRows ?? []).map((row: any) => String(row.roblox_user_id)).filter(Boolean))
     );
-    const { data: invitedAppUsers, error: invitedAppUsersError } = invitedRobloxUserIds.length > 0
-      ? await supabase
-        .from('app_users')
-        .select('id, roblox_user_id, roblox_display_name, roblox_username')
-        .in('roblox_user_id', invitedRobloxUserIds)
-      : { data: [], error: null };
-
-    if (invitedAppUsersError) {
-      throw new AppError(
-        ErrorCodes.INTERNAL_ERROR,
-        `Failed to resolve invited Roblox users: ${invitedAppUsersError.message}`
-      );
+    // Cap each IN-query batch to 500 rows to prevent query timeouts on large invite lists.
+    const INVITED_BATCH_SIZE = 500;
+    let invitedAppUsers: { id: string; roblox_user_id: string; roblox_display_name: string | null; roblox_username: string | null }[] = [];
+    if (invitedRobloxUserIds.length > 0) {
+      for (const chunk of chunkArray(invitedRobloxUserIds, INVITED_BATCH_SIZE)) {
+        const { data, error: invitedAppUsersError } = await supabase
+          .from('app_users')
+          .select('id, roblox_user_id, roblox_display_name, roblox_username')
+          .in('roblox_user_id', chunk);
+        if (invitedAppUsersError) {
+          throw new AppError(
+            ErrorCodes.INTERNAL_ERROR,
+            `Failed to resolve invited Roblox users: ${invitedAppUsersError.message}`
+          );
+        }
+        invitedAppUsers = invitedAppUsers.concat(data ?? []);
+      }
     }
 
-    const { data: hostFriendsCache, error: hostFriendsCacheError } = invitedRobloxUserIds.length > 0
-      ? await supabase
-        .from('roblox_friends_cache')
-        .select('friends_json')
-        .eq('user_id', sessionData.host_id)
-        .maybeSingle<{ friends_json: unknown }>()
-      : { data: null, error: null };
-
-    if (hostFriendsCacheError) {
-      throw new AppError(
-        ErrorCodes.INTERNAL_ERROR,
-        `Failed to load host Roblox friends cache: ${hostFriendsCacheError.message}`
-      );
+    // Resolve host's Roblox friends — falls back to a live API fetch when the cache is cold or stale.
+    let hostFriendsList: { id: number; displayName: string }[] = [];
+    if (invitedRobloxUserIds.length > 0) {
+      try {
+        const friendsResult = await this.friendsCacheService.getFriendsForUser(sessionData.host_id);
+        metrics.incrementCounter('host_friends_cache_' + friendsResult.source + '_total');
+        hostFriendsList = friendsResult.friends;
+      } catch (err) {
+        // Non-fatal: friend status may be inaccurate, but the session can still be shown
+        logger.warn(
+          { hostId: sessionData.host_id, error: err instanceof Error ? err.message : String(err) },
+          'Failed to resolve host Roblox friends — friend status unavailable'
+        );
+      }
     }
 
     const displayNameByUserId = new Map<string, string>();
@@ -1048,7 +1083,7 @@ export class SessionServiceV2 {
       });
     }
 
-    const hostFriendDisplayNameByRobloxId = parseHostFriendDisplayNameMap(hostFriendsCache?.friends_json);
+    const hostFriendDisplayNameByRobloxId = parseHostFriendDisplayNameMap(hostFriendsList);
     const invitedRobloxUsers = invitedRobloxUserIds.map((robloxUserId) => {
       const invitedAppUser = invitedUserByRobloxId.get(robloxUserId);
       return {

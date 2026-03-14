@@ -550,7 +550,7 @@ class ApiClient {
         status: 'OPEN' | 'UNDER_REVIEW' | 'CLOSED' | 'ESCALATED';
         createdAt: string;
       };
-      requestId: string;
+      meta?: { requestId?: string };
     }> => {
       return this.request('/api/reports', {
         method: 'POST',

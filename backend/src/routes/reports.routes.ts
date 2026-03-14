@@ -70,7 +70,7 @@ export function buildReportsRoutes(deps: ReportsRoutesDeps = {}) {
         return reply.send({
           success: true,
           data: result,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );

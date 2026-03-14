@@ -49,7 +49,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
         return reply.send({
           success: true,
           data,
-          requestId: String(request.id),
+          meta: { requestId: String(request.id) },
         });
       }
     );
@@ -60,7 +60,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       return reply.send({
         success: true,
         data,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     });
 
@@ -89,7 +89,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       async (request, reply) => {
         ensureFeatureEnabled();
         const data = await friendshipService.sendRequest(request.user.userId, request.body.targetUserId);
-        return reply.send({ success: true, data, requestId: String(request.id) });
+        return reply.send({ success: true, data, meta: { requestId: String(request.id) } });
       }
     );
 
@@ -112,7 +112,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       async (request, reply) => {
         ensureFeatureEnabled();
         const data = await friendshipService.acceptRequest(request.user.userId, request.body.friendshipId);
-        return reply.send({ success: true, data, requestId: String(request.id) });
+        return reply.send({ success: true, data, meta: { requestId: String(request.id) } });
       }
     );
 
@@ -135,7 +135,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       async (request, reply) => {
         ensureFeatureEnabled();
         const data = await friendshipService.rejectRequest(request.user.userId, request.body.friendshipId);
-        return reply.send({ success: true, data, requestId: String(request.id) });
+        return reply.send({ success: true, data, meta: { requestId: String(request.id) } });
       }
     );
 
@@ -158,7 +158,7 @@ export function buildFriendsRoutes(deps: FriendsRoutesDeps = {}) {
       async (request, reply) => {
         ensureFeatureEnabled();
         const data = await friendshipService.remove(request.user.userId, request.params.friendshipId);
-        return reply.send({ success: true, data, requestId: String(request.id) });
+        return reply.send({ success: true, data, meta: { requestId: String(request.id) } });
       }
     );
   };

@@ -147,7 +147,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       request.server.config.JWT_SECRET
     );
     if (!stateData || stateData.userId !== request.user.userId) {
-      throw new AppError('ACCOUNT_LINK_INVALID_STATE', 'OAuth state is invalid or expired.', 401, {
+      throw new AppError(ErrorCodes.ACCOUNT_LINK_INVALID_STATE, 'OAuth state is invalid or expired.', 401, {
         severity: 'warning',
       });
     }
@@ -169,7 +169,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
       });
     } catch (error) {
       const appError = error as AppError | undefined;
-      if (appError?.code !== 'CONFLICT_ACCOUNT_PROVIDER') {
+      if (appError?.code !== ErrorCodes.CONFLICT_ACCOUNT_PROVIDER) {
         throw error;
       }
 
@@ -204,7 +204,7 @@ export async function robloxConnectRoutes(fastify: FastifyInstance) {
 
     const effectiveUser = await userService.getUserById(effectiveUserId);
     if (!effectiveUser) {
-      throw new AppError('AUTH_USER_NOT_FOUND', 'User account not found after Roblox link.', 500);
+      throw new AppError(ErrorCodes.AUTH_USER_NOT_FOUND, 'User account not found after Roblox link.', 500);
     }
     const generated = tokenService.generateTokens({
       userId: effectiveUser.id,

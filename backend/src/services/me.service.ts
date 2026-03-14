@@ -5,6 +5,8 @@ import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { RankingService, type SkillTier } from './rankingService.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { fetchJsonWithTimeoutRetry } from '../lib/http.js';
+import { logger } from '../lib/logger.js';
+import { metrics } from '../plugins/metrics.js';
 
 interface RobloxHeadshotApiResponse {
   data: Array<{
@@ -82,7 +84,7 @@ interface SeasonBadgeRow {
  * @param robloxUserId - Roblox user ID (as string)
  * @returns Avatar headshot URL or null
  */
-async function fetchRobloxHeadshot(robloxUserId: string): Promise<string | null> {
+export async function fetchRobloxHeadshot(robloxUserId: string): Promise<string | null> {
   try {
     const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxUserId}&size=150x150&format=Png&isCircular=false`;
 
@@ -100,7 +102,10 @@ async function fetchRobloxHeadshot(robloxUserId: string): Promise<string | null>
     return null;
   } catch (error) {
     // Log but don't throw - avatar fetch is non-critical
-    console.warn(`Failed to fetch Roblox headshot for user ${robloxUserId}:`, error);
+    logger.warn(
+      { robloxUserId, error: error instanceof Error ? error.message : String(error) },
+      'Failed to fetch Roblox avatar'
+    );
     return null;
   }
 }
@@ -108,7 +113,7 @@ async function fetchRobloxHeadshot(robloxUserId: string): Promise<string | null>
 /**
  * Update app_users avatar cache columns.
  */
-async function updateAppUserAvatarCache(
+export async function updateAppUserAvatarCache(
   userId: string,
   avatarUrl: string
 ): Promise<void> {
@@ -126,12 +131,16 @@ async function updateAppUserAvatarCache(
   // Silently ignore errors - caching is best-effort
 }
 
-function isAvatarCacheFresh(cachedAt: string | null): boolean {
+export function isAvatarCacheFresh(cachedAt: string | null): boolean {
   if (!cachedAt) {
     return false;
   }
 
   const ageMs = Date.now() - new Date(cachedAt).getTime();
+  // ageMs < 0 means cachedAt is in the future (clock skew between app server and DB writer).
+  // We treat this as stale to avoid trusting a potentially corrupted timestamp.
+  // A large skew could cause all cached avatars to appear stale simultaneously,
+  // triggering a Roblox API request storm until clocks re-synchronize.
   return ageMs >= 0 && ageMs < AVATAR_CACHE_TTL_MS;
 }
 
@@ -283,12 +292,15 @@ export async function getMeData(
 
   // Refresh avatar only if app_users cache is stale or missing.
   const shouldFetchAvatar = !isAvatarCacheFresh(appUser.avatar_cached_at) || !appUser.avatar_headshot_url;
+  metrics.incrementCounter(shouldFetchAvatar ? 'avatar_cache_misses_total' : 'avatar_cache_hits_total');
   if (shouldFetchAvatar) {
     const freshHeadshot = await fetchRobloxHeadshot(platformData.platform_user_id);
     if (freshHeadshot) {
       avatarHeadshotUrl = freshHeadshot;
       // Update cache asynchronously (best-effort)
-      void updateAppUserAvatarCache(userId, freshHeadshot);
+      updateAppUserAvatarCache(userId, freshHeadshot).catch((err: unknown) =>
+        logger.warn({ userId, error: err instanceof Error ? err.message : String(err) }, 'Avatar cache update failed')
+      );
     }
   }
 

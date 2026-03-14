@@ -66,7 +66,7 @@ class TestUserManager {
       try {
         await supabase.auth.admin.deleteUser(userId);
       } catch (error) {
-        console.error(`Failed to cleanup user ${userId}:`, error);
+        process.stderr.write(`[TEST CLEANUP] Failed to cleanup user ${userId}: ${error instanceof Error ? error.message : String(error)}\n`);
       }
     }
 
@@ -154,7 +154,7 @@ class TestSessionManager {
         await supabase.from('session_invites').delete().eq('session_id', sessionId);
         await supabase.from('sessions').delete().eq('id', sessionId);
       } catch (error) {
-        console.error(`Failed to cleanup session ${sessionId}:`, error);
+        process.stderr.write(`[TEST CLEANUP] Failed to cleanup session ${sessionId}: ${error instanceof Error ? error.message : String(error)}\n`);
       }
     }
 

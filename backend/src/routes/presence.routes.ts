@@ -49,7 +49,7 @@ export function buildPresenceRoutes(deps: PresenceRoutesDeps = {}) {
       return reply.send({
         success: true,
         data,
-        requestId: String(request.id),
+        meta: { requestId: String(request.id) },
       });
     });
 

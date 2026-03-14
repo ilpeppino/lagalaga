@@ -8,7 +8,9 @@ import type { ErrorSeverity } from './codes.js';
 export interface ApiSuccessResponse<T> {
   success: true;
   data: T;
-  requestId: string;
+  meta?: {
+    requestId?: string;
+  };
 }
 
 export interface ApiErrorDetail {

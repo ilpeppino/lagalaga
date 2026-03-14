@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fas
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import type { ErrorSeverity } from '../../../shared/errors/codes.js';
 import { logError } from '../lib/logger.js';
+import { monitoring } from '../lib/monitoring.js';
 
 interface ErrorResponseBody {
   success: false;
@@ -118,6 +119,14 @@ export const errorHandlerPlugin = fp(async function errorHandlerPlugin(fastify: 
       const severity: ErrorSeverity = statusCode >= 500 ? 'error' : 'warning';
 
       logError(error, { requestId, statusCode }, 'Unhandled error');
+
+      if (statusCode >= 500) {
+        monitoring.captureError(error instanceof Error ? error : new Error(String(error)), {
+          tags: { requestId, route: (request as any).routeOptions?.url ?? request.url },
+          level: 'error',
+          extra: { method: request.method, url: request.url },
+        });
+      }
 
       return reply.status(statusCode).send(
         buildErrorResponse(

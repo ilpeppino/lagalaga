@@ -83,9 +83,9 @@ export class RobloxConnectionService {
           platform_user_id: userInfo.sub,
           platform_username: userInfo.preferred_username || userInfo.name || null,
           platform_display_name: userInfo.nickname || null,
-          roblox_access_token_enc: encryptValue(tokenResponse.access_token, this.fastify.config.JWT_SECRET),
+          roblox_access_token_enc: encryptValue(tokenResponse.access_token, this.fastify.config.OAUTH_ENCRYPTION_KEY),
           roblox_refresh_token_enc: tokenResponse.refresh_token
-            ? encryptValue(tokenResponse.refresh_token, this.fastify.config.JWT_SECRET)
+            ? encryptValue(tokenResponse.refresh_token, this.fastify.config.OAUTH_ENCRYPTION_KEY)
             : null,
           roblox_token_expires_at: expiresAt,
           roblox_scope: tokenResponse.scope || null,
@@ -151,7 +151,7 @@ export class RobloxConnectionService {
 
     if (!isExpired) {
       try {
-        return { token: decryptValue(connection.roblox_access_token_enc, this.fastify.config.JWT_SECRET) };
+        return { token: decryptValue(connection.roblox_access_token_enc, this.fastify.config.OAUTH_ENCRYPTION_KEY) };
       } catch {
         return { unavailable: true, reason: 'ROBLOX_TOKEN_INVALID' };
       }
@@ -161,12 +161,12 @@ export class RobloxConnectionService {
       return { unavailable: true, reason: 'ROBLOX_NOT_CONNECTED' };
     }
 
-    const refreshToken = decryptValue(connection.roblox_refresh_token_enc, this.fastify.config.JWT_SECRET);
+    const refreshToken = decryptValue(connection.roblox_refresh_token_enc, this.fastify.config.OAUTH_ENCRYPTION_KEY);
     const refreshed = await this.oauthService.refreshAccessToken(refreshToken);
 
-    const newAccessTokenEnc = encryptValue(refreshed.access_token, this.fastify.config.JWT_SECRET);
+    const newAccessTokenEnc = encryptValue(refreshed.access_token, this.fastify.config.OAUTH_ENCRYPTION_KEY);
     const newRefreshTokenEnc = refreshed.refresh_token
-      ? encryptValue(refreshed.refresh_token, this.fastify.config.JWT_SECRET)
+      ? encryptValue(refreshed.refresh_token, this.fastify.config.OAUTH_ENCRYPTION_KEY)
       : connection.roblox_refresh_token_enc;
 
     const { error } = await this.supabase

@@ -13,6 +13,7 @@ export const envSchema = {
     'ROBLOX_REDIRECT_URI',
     'JWT_SECRET',
     'REFRESH_TOKEN_SECRET',
+    'OAUTH_ENCRYPTION_KEY',
   ],
   properties: {
     NODE_ENV: {
@@ -83,6 +84,9 @@ export const envSchema = {
       default: '',
     },
     JWT_SECRET: {
+      type: 'string',
+    },
+    OAUTH_ENCRYPTION_KEY: {
       type: 'string',
     },
     JWT_EXPIRY: {
@@ -193,6 +197,7 @@ declare module 'fastify' {
       APPLE_ISSUER: string;
       APPLE_JWKS_URI: string;
       JWT_SECRET: string;
+      OAUTH_ENCRYPTION_KEY: string;
       JWT_EXPIRY: string;
       REFRESH_TOKEN_SECRET: string;
       REFRESH_TOKEN_EXPIRY: string;

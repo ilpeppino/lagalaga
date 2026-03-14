@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Switch,
   Alert,
   Linking,
   Platform,
+  Animated,
+  Easing,
+  Switch,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { apiClient } from '@/src/lib/api';
 import { ENABLE_COMPETITIVE_DEPTH } from '@/src/lib/runtimeConfig';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
@@ -29,6 +32,13 @@ import { openRobloxAuthSession } from '@/src/features/auth/robloxAuthSession';
 import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConflict';
 import { logger } from '@/src/lib/logger';
 import { getOrCreateAuthFlowCorrelationId } from '@/src/features/auth/authFlowCorrelation';
+import {
+  DEFAULT_SESSION_SETTINGS,
+  type SessionSettings,
+  loadSessionSettings,
+  saveSessionSettings,
+} from '@/src/lib/sessionSettings';
+import { resolveHaloColor } from '@/src/lib/meHelpers';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -66,12 +76,74 @@ interface MeResponse {
   requestId: string;
 }
 
+// ---------------------------------------------------------------------------
+// NumberSettingRow — inline stepper control used in the Settings card
+// ---------------------------------------------------------------------------
+function NumberSettingRow({
+  label,
+  value,
+  onChange,
+  textColor,
+  tintColor,
+}: {
+  label: string;
+  value: number;
+  onChange: (nextValue: number) => void;
+  textColor: string;
+  tintColor: string;
+}) {
+  const clamp = (v: number) => Math.max(0, Math.min(48, v));
+  return (
+    <View style={stepperStyles.row}>
+      <Text style={[stepperStyles.label, { color: textColor }]}>{label}</Text>
+      <View style={stepperStyles.controls}>
+        <TouchableOpacity
+          onPress={() => onChange(clamp(value - 1))}
+          style={[stepperStyles.btn, { backgroundColor: tintColor }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Decrease ${label}`}
+        >
+          <Text style={stepperStyles.btnText}>−</Text>
+        </TouchableOpacity>
+        <Text style={[stepperStyles.value, { color: textColor }]}>{value}h</Text>
+        <TouchableOpacity
+          onPress={() => onChange(clamp(value + 1))}
+          style={[stepperStyles.btn, { backgroundColor: tintColor }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Increase ${label}`}
+        >
+          <Text style={stepperStyles.btnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const stepperStyles = StyleSheet.create({
+  row: { gap: 6 },
+  label: { fontSize: 14 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  btn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '600', lineHeight: 20 },
+  value: { minWidth: 36, textAlign: 'center', fontSize: 14, fontWeight: '600' },
+});
+
+// ---------------------------------------------------------------------------
+// MeScreen
+// ---------------------------------------------------------------------------
 export default function MeScreen() {
-  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { handleError } = useErrorHandler();
   const { user, signInWithApple } = useAuth();
-  
+  const { colorScheme, themePreference, setThemePreference } = useAppTheme();
+
   const [data, setData] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,15 +151,66 @@ export default function MeScreen() {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [linkingApple, setLinkingApple] = useState(false);
 
+  // Session settings (embedded from /settings)
+  const [settings, setSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+
+  // ---------------------------------------------------------------------------
+  // Animations
+  // ---------------------------------------------------------------------------
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const haloScaleAnim = useRef(new Animated.Value(1)).current;
+  const contentFadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Rotate sync icon while refreshing
+  useEffect(() => {
+    if (refreshing) {
+      spinAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      spinLoopRef.current = loop;
+      loop.start();
+    } else {
+      spinLoopRef.current?.stop();
+      spinLoopRef.current = null;
+      spinAnim.setValue(0);
+    }
+  }, [refreshing, spinAnim]);
+
+  // Fade in content after initial load
+  useEffect(() => {
+    if (!loading && data) {
+      Animated.timing(contentFadeAnim, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [loading, data, contentFadeAnim]);
+
+  // Briefly pulse the avatar halo on successful sync
+  const pulseHalo = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(haloScaleAnim, { toValue: 1.1, duration: 180, useNativeDriver: true }),
+      Animated.timing(haloScaleAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+    ]).start();
+  }, [haloScaleAnim]);
+
+  // ---------------------------------------------------------------------------
+  // Data fetching
+  // ---------------------------------------------------------------------------
   const fetchMeData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.getRaw('/api/me');
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user data');
-      }
-
+      if (!response.ok) throw new Error('Failed to fetch user data');
       const json: MeResponse = await response.json();
       setData(json.data);
     } catch (error) {
@@ -97,9 +220,33 @@ export default function MeScreen() {
     }
   }, [handleError]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      setSettingsLoading(true);
+      const loaded = await loadSessionSettings();
+      setSettings(loaded);
+    } catch (error) {
+      handleError(error, { fallbackMessage: 'Failed to load settings' });
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [handleError]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchMeData();
+      void loadSettings();
+    }, [fetchMeData, loadSettings])
+  );
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
   const handleSyncRobloxData = async () => {
     if (!user?.id) {
-      handleError(new Error('User session not available'), { fallbackMessage: 'Failed to sync Roblox data' });
+      handleError(new Error('User session not available'), {
+        fallbackMessage: 'Failed to sync Roblox data',
+      });
       return;
     }
 
@@ -119,18 +266,18 @@ export default function MeScreen() {
         failedActions.push('favorites');
       }
 
-      // Re-fetch profile data (avatar may refresh if stale per backend TTL policy).
       const response = await apiClient.getRaw('/api/me');
-      if (!response.ok) {
-        throw new Error('Failed to refresh profile');
-      }
+      if (!response.ok) throw new Error('Failed to refresh profile');
       const json: MeResponse = await response.json();
       setData(json.data);
 
       if (failedActions.length > 0) {
-        Alert.alert('Sync completed with issues', `Couldn't refresh: ${failedActions.join(', ')}.`);
+        Alert.alert(
+          'Sync completed with issues',
+          `Couldn't refresh: ${failedActions.join(', ')}.`
+        );
       } else {
-        Alert.alert('Sync complete', 'Roblox friends, favorites, and profile data are up to date.');
+        pulseHalo();
       }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to sync Roblox data' });
@@ -164,10 +311,7 @@ export default function MeScreen() {
           if (callbackCode && callbackState) {
             router.replace({
               pathname: '/auth/roblox',
-              params: {
-                code: callbackCode,
-                state: callbackState,
-              },
+              params: { code: callbackCode, state: callbackState },
             });
           }
         } catch {
@@ -179,29 +323,6 @@ export default function MeScreen() {
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to start Roblox connect flow.' });
     }
-  };
-
-  const openMatchHistory = () => {
-    router.push('/match-history');
-  };
-
-  const openDeleteAccount = () => {
-    router.push('/account/delete');
-  };
-
-  const openSettings = () => {
-    router.push('/settings');
-  };
-
-  const openSafetyReport = () => {
-    router.push('/safety-report');
-  };
-
-  const openProfileOverflowMenu = () => {
-    Alert.alert('Profile options', 'Choose an action', [
-      { text: 'Safety & Report', onPress: openSafetyReport },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
   };
 
   const handleLinkApple = async () => {
@@ -221,50 +342,63 @@ export default function MeScreen() {
     }
   };
 
+  const updateSetting = useCallback(
+    async (nextPartial: Partial<SessionSettings>) => {
+      try {
+        const next = await saveSessionSettings(nextPartial);
+        setSettings(next);
+      } catch (error) {
+        handleError(error, { fallbackMessage: 'Failed to save settings' });
+      }
+    },
+    [handleError]
+  );
+
   const formatCountdown = (endDate: string | null): string => {
-    if (!endDate) {
-      return 'N/A';
-    }
-
+    if (!endDate) return 'N/A';
     const diffMs = new Date(endDate).getTime() - Date.now();
-    if (diffMs <= 0) {
-      return 'Ending soon';
-    }
-
+    if (diffMs <= 0) return 'Ending soon';
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
     return `${days}d ${hours}h`;
   };
 
-  // Fetch data on screen focus
-  useFocusEffect(
-    useCallback(() => {
-      void fetchMeData();
-    }, [fetchMeData])
-  );
+  // ---------------------------------------------------------------------------
+  // Derived colors
+  // ---------------------------------------------------------------------------
+  const isDark = colorScheme === 'dark';
+  const backgroundColor = Colors[colorScheme].background;
+  const textColor = Colors[colorScheme].text;
+  const cardColor = isDark ? '#1c1c1e' : '#f2f2f7';
+  const tintColor = Colors[colorScheme].tint;
+  const rowBorderColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)';
+  const secondaryTextColor = isDark ? '#b3b3b8' : '#5f6368';
+  const segmentBg = isDark ? '#2c2c2e' : '#e5e5ea';
+  const segmentActiveBg = isDark ? '#3a3a3c' : '#ffffff';
 
-  const backgroundColor = Colors[colorScheme ?? 'light'].background;
-  const textColor = Colors[colorScheme ?? 'light'].text;
-  const cardColor = colorScheme === 'dark' ? '#1c1c1e' : '#f2f2f7';
-  const tintColor = Colors[colorScheme ?? 'light'].tint;
-  const primaryButtonColor = colorScheme === 'dark' ? '#0a84ff' : tintColor;
-  const rowBorderColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)';
-  const secondaryTextColor = colorScheme === 'dark' ? '#b3b3b8' : '#5f6368';
+  const haloColor = resolveHaloColor({ connected: data?.roblox.connected ?? false, syncing: refreshing });
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  // ---------------------------------------------------------------------------
+  // Loading / error states
+  // ---------------------------------------------------------------------------
+  const BackButton = () => (
+    <TouchableOpacity
+      style={[styles.backButton, { top: insets.top + 8 }]}
+      onPress={() => router.back()}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <IconSymbol name="chevron.left" size={24} color={tintColor} />
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor }]}>
-        <Stack.Screen
-          options={{
-            title: 'Me',
-            headerShown: true,
-            headerRight: () => (
-              <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
-                <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
-              </TouchableOpacity>
-            ),
-          }}
-        />
+        <Stack.Screen options={{ headerShown: false }} />
+        <BackButton />
         <View style={styles.centered}>
           <LagaLoadingSpinner size={56} label="Loading profile..." />
         </View>
@@ -275,21 +409,10 @@ export default function MeScreen() {
   if (!data) {
     return (
       <View style={[styles.container, { backgroundColor }]}>
-        <Stack.Screen
-          options={{
-            title: 'Me',
-            headerShown: true,
-            headerRight: () => (
-              <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
-                <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
-              </TouchableOpacity>
-            ),
-          }}
-        />
+        <Stack.Screen options={{ headerShown: false }} />
+        <BackButton />
         <View style={styles.centered}>
-          <Text style={[styles.errorText, { color: textColor }]}>
-            Failed to load profile
-          </Text>
+          <Text style={[styles.errorText, { color: textColor }]}>Failed to load profile</Text>
         </View>
       </View>
     );
@@ -300,224 +423,313 @@ export default function MeScreen() {
     data.roblox.username?.trim() ||
     data.appUser.displayName;
   const robloxAccountName =
-    data.roblox.username?.trim() ||
-    data.roblox.displayName?.trim() ||
-    null;
+    data.roblox.username?.trim() || data.roblox.displayName?.trim() || null;
 
+  const showAccountSection =
+    (Platform.OS === 'ios' && data.roblox.connected) ||
+    !!data.appUser.email ||
+    !!(data.roblox.connected && (data.roblox.robloxUserId || data.roblox.verifiedAt));
+
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <Stack.Screen
-        options={{
-          title: 'Me',
-          headerShown: true,
-          headerRight: () => (
-            <TouchableOpacity onPress={openProfileOverflowMenu} style={styles.headerMenuButton}>
-              <IconSymbol name="ellipsis.circle" size={22} color={tintColor} />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-      
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {/* Avatar Section */}
-        <View style={styles.avatarSection}>
-          <View style={[styles.avatarCircle, { backgroundColor: cardColor }]}>
-            {data.roblox.connected && data.roblox.avatarHeadshotUrl ? (
-              <Image
-                source={{ uri: data.roblox.avatarHeadshotUrl }}
-                style={styles.avatarImage}
-                resizeMode="cover"
-              />
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* Floating back arrow — sits above the scroll view */}
+      <BackButton />
+
+      <Animated.ScrollView
+        style={{ opacity: contentFadeAnim }}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 60 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ------------------------------------------------------------------ */}
+        {/* Profile header                                                       */}
+        {/* ------------------------------------------------------------------ */}
+        <View style={styles.profileHeader}>
+          {/* Row: large avatar | sync icon | roblox indicator */}
+          <View style={styles.avatarRow}>
+            {/* Avatar with animated halo ring */}
+            <Animated.View
+              style={[styles.avatarHaloWrap, { transform: [{ scale: haloScaleAnim }] }]}
+            >
+              <View
+                style={[
+                  styles.haloRing,
+                  {
+                    borderColor: haloColor,
+                    shadowColor: haloColor,
+                  },
+                ]}
+              >
+                <View style={[styles.avatarCircle, { backgroundColor: cardColor }]}>
+                  {data.roblox.connected && data.roblox.avatarHeadshotUrl ? (
+                    <Image
+                      source={{ uri: data.roblox.avatarHeadshotUrl }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <IconSymbol name="person.fill" size={48} color={tintColor} />
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+
+            {/* Sync icon — visible only when connected */}
+            {data.roblox.connected ? (
+              <TouchableOpacity
+                onPress={() => void handleSyncRobloxData()}
+                disabled={refreshing}
+                style={styles.syncButton}
+                accessibilityRole="button"
+                accessibilityLabel={refreshing ? 'Syncing Roblox data' : 'Sync Roblox data'}
+              >
+                <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                  <IconSymbol
+                    name="arrow.clockwise"
+                    size={28}
+                    color={refreshing ? tintColor : secondaryTextColor}
+                  />
+                </Animated.View>
+              </TouchableOpacity>
             ) : (
-              <IconSymbol name="person.fill" size={64} color={tintColor} />
+              /* Spacer to keep layout balanced when not connected */
+              <View style={styles.syncButton} />
+            )}
+
+            {/* Roblox connection indicator */}
+            {data.roblox.connected ? (
+              <View style={styles.robloxIndicatorWrap}>
+                {data.roblox.avatarHeadshotUrl ? (
+                  <Image
+                    source={{ uri: data.roblox.avatarHeadshotUrl }}
+                    style={[styles.robloxSmallAvatar, { borderColor: '#34c759' }]}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.robloxSmallAvatar,
+                      styles.robloxSmallAvatarPlaceholder,
+                      { backgroundColor: cardColor, borderColor: '#34c759' },
+                    ]}
+                  >
+                    <IconSymbol name="gamecontroller.fill" size={22} color={tintColor} />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => void handleConnectRoblox()}
+                style={[styles.connectPill, { borderColor: tintColor }]}
+                accessibilityRole="button"
+                accessibilityLabel="Connect your Roblox account"
+              >
+                <IconSymbol name="link" size={14} color={tintColor} />
+                <Text style={[styles.connectPillText, { color: tintColor }]}>Connect</Text>
+              </TouchableOpacity>
             )}
           </View>
+
+          {/* Username */}
           <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
-          <Text style={[styles.profileStatus, { color: secondaryTextColor }]}>
-            {data.roblox.connected ? 'Roblox connected' : 'Roblox not connected'}
-          </Text>
+          {data.roblox.connected && robloxAccountName ? (
+            <Text style={[styles.robloxSubtitle, { color: secondaryTextColor }]}>
+              @{robloxAccountName}
+            </Text>
+          ) : null}
         </View>
 
-        {data.appUser.email ? (
-          <View style={[styles.card, { backgroundColor: cardColor }]}>
-            <Text style={[styles.sectionTitle, { color: textColor }]}>
-              Account email
-            </Text>
-            <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
-              <Text style={[styles.label, { color: textColor }]}>Email:</Text>
-              <Text style={[styles.value, { color: textColor }]}>
-                {data.appUser.email}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Roblox Connection Status */}
+        {/* ------------------------------------------------------------------ */}
+        {/* Settings card                                                        */}
+        {/* ------------------------------------------------------------------ */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.sectionTitle, { color: textColor }]}>
-              Roblox
-            </Text>
-            <View
-              style={[
-                styles.badge,
-                {
-                  backgroundColor: data.roblox.connected
-                    ? '#34c75933'
-                    : colorScheme === 'dark'
-                      ? '#8e8e9333'
-                      : '#8e8e931f',
-                },
-              ]}
-            >
-              <Text style={[styles.badgeText, { color: data.roblox.connected ? '#2e7d32' : secondaryTextColor }]}>
-                {data.roblox.connected ? 'Connected' : 'Not Connected'}
-              </Text>
-            </View>
+          {/* Theme selector */}
+          <Text style={[styles.sectionLabel, { color: secondaryTextColor }]}>THEME</Text>
+          <View style={[styles.segmentedControl, { backgroundColor: segmentBg }]}>
+            {(['system', 'light', 'dark'] as const).map((pref) => (
+              <TouchableOpacity
+                key={pref}
+                onPress={() => void setThemePreference(pref)}
+                style={[
+                  styles.segment,
+                  themePreference === pref && [
+                    styles.segmentActive,
+                    { backgroundColor: segmentActiveBg },
+                  ],
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: themePreference === pref }}
+                accessibilityLabel={`${pref} theme`}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    {
+                      color:
+                        themePreference === pref ? tintColor : secondaryTextColor,
+                    },
+                  ]}
+                >
+                  {pref.charAt(0).toUpperCase() + pref.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
-          {data.roblox.connected ? (
+          {/* Sessions settings */}
+          <View style={[styles.divider, { backgroundColor: rowBorderColor }]} />
+          <Text style={[styles.sectionLabel, { color: secondaryTextColor }]}>SESSIONS</Text>
+
+          {settingsLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={tintColor}
+              style={{ marginVertical: 8 }}
+            />
+          ) : (
+            <View style={styles.settingsRows}>
+              <NumberSettingRow
+                label="Auto-complete live sessions after"
+                value={settings.autoCompleteLiveAfterHours}
+                onChange={(v) => {
+                  setSettings((prev) => ({ ...prev, autoCompleteLiveAfterHours: v }));
+                  void updateSetting({ autoCompleteLiveAfterHours: v });
+                }}
+                textColor={textColor}
+                tintColor={tintColor}
+              />
+              <NumberSettingRow
+                label="Auto-hide completed sessions after"
+                value={settings.autoHideCompletedAfterHours}
+                onChange={(v) => {
+                  setSettings((prev) => ({ ...prev, autoHideCompletedAfterHours: v }));
+                  void updateSetting({ autoHideCompletedAfterHours: v });
+                }}
+                textColor={textColor}
+                tintColor={tintColor}
+              />
+              <NumberSettingRow
+                label="Starting soon window"
+                value={settings.startingSoonWindowHours}
+                onChange={(v) => {
+                  setSettings((prev) => ({ ...prev, startingSoonWindowHours: v }));
+                  void updateSetting({ startingSoonWindowHours: v });
+                }}
+                textColor={textColor}
+                tintColor={tintColor}
+              />
+            </View>
+          )}
+
+          {/* Account subsection */}
+          {showAccountSection ? (
             <>
-              {robloxAccountName ? (
-                <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
-                  <Text style={[styles.label, { color: textColor }]}>Roblox account:</Text>
-                  <Text style={[styles.value, { color: textColor }]}>
-                    {robloxAccountName}
+              <View style={[styles.divider, { backgroundColor: rowBorderColor }]} />
+              <Text style={[styles.sectionLabel, { color: secondaryTextColor }]}>ACCOUNT</Text>
+
+              {data.appUser.email ? (
+                <View
+                  style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}
+                >
+                  <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>Email</Text>
+                  <Text style={[styles.infoRowValue, { color: textColor }]}>
+                    {data.appUser.email}
                   </Text>
                 </View>
               ) : null}
 
-              <TouchableOpacity
-                style={[styles.advancedToggle, { borderColor: rowBorderColor }]}
-                onPress={() => setAdvancedExpanded((v) => !v)}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.advancedLabel, { color: textColor }]}>Advanced</Text>
-                <View style={{ transform: [{ rotate: advancedExpanded ? '180deg' : '0deg' }] }}>
-                  <IconSymbol name="chevron.down" size={14} color={secondaryTextColor} />
-                </View>
-              </TouchableOpacity>
-
-              {advancedExpanded ? (
-                <View style={styles.advancedSection}>
-                  {data.roblox.robloxUserId ? (
-                    <View style={[
-                      styles.infoRow,
-                      !data.roblox.verifiedAt ? styles.infoRowLast : null,
-                      { borderBottomColor: rowBorderColor }
-                    ]}>
-                      <Text style={[styles.label, { color: textColor }]}>
-                        Roblox ID:
-                      </Text>
-                      <Text style={[styles.value, { color: textColor }]}>
-                        {data.roblox.robloxUserId}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {data.roblox.verifiedAt ? (
-                    <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
-                      <Text style={[styles.label, { color: textColor }]}>
-                        Connected on:
-                      </Text>
-                      <Text style={[styles.value, { color: textColor }]}>
-                        {new Date(data.roblox.verifiedAt).toLocaleDateString()}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+              {Platform.OS === 'ios' && data.roblox.connected ? (
+                <TouchableOpacity
+                  style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+                  onPress={() => void handleLinkApple()}
+                  disabled={linkingApple}
+                  accessibilityRole="button"
+                  accessibilityLabel="Link Apple Account"
+                >
+                  <IconSymbol name="apple.logo" size={18} color={textColor} />
+                  <Text style={[styles.listRowButtonText, { color: textColor }]}>
+                    {linkingApple ? 'Linking…' : 'Link Apple Account'}
+                  </Text>
+                  {linkingApple ? (
+                    <ActivityIndicator size="small" color={secondaryTextColor} />
+                  ) : (
+                    <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
+                  )}
+                </TouchableOpacity>
               ) : null}
 
-              {/* Sync Roblox Data Button */}
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-                onPress={handleSyncRobloxData}
-                disabled={refreshing}
-              >
-                {refreshing ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <IconSymbol name="arrow.clockwise" size={20} color="#fff" />
-                    <Text style={styles.buttonText}>Sync Roblox data</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.notConnectedText, { color: textColor }]}>
-                Connect your Roblox account to access all features.
-              </Text>
+              {/* Advanced Roblox details (collapsible) */}
+              {data.roblox.connected &&
+              (data.roblox.robloxUserId || data.roblox.verifiedAt) ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+                    onPress={() => setAdvancedExpanded((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle Roblox account details"
+                  >
+                    <IconSymbol
+                      name="info.circle"
+                      size={18}
+                      color={secondaryTextColor}
+                    />
+                    <Text style={[styles.listRowButtonText, { color: textColor }]}>
+                      Roblox details
+                    </Text>
+                    <View
+                      style={{
+                        transform: [{ rotate: advancedExpanded ? '180deg' : '0deg' }],
+                      }}
+                    >
+                      <IconSymbol name="chevron.down" size={14} color={secondaryTextColor} />
+                    </View>
+                  </TouchableOpacity>
 
-              {/* Connect Roblox Button */}
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-                onPress={handleConnectRoblox}
-              >
-                <IconSymbol name="link" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Connect Roblox</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.sectionTitle, { color: textColor }]}>
-            Account
-          </Text>
-          <Text style={[styles.notConnectedText, { color: textColor }]}>
-            Manage sign-in and account deletion settings.
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.listRowButton, { borderColor: rowBorderColor }]}
-            onPress={openSettings}
-          >
-            <Text style={[styles.listRowButtonText, { color: textColor }]}>Settings</Text>
-            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
-          </TouchableOpacity>
-
-          {Platform.OS === 'ios' && data.roblox.connected ? (
-            <>
-              <Text style={[styles.notConnectedText, { color: secondaryTextColor }]}>
-                Link your Apple account for easier login.
-              </Text>
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor, opacity: linkingApple ? 0.7 : 1 }]}
-                onPress={handleLinkApple}
-                disabled={linkingApple}
-              >
-                <IconSymbol name="apple.logo" size={20} color="#fff" />
-                <Text style={styles.buttonText}>{linkingApple ? 'Linking Apple...' : 'Link Apple Account'}</Text>
-              </TouchableOpacity>
+                  {advancedExpanded ? (
+                    <View style={styles.advancedSection}>
+                      {data.roblox.robloxUserId ? (
+                        <View style={styles.advancedRow}>
+                          <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>
+                            Roblox ID
+                          </Text>
+                          <Text style={[styles.infoRowValue, { color: textColor }]}>
+                            {data.roblox.robloxUserId}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {data.roblox.verifiedAt ? (
+                        <View style={styles.advancedRow}>
+                          <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>
+                            Connected
+                          </Text>
+                          <Text style={[styles.infoRowValue, { color: textColor }]}>
+                            {new Date(data.roblox.verifiedAt).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
-
-          <TouchableOpacity
-            style={[styles.button, styles.dangerButton, styles.primaryButtonSolid]}
-            onPress={openDeleteAccount}
-          >
-            <IconSymbol name="trash.fill" size={20} color="#fff" />
-            <Text style={styles.buttonText}>Delete Account</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-            onPress={openSafetyReport}
-          >
-            <IconSymbol name="exclamationmark.shield.fill" size={20} color="#fff" />
-            <Text style={styles.buttonText}>Safety & Report</Text>
-          </TouchableOpacity>
         </View>
 
+        {/* ------------------------------------------------------------------ */}
+        {/* Competitive profile card (optional feature flag)                    */}
+        {/* ------------------------------------------------------------------ */}
         {ENABLE_COMPETITIVE_DEPTH && data.competitive ? (
           <View style={[styles.card, { backgroundColor: cardColor }]}>
-            <View style={styles.cardHeader}>
-              <Text style={[styles.sectionTitle, { color: textColor }]}>
-                Competitive Profile
-              </Text>
-              <View style={styles.proViewToggleRow}>
-                <Text style={[styles.label, { color: textColor }]}>Pro View</Text>
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.cardTitle, { color: textColor }]}>Competitive</Text>
+              <View style={styles.proViewRow}>
+                <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>
+                  Pro View
+                </Text>
                 <Switch
                   value={proViewEnabled}
                   onValueChange={setProViewEnabled}
@@ -527,253 +739,343 @@ export default function MeScreen() {
             </View>
 
             <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-              <Text style={[styles.label, { color: textColor }]}>Tier:</Text>
-              <Text style={[styles.value, { color: textColor }]}>
+              <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>Tier</Text>
+              <Text style={[styles.infoRowValue, { color: textColor }]}>
                 {data.competitive.tier.toUpperCase()}
               </Text>
             </View>
             <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-              <Text style={[styles.label, { color: textColor }]}>Rating:</Text>
-              <Text style={[styles.value, { color: textColor }]}>
+              <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>Rating</Text>
+              <Text style={[styles.infoRowValue, { color: textColor }]}>
                 {data.competitive.rating}
               </Text>
             </View>
             <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
-              <Text style={[styles.label, { color: textColor }]}>Season:</Text>
-              <Text style={[styles.value, { color: textColor }]}>
-                {data.competitive.currentSeasonNumber ? `S${data.competitive.currentSeasonNumber}` : 'N/A'}
+              <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>Season</Text>
+              <Text style={[styles.infoRowValue, { color: textColor }]}>
+                {data.competitive.currentSeasonNumber
+                  ? `S${data.competitive.currentSeasonNumber}`
+                  : 'N/A'}
               </Text>
             </View>
-            <View style={[styles.infoRow, styles.infoRowLast, { borderBottomColor: rowBorderColor }]}>
-              <Text style={[styles.label, { color: textColor }]}>Season Ends In:</Text>
-              <Text style={[styles.value, { color: textColor }]}>
+            <View style={[styles.infoRow, { borderBottomColor: rowBorderColor }]}>
+              <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>Ends in</Text>
+              <Text style={[styles.infoRowValue, { color: textColor }]}>
                 {formatCountdown(data.competitive.seasonEndsAt)}
               </Text>
             </View>
 
-            {proViewEnabled ? (
+            {proViewEnabled && data.competitive.badges.length > 0 ? (
               <View style={styles.badgesBlock}>
-                <Text style={[styles.label, { color: textColor }]}>Season Badges</Text>
-                {data.competitive.badges.length === 0 ? (
-                  <Text style={[styles.value, { color: textColor }]}>No badges yet</Text>
-                ) : (
-                  data.competitive.badges.map((badge) => (
-                    <Text key={`${badge.seasonNumber}-${badge.finalRating}`} style={[styles.value, { color: textColor }]}>
-                      {`S${badge.seasonNumber}: ${badge.tier.toUpperCase()} (${badge.finalRating})`}
-                    </Text>
-                  ))
-                )}
+                <Text style={[styles.infoRowLabel, { color: secondaryTextColor }]}>
+                  Season Badges
+                </Text>
+                {data.competitive.badges.map((badge) => (
+                  <Text
+                    key={`${badge.seasonNumber}-${badge.finalRating}`}
+                    style={[styles.badgeItem, { color: textColor }]}
+                  >
+                    {`S${badge.seasonNumber}: ${badge.tier.toUpperCase()} (${badge.finalRating})`}
+                  </Text>
+                ))}
               </View>
             ) : null}
 
             <TouchableOpacity
-              style={[styles.button, styles.primaryButtonSolid, { backgroundColor: primaryButtonColor }]}
-              onPress={openMatchHistory}
+              style={[styles.actionRowButton, { borderColor: rowBorderColor }]}
+              onPress={() => router.push('/match-history')}
+              accessibilityRole="button"
             >
-              <IconSymbol name="list.bullet.rectangle" size={20} color="#fff" />
-              <Text style={styles.buttonText}>View Match History</Text>
+              <IconSymbol name="list.bullet.rectangle" size={18} color={tintColor} />
+              <Text style={[styles.listRowButtonText, { color: tintColor }]}>
+                View Match History
+              </Text>
+              <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
             </TouchableOpacity>
           </View>
         ) : null}
 
+        {/* ------------------------------------------------------------------ */}
+        {/* More card — legal, safety, destructive actions                       */}
+        {/* ------------------------------------------------------------------ */}
         <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.sectionTitle, { color: textColor }]}>
-            Legal
-          </Text>
-
           <TouchableOpacity
-            style={[styles.listRowButton, { borderColor: rowBorderColor }]}
-            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+            style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+            onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
             accessibilityRole="link"
             accessibilityLabel="Open Privacy Policy"
           >
+            <IconSymbol name="doc.text" size={18} color={secondaryTextColor} />
             <Text style={[styles.listRowButtonText, { color: textColor }]}>Privacy Policy</Text>
-            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
+            <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.listRowButton, { borderColor: rowBorderColor, marginTop: 8 }]}
-            onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)}
+            style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+            onPress={() => void Linking.openURL(TERMS_OF_SERVICE_URL)}
             accessibilityRole="link"
             accessibilityLabel="Open Terms of Service"
           >
+            <IconSymbol name="doc.plaintext" size={18} color={secondaryTextColor} />
             <Text style={[styles.listRowButtonText, { color: textColor }]}>Terms of Service</Text>
-            <IconSymbol name="chevron.right" size={16} color={secondaryTextColor} />
+            <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
           </TouchableOpacity>
 
-          <Text style={[styles.disclaimerText, { color: secondaryTextColor }]}>
-            Lagalaga is not affiliated with, endorsed by, or sponsored by Roblox Corporation.
-          </Text>
+          <TouchableOpacity
+            style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+            onPress={() => router.push('/safety-report')}
+            accessibilityRole="button"
+            accessibilityLabel="Open Safety and Report"
+          >
+            <IconSymbol name="exclamationmark.shield" size={18} color={secondaryTextColor} />
+            <Text style={[styles.listRowButtonText, { color: textColor }]}>Safety & Report</Text>
+            <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+            onPress={() => router.push('/account/delete')}
+            accessibilityRole="button"
+            accessibilityLabel="Delete account"
+          >
+            <IconSymbol name="trash" size={18} color="#c62828" />
+            <Text style={[styles.listRowButtonText, { color: '#c62828' }]}>Delete Account</Text>
+            <IconSymbol name="chevron.right" size={14} color="#c62828" />
+          </TouchableOpacity>
         </View>
-      </ScrollView>
+
+        <Text style={[styles.disclaimer, { color: secondaryTextColor }]}>
+          Lagalaga is not affiliated with, endorsed by, or sponsored by Roblox Corporation.
+        </Text>
+      </Animated.ScrollView>
     </View>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  proViewToggleRow: {
-    flexDirection: 'row',
+  backButton: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
-    gap: 8,
-  },
-  badgesBlock: {
-    gap: 6,
-    marginBottom: 12,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
+    justifyContent: 'center',
   },
   centered: {
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 48,
+  },
+  // Profile header
+  profileHeader: {
     alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 16,
   },
-  headerMenuButton: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  errorText: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  avatarSection: {
+  avatarRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
     marginBottom: 14,
-    marginTop: 8,
+  },
+  avatarHaloWrap: {},
+  haloRing: {
+    borderRadius: 999,
+    borderWidth: 3,
+    padding: 4,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   avatarCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
-  card: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  syncButton: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
   },
-  sectionTitle: {
-    fontSize: 18,
+  robloxIndicatorWrap: {},
+  robloxSmallAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    overflow: 'hidden',
+  },
+  robloxSmallAvatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  connectPillText: {
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 12,
   },
   profileName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    marginTop: 12,
+    letterSpacing: -0.3,
+    textAlign: 'center',
   },
-  profileStatus: {
-    fontSize: 14,
-    marginTop: 4,
+  robloxSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+    textAlign: 'center',
   },
+  // Cards
+  card: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  // Segmented control (theme)
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  segmentActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: -16,
+  },
+  settingsRows: {
+    gap: 12,
+  },
+  // Info rows
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  infoRowLast: {
-    borderBottomWidth: 0,
-  },
-  label: {
-    fontSize: 14,
+  infoRowLabel: {
+    fontSize: 13,
     fontWeight: '500',
-  },
-  value: {
-    fontSize: 14,
     flex: 1,
+  },
+  infoRowValue: {
+    fontSize: 13,
     textAlign: 'right',
-    marginLeft: 16,
   },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  notConnectedText: {
-    fontSize: 14,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    marginTop: 12,
-    gap: 8,
-  },
-  primaryButtonSolid: {
-    marginTop: 14,
-  },
-  dangerButton: {
-    marginTop: 12,
-    backgroundColor: '#c62828',
-  },
-  advancedToggle: {
-    marginTop: 12,
-    marginBottom: 4,
-    minHeight: 40,
-    paddingHorizontal: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  advancedLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  advancedSection: {
-    marginBottom: 4,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  // List row buttons (navigation / actions)
   listRowButton: {
-    minHeight: 48,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    minHeight: 44,
+    gap: 10,
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   listRowButtonText: {
-    fontSize: 16,
+    flex: 1,
+    fontSize: 15,
     fontWeight: '500',
   },
-  disclaimerText: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 12,
+  // Advanced section
+  advancedSection: {
+    gap: 8,
+    paddingTop: 4,
+  },
+  advancedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  // Competitive
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  proViewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badgesBlock: {
+    gap: 4,
+  },
+  badgeItem: {
+    fontSize: 13,
+  },
+  actionRowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  errorText: {
+    fontSize: 16,
     textAlign: 'center',
+  },
+  disclaimer: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: 8,
   },
 });

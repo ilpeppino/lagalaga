@@ -5,7 +5,9 @@
 - Route file: `app/settings.tsx`
 - Screen component name: `SettingsScreen`
 - Screen type: React Function Component
-- Entry point: "Settings" list row in Me screen Account card
+- **Entry point**: Previously linked from Me screen "Settings" row — that link has been removed.
+  The route still exists and is reachable by direct navigation (e.g. deep link, future entry points).
+  The session settings it contains are now also **embedded directly in the Me screen** Settings card.
 
 ## Graphical Structure (Component Name + Type)
 
@@ -69,4 +71,9 @@ Component: SettingsScreen (type: React Function Component)
 - Error handling via `useErrorHandler()` hook
 
 ## Data Source
-- `src/lib/sessionSettings.ts` — `loadSessionSettings()` / `saveSessionSettings()` — AsyncStorage key: `session_settings`
+- `src/lib/sessionSettings.ts` — `loadSessionSettings()` / `saveSessionSettings()` — AsyncStorage key: `session_settings_v1`
+
+## Notes
+- The same session settings (and a theme selector) are now embedded in the **Me screen** Settings card.
+  Both screens share the same AsyncStorage backing, so changes in either location are immediately reflected.
+- This screen remains as a standalone route for any future deep-link or navigational entry point.

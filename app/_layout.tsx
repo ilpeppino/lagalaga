@@ -9,6 +9,7 @@ import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppThemeProvider } from '@/contexts/AppThemeContext';
 import { AuthProvider, useAuth } from '@/src/features/auth/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/src/lib/logger';
@@ -33,10 +34,6 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const paperTheme = colorScheme === 'dark' ? DarkPaperTheme : LightPaperTheme;
-  const router = useRouter();
-  const pathname = usePathname();
   const [fontsLoaded, fontError] = useFonts({
     'BitcountSingle-Regular': require('@/assets/fonts/BitcountSingle-Regular.ttf'),
     'BitcountSingle-Bold': require('@/assets/fonts/BitcountSingle-Bold.ttf'),
@@ -48,9 +45,33 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary level="screen">
+        <AppThemeProvider>
+          <ThemedAppShell />
+        </AppThemeProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
+  );
+}
+
+/**
+ * Inner shell rendered inside AppThemeProvider so useColorScheme() reads the
+ * user's forced theme preference rather than only the system value.
+ */
+function ThemedAppShell() {
+  const colorScheme = useColorScheme();
+  const paperTheme = colorScheme === 'dark' ? DarkPaperTheme : LightPaperTheme;
+  const router = useRouter();
+  const pathname = usePathname();
+
   useEffect(() => {
     // Handle HTTPS App Link invite URLs (Android App Links).
-    // Custom scheme URLs (lagalaga://invite/CODE) are routed automatically by Expo Router.
     const handleHttpsInviteUrl = (url: string) => {
       if (!url.startsWith('https://')) return;
       const code = extractInviteCodeFromUrl(url);
@@ -62,14 +83,17 @@ export default function RootLayout() {
 
     Linking.getInitialURL().then((url) => {
       if (url) {
-        logger.info('App opened with initial URL', { urlType: url.startsWith('https') ? 'https' : 'scheme' });
+        logger.info('App opened with initial URL', {
+          urlType: url.startsWith('https') ? 'https' : 'scheme',
+        });
         handleHttpsInviteUrl(url);
       }
     });
 
-    // Also handle HTTPS App Links received while the app is running
     const subscription = Linking.addEventListener('url', (event) => {
-      logger.info('Deep link received', { urlType: event.url.startsWith('https') ? 'https' : 'scheme' });
+      logger.info('Deep link received', {
+        urlType: event.url.startsWith('https') ? 'https' : 'scheme',
+      });
       handleHttpsInviteUrl(event.url);
     });
 
@@ -96,51 +120,44 @@ export default function RootLayout() {
     return cleanup;
   }, []);
 
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary level="screen">
-        <AuthProvider>
-          <AuthFailureBridge />
-          <FavoritesForegroundRefreshBridge />
-          <PaperProvider theme={paperTheme}>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack>
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="auth"
-                  options={{ headerShown: false, animation: 'fade', animationDuration: 180 }}
-                />
-                <Stack.Screen
-                  name="sessions"
-                  options={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220 }}
-                />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="me" options={{ headerShown: true, title: 'Me' }} />
-                <Stack.Screen name="settings" options={{ headerShown: true, title: 'Settings' }} />
-                <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />
-                <Stack.Screen name="account/delete-confirm" options={{ headerShown: true, title: 'Confirm Deletion' }} />
-                <Stack.Screen name="account/delete-done" options={{ headerShown: true, title: 'Deletion Requested' }} />
-                <Stack.Screen name="safety-report" options={{ headerShown: true, title: 'Safety & Report' }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                <Stack.Screen name="invites" options={{ headerShown: false }} />
-                <Stack.Screen name="invite" options={{ headerShown: false }} />
-                {ENABLE_COMPETITIVE_DEPTH ? (
-                  <Stack.Screen
-                    name="match-history"
-                    options={{ headerShown: true, title: 'Match History' }}
-                  />
-                ) : null}
-              </Stack>
-              <RobloxLinkingGuard />
-            </ThemeProvider>
-          </PaperProvider>
-        </AuthProvider>
-      </ErrorBoundary>
-    </GestureHandlerRootView>
+    <AuthProvider>
+      <AuthFailureBridge />
+      <FavoritesForegroundRefreshBridge />
+      <PaperProvider theme={paperTheme}>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="auth"
+              options={{ headerShown: false, animation: 'fade', animationDuration: 180 }}
+            />
+            <Stack.Screen
+              name="sessions"
+              options={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220 }}
+            />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            {/* Me screen controls its own header (floating back arrow, no title bar) */}
+            <Stack.Screen name="me" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: true, title: 'Settings' }} />
+            <Stack.Screen name="account/delete" options={{ headerShown: true, title: 'Delete Account' }} />
+            <Stack.Screen name="account/delete-confirm" options={{ headerShown: true, title: 'Confirm Deletion' }} />
+            <Stack.Screen name="account/delete-done" options={{ headerShown: true, title: 'Deletion Requested' }} />
+            <Stack.Screen name="safety-report" options={{ headerShown: true, title: 'Safety & Report' }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            <Stack.Screen name="invites" options={{ headerShown: false }} />
+            <Stack.Screen name="invite" options={{ headerShown: false }} />
+            {ENABLE_COMPETITIVE_DEPTH ? (
+              <Stack.Screen
+                name="match-history"
+                options={{ headerShown: true, title: 'Match History' }}
+              />
+            ) : null}
+          </Stack>
+          <RobloxLinkingGuard />
+        </ThemeProvider>
+      </PaperProvider>
+    </AuthProvider>
   );
 }
 

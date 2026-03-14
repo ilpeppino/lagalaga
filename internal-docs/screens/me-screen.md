@@ -5,6 +5,7 @@
 - Route file: `app/me.tsx`
 - Screen component name: `MeScreen`
 - Screen type: React Function Component
+- Header: **none** — `headerShown: false` in `_layout.tsx`; floating back arrow rendered manually
 
 ## Graphical Structure (Component Name + Type)
 
@@ -13,107 +14,122 @@ Me Screen (/me)
 Component: MeScreen (type: React Function Component)
 
 ┌──────────────────────────────────────────────────────────┐
-│ Stack Header                                             │
-│ title: "Me"                                              │
-│ header-right: ellipsis.circle TouchableOpacity           │
-│   → Alert with "Safety & Report" option                  │
+│ ← Back arrow (floating, safe-area-aware, no app bar)     │
 ├──────────────────────────────────────────────────────────┤
-│ Avatar Section                                           │
-│ types: Image (circular) or person.fill icon              │
-│ content: display name + connection status subtitle       │
-│   subtitle: "Roblox connected" or "Roblox not connected" │
+│ Profile Header (full-bleed, no card background)          │
+│                                                          │
+│   ┌─────────────────────────────────────────────────┐   │
+│   │  [AVATAR w/ halo ring]  [↻ sync]  [roblox icon]│   │
+│   │        username                                 │   │
+│   │        @robloxname (if connected)               │   │
+│   └─────────────────────────────────────────────────┘   │
+│                                                          │
+│   Halo color:                                            │
+│     connected  → green  (#34c759)                        │
+│     syncing    → blue   (#0a7ea4, animated rotation)     │
+│     disconnected → grey (#8e8e93)                        │
+│                                                          │
+│   Sync icon (arrow.clockwise):                           │
+│     idle    → static, tappable → handleSyncRobloxData()  │
+│     syncing → continuous rotation (600ms/turn)           │
+│     success → avatar halo pulses once, no alert          │
+│     partial-failure → Alert with failed action list      │
+│                                                          │
+│   Roblox indicator (right):                              │
+│     connected  → small (44px) headshot with green border │
+│     not connected → "Connect" pill → handleConnectRoblox │
 ├──────────────────────────────────────────────────────────┤
-│ Account Email Card (conditional, if email exists)        │
-│ type: View with label/value row                          │
-│ label: "Account email" → shows email address             │
-├──────────────────────────────────────────────────────────┤
-│ Roblox Card                                              │
+│ Settings Card                                            │
 │ type: View (card style)                                  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ Header: "Roblox" + connected/not-connected badge  │  │
-│  └────────────────────────────────────────────────────┘  │
-│  If connected:                                           │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Roblox account name (info row)                    │  │
-│  │ Expandable "Advanced" section (chevron toggle):   │  │
-│  │   - Roblox ID                                     │  │
-│  │   - Connected date                                │  │
-│  │ "Sync Roblox data" button (arrow.clockwise)       │  │
-│  │   → refreshFriends() + refreshFavorites() + refetch profile │
-│  └────────────────────────────────────────────────────┘  │
-│  If not connected:                                       │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Explanatory text + "Connect Roblox" button        │  │
-│  │ (link icon) → router.push('/roblox')              │  │
-│  └────────────────────────────────────────────────────┘  │
-├──────────────────────────────────────────────────────────┤
-│ Account Card                                             │
-│ type: View (card style)                                  │
-│ section title: "Account"                                 │
-│ description: "Manage sign-in and account deletion settings." │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ "Settings" list row (chevron.right) → /settings   │  │
+│  │ THEME (segmented control)                         │  │
+│  │   [System] [Light] [Dark]                         │  │
+│  │   → useAppTheme().setThemePreference()            │  │
+│  │   → persists via AsyncStorage (theme_preference_v1)│ │
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ "Delete Account" button                           │  │
-│  │ (red/danger, trash.fill) → /account/delete        │  │
+│  │ SESSIONS                                          │  │
+│  │   NumberSettingRow: Auto-complete live after      │  │
+│  │   NumberSettingRow: Auto-hide completed after     │  │
+│  │   NumberSettingRow: Starting soon window          │  │
+│  │   All 0–48 h, immediate save to AsyncStorage      │  │
 │  └────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ "Safety & Report" button                          │  │
-│  │ (exclamationmark.shield.fill) → /safety-report    │  │
+│  │ ACCOUNT (conditional)                             │  │
+│  │   Email row (if email present)                    │  │
+│  │   Link Apple Account (iOS + roblox connected)     │  │
+│  │   Roblox details (collapsible) → ID + connected date│ │
 │  └────────────────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────┤
 │ Competitive Profile Card (conditional)                   │
 │ shown when: ENABLE_COMPETITIVE_DEPTH && data.competitive │
-│ type: View (card style)                                  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Header with "Pro View" Switch toggle              │  │
-│  │ Info rows: Tier, Rating, Season #, Season countdown│  │
-│  │ "Season Badges" list (when Pro View on)           │  │
-│  │ "View Match History" button → /match-history      │  │
-│  └────────────────────────────────────────────────────┘  │
+│ (same data as before: tier, rating, season, badges,      │
+│  Pro View toggle, View Match History button)             │
 ├──────────────────────────────────────────────────────────┤
-│ Legal Card                                               │
+│ More Card (legal + destructive actions as list items)    │
 │ type: View (card style)                                  │
-│ section title: "Legal"                                   │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ "Privacy Policy" list row → opens URL in browser  │  │
+│  │ Privacy Policy → opens URL                        │  │
+│  │ Terms of Service → opens URL                      │  │
+│  │ Safety & Report → /safety-report                  │  │
+│  │ Delete Account (red text) → /account/delete       │  │
 │  └────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ "Terms of Service" list row → opens URL in browser│  │
-│  └────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Disclaimer text: "Lagalaga is not affiliated      │  │
-│  │  with ... Roblox Corporation."                    │  │
-│  └────────────────────────────────────────────────────┘  │
+│  Disclaimer: "Lagalaga is not affiliated with Roblox..."  │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## Types Used In The Screen
 - Local `MeData` interface: `appUser`, `roblox`, `competitive?`
 - Local `MeResponse` interface: `{ success, data: MeData, requestId }`
+- `SessionSettings` from `@/src/lib/sessionSettings`
+- `ThemePreference` ('light'|'dark'|'system') from `@/src/lib/themePreference`
 - Tier union: `'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master'`
 
 ## Important Named UI Elements
-- Circular avatar (Roblox headshot or placeholder person.fill icon)
-- "Safety & Report" (overflow menu + Account card button) → `/safety-report`
-- "Connect Roblox" / "Sync Roblox data" (arrow.clockwise)
-- "Settings" list row (Account card) → `/settings`
-- "Delete Account" (danger, red) → `/account/delete`
-- "Pro View" toggle switch (Competitive Profile card)
-- "View Match History" button → `/match-history`
-- "Privacy Policy" and "Terms of Service" list rows (Legal card)
-- Roblox "Advanced" expandable section (chevron toggle)
+- `BackButton` — floating chevron.left, positioned with safe area inset, `position: absolute`
+- Circular avatar with `haloRing` border (color from `resolveHaloColor()`)
+- `syncButton` — `arrow.clockwise` icon, rotates while `refreshing === true`
+- `robloxSmallAvatar` — 44px headshot (or placeholder) with green border when connected
+- `connectPill` — "Connect" bordered pill shown when Roblox is not connected
+- Segmented control (3 segments: System / Light / Dark) — wired to `AppThemeContext`
+- `NumberSettingRow` — inline stepper (`−`/`+` buttons) for session hour settings
+- "Roblox details" collapsible row (info.circle icon) → `advancedExpanded` state
+- "Link Apple Account" list row (iOS, only if Roblox connected)
+- "Delete Account" list row — red text/icon, destructive style but NOT a large CTA button
 
 ## Key Behaviour
-- `handleSyncRobloxData()`: calls `refreshFriends(userId, { force: true })` + `refreshFavorites(userId, { force: true })` + refetches `/api/me`. Shows partial-failure alert if individual refreshes fail.
-- `handleConnectRoblox()`: navigates to `/roblox` (which is actually `app/roblox.tsx`, the deep-link compat shim — but for post-login Roblox connect this actually routes to the `GET /api/auth/roblox/start` flow).
+- `handleSyncRobloxData()`: calls `refreshFriends(userId, { force: true })` + `refreshFavorites(userId, { force: true })` + refetches `/api/me`. On full success: halo pulses (no alert). On partial failure: Alert. The sync icon rotates while `refreshing === true`.
+- `handleConnectRoblox()`: opens Roblox OAuth session; on success redirects to `/auth/roblox` with code+state params.
 - Display name priority: `roblox.displayName` → `roblox.username` → `appUser.displayName`
+- Theme: `AppThemeContext` provides `colorScheme` (resolved) + `themePreference` + `setThemePreference`. Persisted to AsyncStorage key `theme_preference_v1`.
+- Session settings: loaded from AsyncStorage key `session_settings_v1` on each screen focus via `loadSessionSettings()`. Changes saved immediately via `saveSessionSettings(partial)`.
+- Content fades in via `Animated.timing` (280ms) after initial load completes.
+- `resolveHaloColor({ connected, syncing })` is exported as a pure function (tested separately).
 
-## Data Source
+## Data Sources
 - `useFocusEffect` re-fetches `GET /api/me` on every screen focus
+- Session settings: AsyncStorage via `loadSessionSettings()` / `saveSessionSettings()`
+- Theme preference: AsyncStorage via `loadThemePreference()` / `saveThemePreference()` (managed by `AppThemeContext`)
 - Response shape: `{ success, data: MeData, requestId }`
+
+## Navigation (outbound)
+- Back: `router.back()`
+- Connect Roblox: `router.replace('/auth/roblox', { code, state })` after OAuth
+- Safety & Report: `router.push('/safety-report')`
+- Delete Account: `router.push('/account/delete')`
+- Match History: `router.push('/match-history')` (gated by `ENABLE_COMPETITIVE_DEPTH`)
+- Privacy Policy / Terms: `Linking.openURL(url)`
+
+## What Changed vs Previous Version
+- Removed Stack header (no "Me" title bar, no ellipsis overflow menu)
+- Removed standalone Roblox card — replaced by visual header (avatar halo + sync icon + indicator)
+- Removed "Roblox connected / not connected" text badge — state communicated via halo color
+- Removed large "Sync Roblox data" button — replaced by graphical sync icon with animation
+- Removed large "Delete Account" red CTA button — now a list item with red text
+- Removed "Safety & Report" large button — now a list item in the More card
+- Removed "Settings" navigation row — session settings are now embedded inline
+- Added theme selector (Light / Dark / System segmented control)
+- Added card fade-in animation on load
+- Settings screen (`/settings`) is still accessible as a standalone route but no longer linked from Me

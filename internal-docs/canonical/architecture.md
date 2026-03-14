@@ -687,16 +687,18 @@ LagaLaga implements a **hybrid friends system** that combines native app friends
 
 ### Session Creation UX Flow (v2)
 
-The session creation flow follows a minimal lobby pattern:
+The session creation flow now uses a single-screen squad-builder pattern:
 
-1. **CreateSessionScreen** (`/sessions/create`) — game selector + visibility only; title is auto-generated as `"{displayName}'s {gameName} session"`; no friend picker or advanced options
-2. **SessionLobbyScreen** (`/sessions/lobby`) — post-creation hub; shows squad readiness, smart invite suggestions, invited friends, and START SESSION CTA
-3. **FriendPickerScreen** (`/sessions/friend-picker`) — full-screen friend list with presence grouping and search; invite action shares the invite link
+1. **CreateSessionScreen** (`/sessions/create`) — unified flow with game selection, editable session name, start-time scheduling (`Now` / `Scheduled`), Squad row, and horizontal add-friends rail with `Search` as first tile
+2. **Session Details Screen** (`/sessions/[id]`) — destination after `Start Session` creates the session
 
-**Smart Invite Suggestions**:
-- `src/features/sessions/smartInviteSuggestions.ts` — pure ranking function scoring friends by: online (100), in-game (80), studio (60), recently invited (+40 bonus), friend (10)
-- `src/features/sessions/inviteHistory.ts` — AsyncStorage cache of recently invited Roblox IDs per user; powers "Played with you" label and ranking boost
-- `src/features/sessions/useSmartInviteSuggestions.ts` — hook composing friends cache + bulk presence + invite history into ranked `SuggestedFriend[]`
+`SessionLobbyScreen` (`/sessions/lobby`) is deprecated in the primary mobile flow.
+
+**Create Screen Squad Model**:
+- Squad row is the source of truth for selected friends (`selectedFriendIds`)
+- Selected friends are moved into Squad row and removed from the add rail
+- Tapping a selected Squad member removes them from Squad
+- No share-sheet invite behavior in this flow
 
 ### Handoff State Tracking
 

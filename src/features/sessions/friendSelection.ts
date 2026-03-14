@@ -18,15 +18,16 @@ export function buildTwoRowColumns(friends: RobloxFriend[]): RobloxFriend[][] {
 export function buildCreateSessionPayload(input: {
   robloxUrl: string;
   title: string;
-  visibility: SessionVisibility;
+  visibility?: SessionVisibility;
   isRanked?: boolean;
   scheduledStart?: string;
   selectedFriendIds: number[];
 }): CreateSessionInput {
+  const visibility = input.visibility ?? 'friends';
   return {
     robloxUrl: input.robloxUrl,
     title: input.title,
-    visibility: input.isRanked ? 'public' : input.visibility,
+    visibility: input.isRanked ? 'public' : visibility,
     is_ranked: Boolean(input.isRanked),
     scheduledStart: input.scheduledStart,
     invitedRobloxUserIds: [...new Set(input.selectedFriendIds.filter((id) => Number.isInteger(id) && id > 0))],

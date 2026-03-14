@@ -24,10 +24,23 @@ describe('friendSelection helpers', () => {
     const payload = buildCreateSessionPayload({
       robloxUrl: 'https://www.roblox.com/games/123',
       title: 'Night Session',
-      visibility: 'friends',
       selectedFriendIds: [55, 66, 55],
     });
 
+    expect(payload.visibility).toBe('friends');
     expect(payload.invitedRobloxUserIds).toEqual([55, 66]);
+  });
+
+  it('buildCreateSessionPayload forces public visibility for ranked', () => {
+    const payload = buildCreateSessionPayload({
+      robloxUrl: 'https://www.roblox.com/games/123',
+      title: 'Ranked Session',
+      visibility: 'invite_only',
+      isRanked: true,
+      selectedFriendIds: [],
+    });
+
+    expect(payload.visibility).toBe('public');
+    expect(payload.is_ranked).toBe(true);
   });
 });

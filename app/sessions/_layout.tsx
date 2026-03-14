@@ -19,7 +19,6 @@ export default function SessionsLayout() {
       {/* headerShown is overridden to true by the screen when selection mode is active */}
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="create" options={{ title: "Create Session" }} />
-      <Stack.Screen name="lobby" options={{ title: "Session Lobby" }} />
       <Stack.Screen name="friend-picker" options={{ title: "Invite Friends" }} />
       <Stack.Screen name="[id]" options={{ title: "Session Details" }} />
       <Stack.Screen name="handoff" options={{ title: "Join Handoff" }} />

@@ -42,7 +42,7 @@ const baseSession = {
   visibility: 'public' as const,
   currentParticipants: 3,
   maxParticipants: 8,
-  scheduledStart: null,
+  scheduledStart: undefined,
 };
 
 test('buildSessionMetaParts: public visibility label', () => {
@@ -56,8 +56,8 @@ test('buildSessionMetaParts: friends visibility label', () => {
   assert.equal(parts[0], 'Friends');
 });
 
-test('buildSessionMetaParts: invite visibility label', () => {
-  const session = { ...baseSession, visibility: 'invite' as const };
+test('buildSessionMetaParts: invite_only visibility label', () => {
+  const session = { ...baseSession, visibility: 'invite_only' as const };
   const parts = buildSessionMetaParts(session, false);
   assert.equal(parts[0], 'Invite');
 });

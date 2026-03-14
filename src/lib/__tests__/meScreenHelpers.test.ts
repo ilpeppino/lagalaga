@@ -16,3 +16,11 @@ test('resolveHaloColor: syncing (regardless of connected) → blue', () => {
 test('resolveHaloColor: disconnected and idle → grey', () => {
   assert.equal(resolveHaloColor({ connected: false, syncing: false }), '#8e8e93');
 });
+
+test('resolveHaloColor: syncError (not syncing) → red', () => {
+  assert.equal(resolveHaloColor({ connected: true, syncing: false, syncError: true }), '#ff3b30');
+});
+
+test('resolveHaloColor: syncing takes precedence over syncError → blue', () => {
+  assert.equal(resolveHaloColor({ connected: true, syncing: true, syncError: true }), '#0a7ea4');
+});

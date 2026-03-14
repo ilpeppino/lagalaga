@@ -135,6 +135,29 @@ const stepperStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
+// ConnectorDots — three dots bridging avatar ↔ Roblox in the header row
+// ---------------------------------------------------------------------------
+function ConnectorDots({ active, error }: { active: boolean; error: boolean }) {
+  const color = error
+    ? '#ff3b30'
+    : active
+      ? '#0a7ea4'
+      : 'rgba(142,142,147,0.38)';
+  return (
+    <View style={connectorDotStyles.row}>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={[connectorDotStyles.dot, { backgroundColor: color }]} />
+      ))}
+    </View>
+  );
+}
+
+const connectorDotStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  dot: { width: 4, height: 4, borderRadius: 2 },
+});
+
+// ---------------------------------------------------------------------------
 // MeScreen
 // ---------------------------------------------------------------------------
 export default function MeScreen() {
@@ -154,6 +177,8 @@ export default function MeScreen() {
   // Session settings (embedded from /settings)
   const [settings, setSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
   const [settingsLoading, setSettingsLoading] = useState(true);
+  const [syncError, setSyncError] = useState(false);
+  const syncErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------------------------------------------------------------------------
   // Animations
@@ -281,6 +306,9 @@ export default function MeScreen() {
       }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to sync Roblox data' });
+      setSyncError(true);
+      if (syncErrorTimerRef.current) clearTimeout(syncErrorTimerRef.current);
+      syncErrorTimerRef.current = setTimeout(() => setSyncError(false), 2000);
     } finally {
       setRefreshing(false);
     }
@@ -376,7 +404,7 @@ export default function MeScreen() {
   const segmentBg = isDark ? '#2c2c2e' : '#e5e5ea';
   const segmentActiveBg = isDark ? '#3a3a3c' : '#ffffff';
 
-  const haloColor = resolveHaloColor({ connected: data?.roblox.connected ?? false, syncing: refreshing });
+  const haloColor = resolveHaloColor({ connected: data?.roblox.connected ?? false, syncing: refreshing, syncError });
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   // ---------------------------------------------------------------------------
@@ -384,13 +412,23 @@ export default function MeScreen() {
   // ---------------------------------------------------------------------------
   const BackButton = () => (
     <TouchableOpacity
-      style={[styles.backButton, { top: insets.top + 8 }]}
+      style={[
+        styles.backButton,
+        {
+          top: insets.top + 8,
+          backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.07)',
+        },
+      ]}
       onPress={() => router.back()}
       accessibilityRole="button"
       accessibilityLabel="Go back"
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <IconSymbol name="chevron.left" size={24} color={tintColor} />
+      <IconSymbol
+        name="chevron.left"
+        size={22}
+        color={isDark ? '#ffffff' : '#1c1c1e'}
+      />
     </TouchableOpacity>
   );
 
@@ -478,60 +516,57 @@ export default function MeScreen() {
               </View>
             </Animated.View>
 
-            {/* Sync icon — visible only when connected */}
-            {data.roblox.connected ? (
-              <TouchableOpacity
-                onPress={() => void handleSyncRobloxData()}
-                disabled={refreshing}
-                style={styles.syncButton}
-                accessibilityRole="button"
-                accessibilityLabel={refreshing ? 'Syncing Roblox data' : 'Sync Roblox data'}
-              >
-                <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                  <IconSymbol
-                    name="arrow.clockwise"
-                    size={28}
-                    color={refreshing ? tintColor : secondaryTextColor}
-                  />
-                </Animated.View>
-              </TouchableOpacity>
-            ) : (
-              /* Spacer to keep layout balanced when not connected */
-              <View style={styles.syncButton} />
-            )}
+            {/* Connector: dots — sync icon — dots */}
+            <View style={styles.connector}>
+              <ConnectorDots active={refreshing} error={syncError} />
+              {data.roblox.connected ? (
+                <TouchableOpacity
+                  onPress={() => void handleSyncRobloxData()}
+                  disabled={refreshing}
+                  style={styles.syncIconWrap}
+                  accessibilityRole="button"
+                  accessibilityLabel={refreshing ? 'Syncing Roblox data' : 'Sync Roblox data'}
+                >
+                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <IconSymbol
+                      name="arrow.clockwise"
+                      size={20}
+                      color={
+                        refreshing ? tintColor : syncError ? '#ff3b30' : secondaryTextColor
+                      }
+                    />
+                  </Animated.View>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.syncIconWrap} accessibilityLabel="Roblox not connected">
+                  <IconSymbol name="minus.circle" size={20} color={secondaryTextColor} />
+                </View>
+              )}
+              <ConnectorDots active={refreshing} error={syncError} />
+            </View>
 
-            {/* Roblox connection indicator */}
-            {data.roblox.connected ? (
-              <View style={styles.robloxIndicatorWrap}>
-                {data.roblox.avatarHeadshotUrl ? (
-                  <Image
-                    source={{ uri: data.roblox.avatarHeadshotUrl }}
-                    style={[styles.robloxSmallAvatar, { borderColor: '#34c759' }]}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.robloxSmallAvatar,
-                      styles.robloxSmallAvatarPlaceholder,
-                      { backgroundColor: cardColor, borderColor: '#34c759' },
-                    ]}
-                  >
-                    <IconSymbol name="gamecontroller.fill" size={22} color={tintColor} />
+            {/* Roblox identity mark */}
+            <View style={styles.robloxMarkWrap}>
+              {data.roblox.connected ? (
+                <>
+                  <View style={styles.robloxBadge} accessibilityLabel="Roblox account connected">
+                    <Text style={styles.robloxBadgeR}>R</Text>
                   </View>
-                )}
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={() => void handleConnectRoblox()}
-                style={[styles.connectPill, { borderColor: tintColor }]}
-                accessibilityRole="button"
-                accessibilityLabel="Connect your Roblox account"
-              >
-                <IconSymbol name="link" size={14} color={tintColor} />
-                <Text style={[styles.connectPillText, { color: tintColor }]}>Connect</Text>
-              </TouchableOpacity>
-            )}
+                  <Text style={[styles.robloxBadgeLabel, { color: secondaryTextColor }]}>
+                    Roblox
+                  </Text>
+                </>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => void handleConnectRoblox()}
+                  style={[styles.connectPill, { borderColor: tintColor }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Connect your Roblox account"
+                >
+                  <Text style={[styles.connectPillText, { color: tintColor }]}>Connect</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* Username */}
@@ -888,7 +923,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 20,
+    gap: 12,
     marginBottom: 14,
   },
   avatarHaloWrap: {},
@@ -913,23 +948,39 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  syncButton: {
-    width: 44,
-    height: 44,
+  connector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  syncIconWrap: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  robloxIndicatorWrap: {},
-  robloxSmallAvatar: {
+  robloxMarkWrap: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  robloxBadge: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
-    overflow: 'hidden',
-  },
-  robloxSmallAvatarPlaceholder: {
+    borderRadius: 12,
+    backgroundColor: '#e8272a',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  robloxBadgeR: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  robloxBadgeLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   connectPill: {
     flexDirection: 'row',

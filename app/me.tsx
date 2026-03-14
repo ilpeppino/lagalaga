@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   Alert,
@@ -38,7 +37,12 @@ import {
   loadSessionSettings,
   saveSessionSettings,
 } from '@/src/lib/sessionSettings';
-import { resolveHaloColor } from '@/src/lib/meHelpers';
+import {
+  resolveConnectorDotColor,
+  resolveHaloColor,
+  resolveSyncA11yLabel,
+  resolveSyncIconName,
+} from '@/src/lib/meHelpers';
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
@@ -138,14 +142,10 @@ const stepperStyles = StyleSheet.create({
 // ConnectorDots — three dots bridging avatar ↔ Roblox in the header row
 // ---------------------------------------------------------------------------
 function ConnectorDots({ active, error }: { active: boolean; error: boolean }) {
-  const color = error
-    ? '#ff3b30'
-    : active
-      ? '#0a7ea4'
-      : 'rgba(142,142,147,0.38)';
+  const color = resolveConnectorDotColor({ syncing: active, syncError: error });
   return (
     <View style={connectorDotStyles.row}>
-      {[0, 1, 2].map((i) => (
+      {[0, 1, 2, 3].map((i) => (
         <View key={i} style={[connectorDotStyles.dot, { backgroundColor: color }]} />
       ))}
     </View>
@@ -177,8 +177,8 @@ export default function MeScreen() {
   // Session settings (embedded from /settings)
   const [settings, setSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
   const [settingsLoading, setSettingsLoading] = useState(true);
-  const [syncError, setSyncError] = useState(false);
-  const syncErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<'idle' | 'success' | 'error'>('idle');
+  const syncFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------------------------------------------------------------------------
   // Animations
@@ -187,6 +187,9 @@ export default function MeScreen() {
   const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const haloScaleAnim = useRef(new Animated.Value(1)).current;
   const contentFadeAnim = useRef(new Animated.Value(0)).current;
+  const connectorPulseAnim = useRef(new Animated.Value(0.7)).current;
+  const connectorPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const syncFeedbackScaleAnim = useRef(new Animated.Value(1)).current;
 
   // Rotate sync icon while refreshing
   useEffect(() => {
@@ -209,6 +212,34 @@ export default function MeScreen() {
     }
   }, [refreshing, spinAnim]);
 
+  // Subtle connector pulse while syncing
+  useEffect(() => {
+    if (refreshing) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(connectorPulseAnim, {
+            toValue: 1,
+            duration: 420,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(connectorPulseAnim, {
+            toValue: 0.55,
+            duration: 420,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      connectorPulseLoopRef.current = loop;
+      loop.start();
+    } else {
+      connectorPulseLoopRef.current?.stop();
+      connectorPulseLoopRef.current = null;
+      connectorPulseAnim.setValue(0.7);
+    }
+  }, [connectorPulseAnim, refreshing]);
+
   // Fade in content after initial load
   useEffect(() => {
     if (!loading && data) {
@@ -227,6 +258,33 @@ export default function MeScreen() {
       Animated.timing(haloScaleAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
     ]).start();
   }, [haloScaleAnim]);
+
+  const pulseSyncFeedback = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(syncFeedbackScaleAnim, { toValue: 1.14, duration: 140, useNativeDriver: true }),
+      Animated.timing(syncFeedbackScaleAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+  }, [syncFeedbackScaleAnim]);
+
+  const queueSyncFeedbackReset = useCallback((nextFeedback: 'success' | 'error', durationMs: number) => {
+    setSyncFeedback(nextFeedback);
+    if (syncFeedbackTimerRef.current) {
+      clearTimeout(syncFeedbackTimerRef.current);
+    }
+    syncFeedbackTimerRef.current = setTimeout(() => {
+      setSyncFeedback('idle');
+    }, durationMs);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      spinLoopRef.current?.stop();
+      connectorPulseLoopRef.current?.stop();
+      if (syncFeedbackTimerRef.current) {
+        clearTimeout(syncFeedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -276,6 +334,7 @@ export default function MeScreen() {
     }
 
     try {
+      setSyncFeedback('idle');
       setRefreshing(true);
       const failedActions: string[] = [];
 
@@ -297,18 +356,21 @@ export default function MeScreen() {
       setData(json.data);
 
       if (failedActions.length > 0) {
+        pulseSyncFeedback();
+        queueSyncFeedbackReset('error', 1300);
         Alert.alert(
           'Sync completed with issues',
           `Couldn't refresh: ${failedActions.join(', ')}.`
         );
       } else {
         pulseHalo();
+        pulseSyncFeedback();
+        queueSyncFeedbackReset('success', 900);
       }
     } catch (error) {
       handleError(error, { fallbackMessage: 'Failed to sync Roblox data' });
-      setSyncError(true);
-      if (syncErrorTimerRef.current) clearTimeout(syncErrorTimerRef.current);
-      syncErrorTimerRef.current = setTimeout(() => setSyncError(false), 2000);
+      pulseSyncFeedback();
+      queueSyncFeedbackReset('error', 1700);
     } finally {
       setRefreshing(false);
     }
@@ -404,6 +466,7 @@ export default function MeScreen() {
   const segmentBg = isDark ? '#2c2c2e' : '#e5e5ea';
   const segmentActiveBg = isDark ? '#3a3a3c' : '#ffffff';
 
+  const syncError = syncFeedback === 'error';
   const haloColor = resolveHaloColor({ connected: data?.roblox.connected ?? false, syncing: refreshing, syncError });
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
@@ -422,6 +485,7 @@ export default function MeScreen() {
       onPress={() => router.back()}
       accessibilityRole="button"
       accessibilityLabel="Go back"
+      accessibilityHint="Returns to the previous screen"
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <IconSymbol
@@ -517,32 +581,51 @@ export default function MeScreen() {
             </Animated.View>
 
             {/* Connector: dots — sync icon — dots */}
-            <View style={styles.connector}>
-              <ConnectorDots active={refreshing} error={syncError} />
+            <View style={styles.connectorBridge}>
+              <Animated.View style={[styles.connectorSide, { opacity: connectorPulseAnim }]}>
+                <ConnectorDots active={refreshing} error={syncError} />
+              </Animated.View>
               {data.roblox.connected ? (
                 <TouchableOpacity
                   onPress={() => void handleSyncRobloxData()}
                   disabled={refreshing}
                   style={styles.syncIconWrap}
                   accessibilityRole="button"
-                  accessibilityLabel={refreshing ? 'Syncing Roblox data' : 'Sync Roblox data'}
+                  accessibilityLabel={resolveSyncA11yLabel({
+                    connected: data.roblox.connected,
+                    syncing: refreshing,
+                    feedback: syncFeedback,
+                  })}
+                  accessibilityState={{ disabled: refreshing, busy: refreshing }}
                 >
-                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                  <Animated.View
+                    style={{
+                      transform: [{ rotate: spin }, { scale: syncFeedbackScaleAnim }],
+                    }}
+                  >
                     <IconSymbol
-                      name="arrow.clockwise"
-                      size={20}
+                      name={resolveSyncIconName({ syncing: refreshing, feedback: syncFeedback })}
+                      size={22}
                       color={
-                        refreshing ? tintColor : syncError ? '#ff3b30' : secondaryTextColor
+                        refreshing
+                          ? tintColor
+                          : syncFeedback === 'success'
+                            ? '#34c759'
+                            : syncError
+                              ? '#ff3b30'
+                              : secondaryTextColor
                       }
                     />
                   </Animated.View>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.syncIconWrap} accessibilityLabel="Roblox not connected">
-                  <IconSymbol name="minus.circle" size={20} color={secondaryTextColor} />
+                  <IconSymbol name="minus.circle" size={22} color={secondaryTextColor} />
                 </View>
               )}
-              <ConnectorDots active={refreshing} error={syncError} />
+              <Animated.View style={[styles.connectorSide, { opacity: connectorPulseAnim }]}>
+                <ConnectorDots active={refreshing} error={syncError} />
+              </Animated.View>
             </View>
 
             {/* Roblox identity mark */}
@@ -570,12 +653,14 @@ export default function MeScreen() {
           </View>
 
           {/* Username */}
-          <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
-          {data.roblox.connected && robloxAccountName ? (
-            <Text style={[styles.robloxSubtitle, { color: secondaryTextColor }]}>
-              @{robloxAccountName}
-            </Text>
-          ) : null}
+          <View style={styles.avatarIdentityMeta}>
+            <Text style={[styles.profileName, { color: textColor }]}>{primaryName}</Text>
+            {data.roblox.connected && robloxAccountName ? (
+              <Text style={[styles.robloxSubtitle, { color: secondaryTextColor }]}>
+                @{robloxAccountName}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {/* ------------------------------------------------------------------ */}
@@ -915,18 +1000,20 @@ const styles = StyleSheet.create({
   },
   // Profile header
   profileHeader: {
-    alignItems: 'center',
+    alignItems: 'stretch',
     paddingVertical: 12,
     marginBottom: 16,
   },
   avatarRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     marginBottom: 14,
   },
-  avatarHaloWrap: {},
+  avatarHaloWrap: {
+    alignItems: 'center',
+    width: 112,
+  },
   haloRing: {
     borderRadius: 999,
     borderWidth: 3,
@@ -948,20 +1035,35 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  connector: {
+  connectorBridge: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    minHeight: 100,
+    marginHorizontal: 10,
+  },
+  connectorSide: {
+    flex: 1,
+    alignItems: 'center',
   },
   syncIconWrap: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(127,127,127,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   robloxMarkWrap: {
     alignItems: 'center',
     gap: 4,
+    width: 72,
+    paddingTop: 28,
+  },
+  avatarIdentityMeta: {
+    width: 112,
+    alignItems: 'center',
   },
   robloxBadge: {
     width: 44,

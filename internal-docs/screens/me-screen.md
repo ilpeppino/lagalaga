@@ -151,6 +151,8 @@ Component: MeScreen (type: React Function Component)
 
 ## UX Fix (2026-03-14) — header clarity
 - Back arrow: added semi-transparent circular background so the chevron is visible against any page background
+- Back arrow visibility parity: Android/web icon mapping now explicitly includes `chevron.left`, so the top-left affordance is visible cross-platform
 - Roblox side: replaced duplicate headshot / `gamecontroller.fill` icon with a branded red rounded-square "R" badge + "Roblox" label — unambiguously identifies the Roblox account
-- Connector bridge: three-dot `ConnectorDots` row + centred sync icon replace plain gap; dots/icon change colour to match halo state (grey → blue → red)
-- Error halo: `syncError` state drives a 2 s red halo flash on full sync failure; `resolveHaloColor` updated to accept `syncError?`
+- Connector bridge: two balanced dotted lanes around the sync control keep the icon centred in the avatar↔Roblox connection area (`avatar ... sync ... Roblox`)
+- Sync action feedback: refresh icon rotates for the full real async sync lifecycle, then briefly transitions to success (green check) or error (red state) before returning to idle
+- Sync pulse coordination: connector dots subtly pulse while syncing and the avatar halo keeps status colors aligned (green connected, blue syncing, red error, grey disconnected)

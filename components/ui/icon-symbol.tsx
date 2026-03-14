@@ -17,7 +17,20 @@ const MAPPING = {
   'house.fill': 'home',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
+  'chevron.left': 'chevron-left',
   'chevron.right': 'chevron-right',
+  'person.fill': 'person',
+  'arrow.clockwise': 'autorenew',
+  'minus.circle': 'remove-circle-outline',
+  'apple.logo': 'apple',
+  'info.circle': 'info-outline',
+  'chevron.down': 'expand-more',
+  'list.bullet.rectangle': 'view-list',
+  'doc.text': 'description',
+  'doc.plaintext': 'article',
+  'exclamationmark.shield': 'gpp-bad',
+  'trash': 'delete-outline',
+  'checkmark': 'check',
 } as IconMapping;
 
 /**
@@ -37,5 +50,6 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  const mappedName = MAPPING[name] ?? 'help-outline';
+  return <MaterialIcons color={color} size={size} name={mappedName} style={style} />;
 }

@@ -6,6 +6,7 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import fp from 'fastify-plugin';
 
 interface Histogram {
   count: number;
@@ -67,6 +68,12 @@ class MetricsCollector {
     }
     const key = this.labelsToKey(labels);
     this.gauges.get(name)!.set(key, value);
+  }
+
+  reset(): void {
+    this.counters.clear();
+    this.histograms.clear();
+    this.gauges.clear();
   }
 
   toPrometheus(): string {
@@ -214,7 +221,7 @@ metrics.seasonResetTotal = seasonResetTotal;
 metrics.tierPromotionsTotal = tierPromotionsTotal;
 metrics.suspiciousRankedActivityTotal = suspiciousRankedActivityTotal;
 
-export async function metricsPlugin(fastify: FastifyInstance) {
+async function metricsPluginImpl(fastify: FastifyInstance) {
   const isProduction = fastify.config.NODE_ENV === 'production';
   const bearerToken = fastify.config.METRICS_BEARER_TOKEN.trim();
 
@@ -247,8 +254,12 @@ export async function metricsPlugin(fastify: FastifyInstance) {
     metrics.incrementCounter('http_requests_total', { method, route, status: statusCode });
     metrics.observeHistogram('http_request_duration_seconds', durationSeconds, { method, route });
 
-    if (reply.statusCode >= 400) {
-      metrics.incrementCounter('http_request_errors_total', { method, route, status: statusCode });
+    if (reply.statusCode === 401) {
+      metrics.incrementCounter('http_auth_failures_total', { method, route });
+    } else if (reply.statusCode === 403) {
+      metrics.incrementCounter('http_authz_failures_total', { method, route });
+    } else if (reply.statusCode >= 400) {
+      metrics.incrementCounter('http_client_errors_total', { method, route, status: statusCode });
     }
   });
 
@@ -263,3 +274,5 @@ export async function metricsPlugin(fastify: FastifyInstance) {
     return reply.send(metrics.toJSON());
   });
 }
+
+export const metricsPlugin = fp(metricsPluginImpl, { name: 'metrics' });

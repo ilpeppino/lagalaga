@@ -1,9 +1,13 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from '@jest/globals';
-import { metricsPlugin } from '../metrics.js';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { metricsPlugin, metrics } from '../metrics.js';
 
 describe('metricsPlugin', () => {
   let app: FastifyInstance;
+
+  beforeEach(() => {
+    metrics.reset();
+  });
 
   afterEach(async () => {
     if (app) {
@@ -78,5 +82,53 @@ describe('metricsPlugin', () => {
     });
 
     expect(response.statusCode).toBe(200);
+  });
+
+  describe('error counter routing by status code', () => {
+    async function buildAppWithRoute(
+      config: { NODE_ENV: string; METRICS_BEARER_TOKEN: string },
+      statusCode: number
+    ) {
+      app = Fastify();
+      (app as any).config = config;
+      await app.register(metricsPlugin);
+      app.get('/test-error', async (_req, reply) => {
+        return reply.code(statusCode).send({ error: 'test' });
+      });
+      await app.ready();
+    }
+
+    it('increments http_auth_failures_total for 401', async () => {
+      await buildAppWithRoute({ NODE_ENV: 'development', METRICS_BEARER_TOKEN: '' }, 401);
+      await app.inject({ method: 'GET', url: '/test-error' });
+
+      const metricsRes = await app.inject({ method: 'GET', url: '/metrics/json' });
+      const body = metricsRes.json();
+      expect(body.http_auth_failures_total).toBeDefined();
+      expect(body.http_authz_failures_total).toBeUndefined();
+      expect(body.http_client_errors_total).toBeUndefined();
+    });
+
+    it('increments http_authz_failures_total for 403', async () => {
+      await buildAppWithRoute({ NODE_ENV: 'development', METRICS_BEARER_TOKEN: '' }, 403);
+      await app.inject({ method: 'GET', url: '/test-error' });
+
+      const metricsRes = await app.inject({ method: 'GET', url: '/metrics/json' });
+      const body = metricsRes.json();
+      expect(body.http_authz_failures_total).toBeDefined();
+      expect(body.http_auth_failures_total).toBeUndefined();
+      expect(body.http_client_errors_total).toBeUndefined();
+    });
+
+    it('increments http_client_errors_total for 400', async () => {
+      await buildAppWithRoute({ NODE_ENV: 'development', METRICS_BEARER_TOKEN: '' }, 400);
+      await app.inject({ method: 'GET', url: '/test-error' });
+
+      const metricsRes = await app.inject({ method: 'GET', url: '/metrics/json' });
+      const body = metricsRes.json();
+      expect(body.http_client_errors_total).toBeDefined();
+      expect(body.http_auth_failures_total).toBeUndefined();
+      expect(body.http_authz_failures_total).toBeUndefined();
+    });
   });
 });

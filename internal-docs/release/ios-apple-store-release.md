@@ -17,6 +17,12 @@ npx expo prebuild -p ios
 - `expo-apple-authentication` plugin enabled
 - App scheme supports `lagalaga://auth/roblox`
 
+4. Change CFBundle​Version in Info​.plist to the same build number
+
+5. From XCode, Product -> Clean Build Folder, then Archive
+
+6. Open Window -> Organizer, select the build and distribute
+
 ## App Store Compliance Gate (Blocking)
 
 Do not submit until all checks below pass on a physical iPhone build.

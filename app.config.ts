@@ -29,7 +29,7 @@ const config: ExpoConfig = {
     backgroundColor: "#1A2A6C",
   },
   ios: {
-    buildNumber: "12",
+    buildNumber: "13",
     supportsTablet: true,
     usesAppleSignIn: true,
     bundleIdentifier: iosBundleIdentifier,

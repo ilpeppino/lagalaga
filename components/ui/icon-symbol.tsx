@@ -33,6 +33,7 @@ const MAPPING = {
   'exclamationmark.shield': 'gpp-bad',
   'trash': 'delete-outline',
   'checkmark': 'check',
+  'rectangle.portrait.and.arrow.right': 'logout',
 } as IconMapping;
 
 /**

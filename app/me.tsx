@@ -167,7 +167,7 @@ export default function MeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { handleError } = useErrorHandler();
-  const { user, signInWithApple } = useAuth();
+  const { user, signInWithApple, signOut } = useAuth();
   const { colorScheme, themePreference, setThemePreference } = useAppTheme();
 
   const [data, setData] = useState<MeData | null>(null);
@@ -181,6 +181,7 @@ export default function MeScreen() {
   const [settings, setSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [syncFeedback, setSyncFeedback] = useState<'idle' | 'success' | 'error'>('idle');
+  const [signingOut, setSigningOut] = useState(false);
   const syncFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -455,6 +456,28 @@ export default function MeScreen() {
     const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
     return `${days}d ${hours}h`;
   };
+
+  const handleSignOut = useCallback(() => {
+    Alert.alert(
+      'Sign out of Lagalaga?',
+      undefined,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            setSigningOut(true);
+            try {
+              await signOut();
+            } catch {
+              // signOut handles cleanup in finally block; user state cleared → auto-redirect
+            }
+          },
+        },
+      ],
+    );
+  }, [signOut]);
 
   // ---------------------------------------------------------------------------
   // Derived colors
@@ -953,6 +976,22 @@ export default function MeScreen() {
           >
             <IconSymbol name="exclamationmark.shield" size={18} color={secondaryTextColor} />
             <Text style={[styles.listRowButtonText, { color: textColor }]}>Safety & Report</Text>
+            <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+            onPress={handleSignOut}
+            disabled={signingOut}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+          >
+            {signingOut ? (
+              <ActivityIndicator size={18} color={secondaryTextColor} />
+            ) : (
+              <IconSymbol name="rectangle.portrait.and.arrow.right" size={18} color={secondaryTextColor} />
+            )}
+            <Text style={[styles.listRowButtonText, { color: textColor }]}>Sign Out</Text>
             <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
           </TouchableOpacity>
 

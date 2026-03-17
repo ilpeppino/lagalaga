@@ -117,6 +117,43 @@ test('profile name config: width and minimum font scale stay readable', () => {
   assert.equal(PROFILE_NAME_MINIMUM_FONT_SCALE, 0.72);
 });
 
+// ---------------------------------------------------------------------------
+// Sign Out — source-guard tests
+// ---------------------------------------------------------------------------
+test('Sign Out row exists in Me screen (source guard)', () => {
+  const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
+  const source = fs.readFileSync(meScreenPath, 'utf8');
+
+  assert.match(source, /accessibilityLabel="Sign out"/);
+  assert.match(source, /Sign Out<\/Text>/);
+});
+
+test('Sign Out is wired to signOut from useAuth (source guard)', () => {
+  const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
+  const source = fs.readFileSync(meScreenPath, 'utf8');
+
+  assert.match(source, /signOut\s*\}?\s*=\s*useAuth\(\)/);
+  assert.match(source, /await signOut\(\)/);
+});
+
+test('Sign Out shows confirmation Alert (source guard)', () => {
+  const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
+  const source = fs.readFileSync(meScreenPath, 'utf8');
+
+  assert.match(source, /Alert\.alert\(\s*'Sign out of Lagalaga\?'/);
+});
+
+test('Sign Out appears before Delete Account (source guard)', () => {
+  const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
+  const source = fs.readFileSync(meScreenPath, 'utf8');
+
+  const signOutIndex = source.indexOf('Sign Out</Text>');
+  const deleteIndex = source.indexOf('Delete Account</Text>');
+  assert.ok(signOutIndex > -1, 'Sign Out row must exist');
+  assert.ok(deleteIndex > -1, 'Delete Account row must exist');
+  assert.ok(signOutIndex < deleteIndex, 'Sign Out must appear before Delete Account');
+});
+
 test('Me header renders a single auto-fitting username label (source guard)', () => {
   const meScreenPath = path.resolve(process.cwd(), 'app/me.tsx');
   const source = fs.readFileSync(meScreenPath, 'utf8');

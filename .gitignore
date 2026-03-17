@@ -130,3 +130,4 @@ ios/.xcode.env.local
 .aider*
 .factory
 app-example
+*.dump

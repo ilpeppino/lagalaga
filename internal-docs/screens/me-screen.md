@@ -88,6 +88,7 @@ Component: MeScreen (type: React Function Component)
 │  │ Privacy Policy → opens URL                        │  │
 │  │ Terms of Service → opens URL                      │  │
 │  │ Safety & Report → /safety-report                  │  │
+│  │ Sign Out → Alert confirm → signOut()              │  │
 │  │ Delete Account (red text) → /account/delete       │  │
 │  └────────────────────────────────────────────────────┘  │
 │  Disclaimer: "Lagalaga is not affiliated with Roblox..."  │
@@ -112,6 +113,7 @@ Component: MeScreen (type: React Function Component)
 - `NumberSettingRow` — inline stepper (`−`/`+` buttons) for session hour settings
 - "Roblox details" collapsible row (info.circle icon) → `advancedExpanded` state
 - "Link Apple Account" list row (iOS, only if Roblox connected)
+- "Sign Out" list row — normal text color, shows confirmation Alert, spinner while signing out
 - "Delete Account" list row — red text/icon, destructive style but NOT a large CTA button
 
 ## Key Behaviour
@@ -135,6 +137,7 @@ Component: MeScreen (type: React Function Component)
 - Safety & Report: `router.push('/safety-report')`
 - Delete Account: `router.push('/account/delete')`
 - Match History: `router.push('/match-history')` (gated by `ENABLE_COMPETITIVE_DEPTH`)
+- Sign Out: `Alert.alert` confirmation → `signOut()` → auto-redirect to `/auth/sign-in`
 - Privacy Policy / Terms: `Linking.openURL(url)`
 
 ## What Changed vs Previous Version

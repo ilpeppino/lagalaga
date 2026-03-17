@@ -1,5 +1,5 @@
 import { request } from 'undici';
-import { getSupabase } from '../config/supabase.js';
+import { createPushTokenRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -18,11 +18,8 @@ interface ExpoPushMessage {
 
 export class PushNotificationService {
   async getUserPushTokens(userId: string): Promise<Array<{ expo_push_token: string; platform: string | null }>> {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('user_push_tokens')
-      .select('expo_push_token, platform')
-      .eq('user_id', userId);
+    const repository = createPushTokenRepository();
+    const { data, error } = await repository.listByUserId(userId);
 
     if (error) {
       logger.error({ userId, error: error.message }, 'Failed to fetch push tokens');

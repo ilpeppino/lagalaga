@@ -1,21 +1,16 @@
-import { getSupabase } from '../config/supabase.js';
+import { createAccountDeletionRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 import { sanitize } from '../lib/sanitizer.js';
 import { AppError, ErrorCodes, NotFoundError, RateLimitError } from '../utils/errors.js';
+import type {
+  AccountDeletionRepository,
+  AccountDeletionRequestRow,
+  DeletionInitiator,
+  DeletionRequestStatus,
+} from '../db/repositories/account-deletion.repository.js';
+export type { DeletionInitiator, DeletionRequestStatus };
 
-export type DeletionRequestStatus = 'PENDING' | 'COMPLETED' | 'CANCELED' | 'FAILED';
-export type DeletionInitiator = 'IN_APP' | 'WEB';
 export type AccountStatus = 'ACTIVE' | 'PENDING_DELETION' | 'DELETED';
-
-interface AccountDeletionRequestRow {
-  id: string;
-  user_id: string;
-  requested_at: string;
-  scheduled_purge_at: string;
-  status: DeletionRequestStatus;
-  initiator: DeletionInitiator;
-  reason: string | null;
-}
 
 export interface DeletionStatusResponse {
   requestId: string | null;
@@ -38,12 +33,20 @@ interface ServiceOptions {
 }
 
 export class AccountDeletionService {
+  private accountDeletionRepositoryInstance: AccountDeletionRepository | null = null;
   private readonly gracePeriodDays: number;
   private readonly maxRequestsPerHour: number;
 
   constructor(options: ServiceOptions = {}) {
     this.gracePeriodDays = options.gracePeriodDays ?? 7;
     this.maxRequestsPerHour = options.maxRequestsPerHour ?? 3;
+  }
+
+  private get accountDeletionRepository(): AccountDeletionRepository {
+    if (!this.accountDeletionRepositoryInstance) {
+      this.accountDeletionRepositoryInstance = createAccountDeletionRepository();
+    }
+    return this.accountDeletionRepositoryInstance;
   }
 
   private retentionSummary(): string {
@@ -57,8 +60,6 @@ export class AccountDeletionService {
   }
 
   async createDeletionRequest(input: CreateDeletionRequestInput): Promise<DeletionStatusResponse> {
-    const supabase = getSupabase();
-
     const existingPending = await this.getPendingRequest(input.userId);
     if (existingPending) {
       return {
@@ -72,11 +73,10 @@ export class AccountDeletionService {
     }
 
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count, error: countError } = await supabase
-      .from('account_deletion_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', input.userId)
-      .gte('requested_at', oneHourAgo);
+    const { data: count, error: countError } = await this.accountDeletionRepository.countRecentRequests(
+      input.userId,
+      oneHourAgo
+    );
 
     if (countError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to check rate limit: ${countError.message}`);
@@ -89,64 +89,46 @@ export class AccountDeletionService {
     const requestedAt = new Date();
     const scheduledPurgeAt = this.buildScheduledPurgeAt(requestedAt);
 
-    const { data: row, error: insertError } = await supabase
-      .from('account_deletion_requests')
-      .insert({
-        user_id: input.userId,
-        requested_at: requestedAt.toISOString(),
-        scheduled_purge_at: scheduledPurgeAt,
-        status: 'PENDING',
-        initiator: input.initiator,
-        reason: input.reason ?? null,
-      })
-      .select('id, user_id, requested_at, scheduled_purge_at, status, initiator, reason')
-      .single<AccountDeletionRequestRow>();
+    const { data: row, error: insertError } = await this.accountDeletionRepository.createDeletionRequest({
+      userId: input.userId,
+      requestedAtIso: requestedAt.toISOString(),
+      scheduledPurgeAtIso: scheduledPurgeAt,
+      initiator: input.initiator,
+      reason: input.reason ?? null,
+    });
 
     if (insertError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to create deletion request: ${insertError.message}`);
     }
 
-    const { error: userUpdateError } = await supabase
-      .from('app_users')
-      .update({
-        status: 'PENDING_DELETION',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', input.userId);
+    const { error: userUpdateError } = await this.accountDeletionRepository.updateUserPendingDeletion(
+      input.userId,
+      new Date().toISOString()
+    );
 
     if (userUpdateError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to update user status: ${userUpdateError.message}`);
     }
 
-    const { data: userRow, error: userFetchError } = await supabase
-      .from('app_users')
-      .select('token_version')
-      .eq('id', input.userId)
-      .single<{ token_version: number }>();
+    const { data: tokenVersion, error: userFetchError } = await this.accountDeletionRepository.getUserTokenVersion(input.userId);
 
     if (userFetchError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load user token version: ${userFetchError.message}`);
     }
 
-    const { error: tokenVersionError } = await supabase
-      .from('app_users')
-      .update({ token_version: Number(userRow.token_version ?? 0) + 1 })
-      .eq('id', input.userId);
+    const { error: tokenVersionError } = await this.accountDeletionRepository.incrementUserTokenVersion(
+      input.userId,
+      tokenVersion
+    );
 
     if (tokenVersionError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to revoke tokens: ${tokenVersionError.message}`);
     }
 
-    const { error: platformTokenRevokeError } = await supabase
-      .from('user_platforms')
-      .update({
-        roblox_access_token_enc: null,
-        roblox_refresh_token_enc: null,
-        roblox_token_expires_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', input.userId)
-      .eq('platform_id', 'roblox');
+    const { error: platformTokenRevokeError } = await this.accountDeletionRepository.clearRobloxPlatformTokens(
+      input.userId,
+      new Date().toISOString()
+    );
 
     if (platformTokenRevokeError) {
       logger.warn(
@@ -155,10 +137,7 @@ export class AccountDeletionService {
       );
     }
 
-    const { error: pushTokenDeleteError } = await supabase
-      .from('user_push_tokens')
-      .delete()
-      .eq('user_id', input.userId);
+    const { error: pushTokenDeleteError } = await this.accountDeletionRepository.deletePushTokens(input.userId);
 
     if (pushTokenDeleteError) {
       logger.warn(
@@ -178,27 +157,13 @@ export class AccountDeletionService {
   }
 
   async getDeletionStatus(userId: string): Promise<DeletionStatusResponse> {
-    const supabase = getSupabase();
+    const { data: pendingOrLatest, error } = await this.accountDeletionRepository.getLatestRequest(userId);
 
-    const pendingOrLatest = await supabase
-      .from('account_deletion_requests')
-      .select('id, requested_at, scheduled_purge_at, status, completed_at')
-      .eq('user_id', userId)
-      .order('requested_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<{
-        id: string;
-        requested_at: string;
-        scheduled_purge_at: string;
-        status: DeletionRequestStatus;
-        completed_at: string | null;
-      }>();
-
-    if (pendingOrLatest.error) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to fetch deletion status: ${pendingOrLatest.error.message}`);
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to fetch deletion status: ${error.message}`);
     }
 
-    if (!pendingOrLatest.data) {
+    if (!pendingOrLatest) {
       return {
         requestId: null,
         status: 'ACTIVE',
@@ -210,17 +175,16 @@ export class AccountDeletionService {
     }
 
     return {
-      requestId: pendingOrLatest.data.id,
-      status: pendingOrLatest.data.status,
-      requestedAt: pendingOrLatest.data.requested_at,
-      scheduledPurgeAt: pendingOrLatest.data.scheduled_purge_at,
-      completedAt: pendingOrLatest.data.completed_at,
+      requestId: pendingOrLatest.id,
+      status: pendingOrLatest.status,
+      requestedAt: pendingOrLatest.requested_at,
+      scheduledPurgeAt: pendingOrLatest.scheduled_purge_at,
+      completedAt: pendingOrLatest.completed_at,
       retentionSummary: this.retentionSummary(),
     };
   }
 
   async cancelDeletionRequest(userId: string): Promise<DeletionStatusResponse> {
-    const supabase = getSupabase();
     const pending = await this.getPendingRequest(userId);
 
     if (!pending) {
@@ -233,36 +197,23 @@ export class AccountDeletionService {
 
     const nowIso = new Date().toISOString();
 
-    const { error: requestUpdateError } = await supabase
-      .from('account_deletion_requests')
-      .update({
-        status: 'CANCELED',
-        canceled_at: nowIso,
-      })
-      .eq('id', pending.id);
+    const { error: requestUpdateError } = await this.accountDeletionRepository.cancelRequest(pending.id, nowIso);
 
     if (requestUpdateError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to cancel deletion request: ${requestUpdateError.message}`);
     }
 
-    const { data: userRow, error: userFetchError } = await supabase
-      .from('app_users')
-      .select('token_version')
-      .eq('id', userId)
-      .single<{ token_version: number }>();
+    const { data: userTokenVersion, error: userFetchError } = await this.accountDeletionRepository.getUserTokenVersion(userId);
 
     if (userFetchError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to fetch user token version: ${userFetchError.message}`);
     }
 
-    const { error: userUpdateError } = await supabase
-      .from('app_users')
-      .update({
-        status: 'ACTIVE',
-        token_version: Number(userRow.token_version ?? 0) + 1,
-        updated_at: nowIso,
-      })
-      .eq('id', userId);
+    const { error: userUpdateError } = await this.accountDeletionRepository.restoreUserActive(
+      userId,
+      userTokenVersion + 1,
+      nowIso
+    );
 
     if (userUpdateError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to restore account: ${userUpdateError.message}`);
@@ -279,17 +230,9 @@ export class AccountDeletionService {
   }
 
   async processDueDeletionRequests(limit = 25): Promise<{ processed: number; failed: number }> {
-    const supabase = getSupabase();
     const nowIso = new Date().toISOString();
 
-    const { data, error } = await supabase
-      .from('account_deletion_requests')
-      .select('id, user_id, requested_at, scheduled_purge_at, status, initiator, reason')
-      .eq('status', 'PENDING')
-      .lte('scheduled_purge_at', nowIso)
-      .order('scheduled_purge_at', { ascending: true })
-      .limit(limit)
-      .returns<AccountDeletionRequestRow[]>();
+    const { data, error } = await this.accountDeletionRepository.listDuePendingRequests(nowIso, limit);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to fetch pending deletion requests: ${error.message}`);
@@ -306,14 +249,11 @@ export class AccountDeletionService {
         failed += 1;
         const message = purgeError instanceof Error ? purgeError.message : String(purgeError);
 
-        await supabase
-          .from('account_deletion_requests')
-          .update({
-            status: 'FAILED',
-            failed_at: new Date().toISOString(),
-            failure_reason: message.slice(0, 1000),
-          })
-          .eq('id', row.id);
+        await this.accountDeletionRepository.markRequestFailed(
+          row.id,
+          new Date().toISOString(),
+          message.slice(0, 1000)
+        );
 
         logger.error(
           sanitize({ requestId: row.id, userId: row.user_id, error: message }),
@@ -326,13 +266,7 @@ export class AccountDeletionService {
   }
 
   private async getPendingRequest(userId: string): Promise<AccountDeletionRequestRow | null> {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('account_deletion_requests')
-      .select('id, user_id, requested_at, scheduled_purge_at, status, initiator, reason')
-      .eq('user_id', userId)
-      .eq('status', 'PENDING')
-      .maybeSingle<AccountDeletionRequestRow>();
+    const { data, error } = await this.accountDeletionRepository.findPendingRequest(userId);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to fetch pending request: ${error.message}`);
@@ -342,144 +276,14 @@ export class AccountDeletionService {
   }
 
   private async executePurge(row: AccountDeletionRequestRow): Promise<void> {
-    const supabase = getSupabase();
     const nowIso = new Date().toISOString();
     const userId = row.user_id;
 
     logger.info(sanitize({ requestId: row.id, userId }), 'Starting account purge');
 
-    // 1) Sessions created by user
-    const { error: deleteHostedSessionsError } = await supabase
-      .from('sessions')
-      .delete()
-      .eq('host_id', userId);
-
-    if (deleteHostedSessionsError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete hosted sessions: ${deleteHostedSessionsError.message}`);
-    }
-
-    // 2) Participations in sessions created by others
-    const { error: deleteParticipantsError } = await supabase
-      .from('session_participants')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteParticipantsError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete session participants: ${deleteParticipantsError.message}`);
-    }
-
-    // 3) Remaining invite rows created by user for non-hosted sessions
-    const { error: deleteInvitesError } = await supabase
-      .from('session_invites')
-      .delete()
-      .eq('created_by', userId);
-
-    if (deleteInvitesError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete session invites: ${deleteInvitesError.message}`);
-    }
-
-    // 4) Social graph cleanup
-    const { error: deleteFriendshipsByUserError } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteFriendshipsByUserError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete friendships by user: ${deleteFriendshipsByUserError.message}`);
-    }
-
-    const { error: deleteFriendshipsByFriendError } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('friend_id', userId);
-
-    if (deleteFriendshipsByFriendError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete friendships for friend side: ${deleteFriendshipsByFriendError.message}`);
-    }
-
-    // 5) Roblox and app caches/tokens
-    const { error: deleteRobloxFriendsCacheError } = await supabase
-      .from('roblox_friends_cache')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteRobloxFriendsCacheError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete roblox friends cache: ${deleteRobloxFriendsCacheError.message}`);
-    }
-
-    const { error: deletePushTokensError } = await supabase
-      .from('user_push_tokens')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deletePushTokensError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete push tokens: ${deletePushTokensError.message}`);
-    }
-
-    const { error: deleteFavoritesCacheError } = await supabase
-      .from('user_favorites_cache')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteFavoritesCacheError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete favorites cache: ${deleteFavoritesCacheError.message}`);
-    }
-
-    const { error: deleteMatchResultsError } = await supabase
-      .from('match_results')
-      .delete()
-      .eq('winner_id', userId);
-
-    if (deleteMatchResultsError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete match results: ${deleteMatchResultsError.message}`);
-    }
-
-    const { error: deleteUserPlatformsError } = await supabase
-      .from('user_platforms')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteUserPlatformsError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete user platforms: ${deleteUserPlatformsError.message}`);
-    }
-
-    // 6) Mark user as deleted first, then remove row to satisfy hard-delete policy
-    const { error: markDeletedError } = await supabase
-      .from('app_users')
-      .update({
-        status: 'DELETED',
-        roblox_username: `deleted_${userId.slice(0, 8)}`,
-        roblox_display_name: 'Deleted User',
-        roblox_profile_url: null,
-        avatar_headshot_url: null,
-        last_login_at: null,
-        updated_at: nowIso,
-      })
-      .eq('id', userId);
-
-    if (markDeletedError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to mark user deleted: ${markDeletedError.message}`);
-    }
-
-    const { error: deleteUserError } = await supabase
-      .from('app_users')
-      .delete()
-      .eq('id', userId);
-
-    if (deleteUserError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to delete user row: ${deleteUserError.message}`);
-    }
-
-    const { error: requestUpdateError } = await supabase
-      .from('account_deletion_requests')
-      .update({
-        status: 'COMPLETED',
-        completed_at: nowIso,
-      })
-      .eq('id', row.id);
-
-    if (requestUpdateError) {
-      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to update deletion request status: ${requestUpdateError.message}`);
+    const { error } = await this.accountDeletionRepository.purgeAccount(row.id, userId, nowIso);
+    if (error) {
+      throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to execute account purge: ${error.message}`);
     }
 
     logger.info(sanitize({ requestId: row.id, userId }), 'Account purge completed');

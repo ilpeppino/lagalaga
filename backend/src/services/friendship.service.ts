@@ -1,45 +1,34 @@
-import { getSupabase } from '../config/supabase.js';
+import { createFriendshipRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 import { metrics } from '../plugins/metrics.js';
 import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { RobloxFriendsService } from './roblox-friends.service.js';
-
-type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
-
-interface FriendshipRow {
-  id: string;
-  user_id: string;
-  friend_id: string;
-  status: FriendshipStatus;
-  initiated_by: string;
-  created_at: string;
-  accepted_at: string | null;
-}
-
-interface UserProfileRow {
-  id: string;
-  roblox_user_id: string;
-  roblox_username: string | null;
-  roblox_display_name: string | null;
-  avatar_headshot_url: string | null;
-}
+import type {
+  FriendshipRepository,
+  FriendshipRow,
+  UserProfileRow,
+} from '../db/repositories/friendship.repository.js';
 
 export class FriendshipService {
   private robloxFriendsService = new RobloxFriendsService();
+  private friendshipRepositoryInstance: FriendshipRepository | null = null;
+
+  private get friendshipRepository(): FriendshipRepository {
+    if (!this.friendshipRepositoryInstance) {
+      this.friendshipRepositoryInstance = createFriendshipRepository();
+    }
+    return this.friendshipRepositoryInstance;
+  }
 
   private canonicalPair(a: string, b: string): { userId: string; friendId: string } {
     return a < b ? { userId: a, friendId: b } : { userId: b, friendId: a };
   }
 
   private async loadProfiles(userIds: string[]): Promise<Map<string, UserProfileRow>> {
-    const supabase = getSupabase();
     if (userIds.length === 0) return new Map();
 
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('id, roblox_user_id, roblox_username, roblox_display_name, avatar_headshot_url')
-      .in('id', userIds);
+    const { data, error } = await this.friendshipRepository.listProfilesByIds(userIds);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load profiles: ${error.message}`);
@@ -69,12 +58,7 @@ export class FriendshipService {
   }
 
   async listFriends(userId: string, section: 'all' | 'lagalaga' | 'requests' | 'roblox_suggestions' = 'all'): Promise<any> {
-    const supabase = getSupabase();
-
-    const { data: friendships, error: friendshipsError } = await supabase
-      .from('friendships')
-      .select('id, user_id, friend_id, status, initiated_by, created_at, accepted_at')
-      .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
+    const { data: friendships, error: friendshipsError } = await this.friendshipRepository.listForUser(userId);
 
     if (friendshipsError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load friendships: ${friendshipsError.message}`);
@@ -137,11 +121,7 @@ export class FriendshipService {
       }),
     };
 
-    const { data: cacheRows, error: cacheError } = await supabase
-      .from('roblox_friends_cache')
-      .select('roblox_friend_user_id, roblox_friend_username, roblox_friend_display_name, synced_at')
-      .eq('user_id', userId)
-      .order('synced_at', { ascending: false });
+    const { data: cacheRows, error: cacheError } = await this.friendshipRepository.listRobloxCacheByUserId(userId);
 
     if (cacheError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load Roblox cache: ${cacheError.message}`);
@@ -160,10 +140,7 @@ export class FriendshipService {
     const robloxFriendIds = cache.map((row) => row.roblox_friend_user_id);
     let onAppUsers: UserProfileRow[] = [];
     if (robloxFriendIds.length > 0) {
-      const { data: users, error: onAppError } = await supabase
-        .from('app_users')
-        .select('id, roblox_user_id, roblox_username, roblox_display_name, avatar_headshot_url')
-        .in('roblox_user_id', robloxFriendIds);
+      const { data: users, error: onAppError } = await this.friendshipRepository.listProfilesByRobloxIds(robloxFriendIds);
 
       if (onAppError) {
         throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to cross-reference Roblox friends: ${onAppError.message}`);
@@ -222,28 +199,18 @@ export class FriendshipService {
   }
 
   async sendRequest(userId: string, targetUserId: string): Promise<{ friendshipId: string; status: 'pending' }> {
-    const supabase = getSupabase();
     if (userId === targetUserId) {
       throw new AppError(ErrorCodes.FRIEND_SELF_REQUEST, 'Cannot send friend request to yourself', 400);
     }
 
-    const { data: targetUser, error: targetUserError } = await supabase
-      .from('app_users')
-      .select('id')
-      .eq('id', targetUserId)
-      .maybeSingle();
+    const { data: targetUser, error: targetUserError } = await this.friendshipRepository.findUserById(targetUserId);
 
     if (targetUserError || !targetUser) {
       throw new AppError(ErrorCodes.NOT_FOUND_USER, `Target user not found: ${targetUserId}`, 404);
     }
 
     const pair = this.canonicalPair(userId, targetUserId);
-    const { data: existing } = await supabase
-      .from('friendships')
-      .select('id, status')
-      .eq('user_id', pair.userId)
-      .eq('friend_id', pair.friendId)
-      .maybeSingle();
+    const { data: existing } = await this.friendshipRepository.findByPair(pair.userId, pair.friendId);
 
     if (existing?.status === 'accepted') {
       throw new AppError(ErrorCodes.FRIEND_ALREADY_EXISTS, 'Users are already friends', 409);
@@ -255,16 +222,12 @@ export class FriendshipService {
       throw new AppError(ErrorCodes.FRIEND_BLOCKED, 'Friend request blocked', 403);
     }
 
-    const { data: inserted, error: insertError } = await supabase
-      .from('friendships')
-      .insert({
-        user_id: pair.userId,
-        friend_id: pair.friendId,
-        status: 'pending',
-        initiated_by: userId,
-      })
-      .select('id, status')
-      .single();
+    const { data: inserted, error: insertError } = await this.friendshipRepository.insert({
+      userId: pair.userId,
+      friendId: pair.friendId,
+      status: 'pending',
+      initiatedBy: userId,
+    });
 
     if (insertError || !inserted) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to create request: ${insertError?.message ?? 'unknown error'}`);
@@ -280,13 +243,7 @@ export class FriendshipService {
   }
 
   async acceptRequest(userId: string, friendshipId: string): Promise<{ friendshipId: string; status: 'accepted'; acceptedAt: string }> {
-    const supabase = getSupabase();
-
-    const { data: row, error: lookupError } = await supabase
-      .from('friendships')
-      .select('id, user_id, friend_id, status, initiated_by')
-      .eq('id', friendshipId)
-      .maybeSingle();
+    const { data: row, error: lookupError } = await this.friendshipRepository.findById(friendshipId);
 
     if (lookupError || !row) {
       throw new AppError(ErrorCodes.FRIEND_NOT_FOUND, 'Friendship not found', 404);
@@ -301,14 +258,11 @@ export class FriendshipService {
     }
 
     const acceptedAt = new Date().toISOString();
-    const { error: updateError } = await supabase
-      .from('friendships')
-      .update({
-        status: 'accepted',
-        accepted_at: acceptedAt,
-        updated_at: acceptedAt,
-      })
-      .eq('id', friendshipId);
+    const { error: updateError } = await this.friendshipRepository.updateStatus(
+      friendshipId,
+      'accepted',
+      acceptedAt
+    );
 
     if (updateError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to accept request: ${updateError.message}`);
@@ -325,13 +279,7 @@ export class FriendshipService {
   }
 
   async rejectRequest(userId: string, friendshipId: string): Promise<{ removed: true }> {
-    const supabase = getSupabase();
-
-    const { data: row } = await supabase
-      .from('friendships')
-      .select('id, user_id, friend_id, status, initiated_by')
-      .eq('id', friendshipId)
-      .maybeSingle();
+    const { data: row } = await this.friendshipRepository.findById(friendshipId);
 
     if (!row) {
       throw new AppError(ErrorCodes.FRIEND_NOT_FOUND, 'Friendship not found', 404);
@@ -345,10 +293,7 @@ export class FriendshipService {
       throw new AppError(ErrorCodes.FRIEND_NOT_RECIPIENT, 'Only recipient can reject this request', 403);
     }
 
-    const { error: deleteError } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('id', friendshipId);
+    const { error: deleteError } = await this.friendshipRepository.deleteById(friendshipId);
 
     if (deleteError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to reject request: ${deleteError.message}`);
@@ -360,13 +305,7 @@ export class FriendshipService {
   }
 
   async remove(userId: string, friendshipId: string): Promise<{ removed: true }> {
-    const supabase = getSupabase();
-
-    const { data: row } = await supabase
-      .from('friendships')
-      .select('id, user_id, friend_id, status, initiated_by')
-      .eq('id', friendshipId)
-      .maybeSingle();
+    const { data: row } = await this.friendshipRepository.findById(friendshipId);
 
     if (!row) {
       throw new AppError(ErrorCodes.FRIEND_NOT_FOUND, 'Friendship not found', 404);
@@ -381,10 +320,7 @@ export class FriendshipService {
       throw new AppError(ErrorCodes.FRIEND_NOT_RECIPIENT, 'Only initiator can cancel outgoing request', 403);
     }
 
-    const { error: deleteError } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('id', friendshipId);
+    const { error: deleteError } = await this.friendshipRepository.deleteById(friendshipId);
 
     if (deleteError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to remove friendship: ${deleteError.message}`);
@@ -397,16 +333,9 @@ export class FriendshipService {
 
   async areAcceptedFriends(userId: string, otherUserId: string): Promise<boolean> {
     if (userId === otherUserId) return true;
-    const supabase = getSupabase();
     const pair = this.canonicalPair(userId, otherUserId);
 
-    const { data } = await supabase
-      .from('friendships')
-      .select('id')
-      .eq('user_id', pair.userId)
-      .eq('friend_id', pair.friendId)
-      .eq('status', 'accepted')
-      .maybeSingle();
+    const { data } = await this.friendshipRepository.findAcceptedByPair(pair.userId, pair.friendId);
 
     return Boolean(data);
   }

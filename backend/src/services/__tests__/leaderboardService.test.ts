@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 let activeSupabaseMock: any;
 
-jest.unstable_mockModule('../../config/supabase.js', () => ({
-  getSupabase: () => activeSupabaseMock,
+jest.unstable_mockModule('../../db/repository-factory.js', () => ({
+  createLeaderboardRepository: () => activeSupabaseMock,
 }));
 
 const { LeaderboardService } = await import('../leaderboardService.js');
@@ -15,7 +15,7 @@ describe('LeaderboardService', () => {
 
   it('returns leaderboard sorted by rating desc', async () => {
     activeSupabaseMock = {
-      rpc: jest.fn(async () => ({
+      getWeekly: jest.fn(async () => ({
         data: [
           {
             rank: 3,
@@ -59,7 +59,7 @@ describe('LeaderboardService', () => {
 
   it('rejects unsupported leaderboard type', async () => {
     activeSupabaseMock = {
-      rpc: jest.fn(),
+      getWeekly: jest.fn(),
     };
 
     const service = new LeaderboardService();
@@ -72,7 +72,7 @@ describe('LeaderboardService', () => {
 
   it('includes tier when includeTier is true', async () => {
     activeSupabaseMock = {
-      rpc: jest.fn(async () => ({
+      getWeekly: jest.fn(async () => ({
         data: [
           {
             rank: 1,

@@ -50,18 +50,13 @@ describe('RankingService.enforceSubmissionRateLimit', () => {
 });
 
 describe('RankingService.ensureRankingRow', () => {
-  let service: InstanceType<typeof RankingService>;
-
-  beforeEach(() => {
-    service = new RankingService();
-  });
-
   it('throws AppError on upsert failure', async () => {
     activeSupabase = {
       from: jest.fn(() => ({
         upsert: async () => ({ error: { message: 'db down' } }),
       })),
     };
+    const service = new RankingService();
 
     await expect(service.ensureRankingRow('user-2')).rejects.toBeInstanceOf(AppError);
   });

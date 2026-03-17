@@ -31,10 +31,7 @@ const { AchievementService } = await import('../achievementService.js');
 const { AppError } = await import('../../utils/errors.js');
 
 describe('AchievementService.ensureUserStatsRow', () => {
-  let service: InstanceType<typeof AchievementService>;
-
   beforeEach(() => {
-    service = new AchievementService();
     activeSupabase = null;
     Object.values(logger).forEach((fn) => fn.mockClear());
     metrics.achievementsUnlockedTotal.inc.mockClear();
@@ -46,6 +43,7 @@ describe('AchievementService.ensureUserStatsRow', () => {
         upsert: async () => ({ error: { message: 'boom' } }),
       })),
     };
+    const service = new AchievementService();
 
     await expect(service.ensureUserStatsRow('u1')).rejects.toBeInstanceOf(AppError);
   });
@@ -55,6 +53,7 @@ describe('AchievementService.ensureUserStatsRow', () => {
     activeSupabase = {
       from: jest.fn(() => ({ upsert })),
     };
+    const service = new AchievementService();
 
     await service.ensureUserStatsRow('u1');
 
@@ -69,10 +68,7 @@ describe('AchievementService.ensureUserStatsRow', () => {
 });
 
 describe('AchievementService.incrementUserStat', () => {
-  let service: InstanceType<typeof AchievementService>;
-
   beforeEach(() => {
-    service = new AchievementService();
     activeSupabase = null;
   });
 
@@ -83,6 +79,7 @@ describe('AchievementService.incrementUserStat', () => {
       from: jest.fn(() => ({ upsert })),
       rpc,
     };
+    const service = new AchievementService();
 
     await service.incrementUserStat('user-1', 'sessions_hosted');
 
@@ -95,43 +92,24 @@ describe('AchievementService.incrementUserStat', () => {
     expect(payload).toEqual({ p_user_id: 'user-1', p_column: 'sessions_hosted' });
   });
 
-  it('falls back to manual increment when RPC fails', async () => {
-    let updatePayload: Record<string, unknown> | null = null;
+  it('throws when stat increment fails', async () => {
     const upsert = jest.fn(async () => ({ error: null }));
-    const select = jest.fn(() => ({
-      eq: jest.fn(() => ({
-        maybeSingle: async () => ({
-          data: { sessions_joined: 2 },
-          error: null,
-        }),
-      })),
-    }));
-    const update = jest.fn((payload: Record<string, unknown>) => {
-      updatePayload = payload;
-      return {
-        eq: jest.fn(async () => ({ error: null })),
-      };
-    });
 
     activeSupabase = {
       from: jest.fn((table: string) => {
         if (table !== 'user_stats') throw new Error('Unexpected table');
-        return { upsert, select, update };
+        return { upsert };
       }),
       rpc: jest.fn(async () => ({ error: { message: 'missing function' } })),
     };
+    const service = new AchievementService();
 
-    await service.incrementUserStat('user-2', 'sessions_joined');
-
-    expect(updatePayload).toMatchObject({ sessions_joined: 3 });
+    await expect(service.incrementUserStat('user-2', 'sessions_joined')).rejects.toBeInstanceOf(AppError);
   });
 });
 
 describe('AchievementService.evaluateAndUnlock', () => {
-  let service: InstanceType<typeof AchievementService>;
-
   beforeEach(() => {
-    service = new AchievementService();
     activeSupabase = null;
     metrics.achievementsUnlockedTotal.inc.mockClear();
   });
@@ -170,6 +148,7 @@ describe('AchievementService.evaluateAndUnlock', () => {
         throw new Error('Unexpected table');
       }),
     };
+    const service = new AchievementService();
 
     await service.evaluateAndUnlock('user-3');
 
@@ -179,10 +158,7 @@ describe('AchievementService.evaluateAndUnlock', () => {
 });
 
 describe('AchievementService.getUserStatsAndAchievements', () => {
-  let service: InstanceType<typeof AchievementService>;
-
   beforeEach(() => {
-    service = new AchievementService();
     activeSupabase = null;
   });
 
@@ -218,6 +194,7 @@ describe('AchievementService.getUserStatsAndAchievements', () => {
         throw new Error('Unexpected table');
       }),
     };
+    const service = new AchievementService();
 
     const result = await service.getUserStatsAndAchievements('user-4');
 

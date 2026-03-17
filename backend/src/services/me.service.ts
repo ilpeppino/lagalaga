@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { getSupabase } from '../config/supabase.js';
 import { AVATAR_CACHE_TTL_MS } from '../config/cache.js';
 import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
+import { getPool } from '../db/pool.js';
+import { getProvider } from '../db/provider.js';
+import { createUserPlatformRepository, createUserRepository } from '../db/repository-factory.js';
 import { RankingService, type SkillTier } from './rankingService.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { fetchJsonWithTimeoutRetry } from '../lib/http.js';
@@ -14,24 +16,6 @@ interface RobloxHeadshotApiResponse {
     state: string;
     imageUrl: string | null;
   }>;
-}
-
-interface UserPlatformRow {
-  user_id: string;
-  platform_id: string;
-  platform_user_id: string;
-  platform_username: string | null;
-  platform_display_name: string | null;
-  platform_avatar_url: string | null;
-  verified_at: string | null;
-}
-
-interface AppUserRow {
-  id: string;
-  roblox_username: string | null;
-  roblox_display_name: string | null;
-  avatar_headshot_url: string | null;
-  avatar_cached_at: string | null;
 }
 
 interface MeDataResponse {
@@ -79,6 +63,11 @@ interface SeasonBadgeRow {
   }> | null;
 }
 
+interface PgSeasonBadgeRow {
+  final_rating: number;
+  season_number: number;
+}
+
 /**
  * Fetch Roblox avatar headshot from thumbnails API
  * @param robloxUserId - Roblox user ID (as string)
@@ -117,16 +106,11 @@ export async function updateAppUserAvatarCache(
   userId: string,
   avatarUrl: string
 ): Promise<void> {
-  const supabase = getSupabase();
-
-  await supabase
-    .from('app_users')
-    .update({
-      avatar_headshot_url: avatarUrl,
-      avatar_cached_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
+  await createUserRepository().updateById(userId, {
+    avatarHeadshotUrl: avatarUrl,
+    avatarCachedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
 
   // Silently ignore errors - caching is best-effort
 }
@@ -144,6 +128,122 @@ export function isAvatarCacheFresh(cachedAt: string | null): boolean {
   return ageMs >= 0 && ageMs < AVATAR_CACHE_TTL_MS;
 }
 
+async function getCompetitiveDataSupabase(userId: string): Promise<MeDataResponse['competitive']> {
+  const supabase = (await import('../config/supabase.js')).getSupabase();
+
+  const { data: rankingRow, error: rankingError } = await supabase
+    .from('user_rankings')
+    .select('rating')
+    .eq('user_id', userId)
+    .maybeSingle<UserRankingRow>();
+
+  if (rankingError) {
+    throw new AppError(
+      ErrorCodes.INTERNAL_DB_ERROR,
+      `Failed to fetch user ranking: ${rankingError.message}`,
+      500
+    );
+  }
+
+  const { data: activeSeason, error: seasonError } = await supabase
+    .from('seasons')
+    .select('season_number, end_date')
+    .eq('is_active', true)
+    .maybeSingle<ActiveSeasonRow>();
+
+  if (seasonError && seasonError.code !== 'PGRST116') {
+    throw new AppError(
+      ErrorCodes.INTERNAL_DB_ERROR,
+      `Failed to fetch active season: ${seasonError.message}`,
+      500
+    );
+  }
+
+  const { data: seasonBadges, error: badgeError } = await supabase
+    .from('season_rankings')
+    .select('final_rating, seasons(season_number)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(5)
+    .returns<SeasonBadgeRow[]>();
+
+  if (badgeError) {
+    throw new AppError(
+      ErrorCodes.INTERNAL_DB_ERROR,
+      `Failed to fetch season badges: ${badgeError.message}`,
+      500
+    );
+  }
+
+  const rating = rankingRow?.rating ?? 1000;
+  return {
+    rating,
+    tier: RankingService.getTierFromRating(rating),
+    currentSeasonNumber: activeSeason?.season_number ?? null,
+    seasonEndsAt: activeSeason?.end_date ?? null,
+    badges: (seasonBadges || [])
+      .map((row) => {
+        const season = Array.isArray(row.seasons) ? row.seasons[0] : row.seasons;
+        if (!season?.season_number) {
+          return null;
+        }
+        return {
+          seasonNumber: Number(season.season_number),
+          finalRating: Number(row.final_rating),
+          tier: RankingService.getTierFromRating(Number(row.final_rating)),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row)),
+  };
+}
+
+async function getCompetitiveDataPg(userId: string): Promise<MeDataResponse['competitive']> {
+  const pool = getPool();
+
+  const [rankingResult, activeSeasonResult, seasonBadgesResult] = await Promise.all([
+    pool.query<UserRankingRow>(
+      `SELECT rating
+       FROM user_rankings
+       WHERE user_id = $1
+       LIMIT 1`,
+      [userId]
+    ),
+    pool.query<ActiveSeasonRow>(
+      `SELECT season_number, end_date
+       FROM seasons
+       WHERE is_active = true
+       LIMIT 1`
+    ),
+    pool.query<PgSeasonBadgeRow>(
+      `SELECT sr.final_rating, s.season_number
+       FROM season_rankings sr
+       JOIN seasons s ON s.id = sr.season_id
+       WHERE sr.user_id = $1
+       ORDER BY sr.created_at DESC
+       LIMIT 5`,
+      [userId]
+    ),
+  ]);
+
+  const rating = rankingResult.rows[0]?.rating ?? 1000;
+  const activeSeason = activeSeasonResult.rows[0] ?? null;
+  const seasonBadges = seasonBadgesResult.rows;
+
+  return {
+    rating,
+    tier: RankingService.getTierFromRating(rating),
+    currentSeasonNumber: activeSeason?.season_number ?? null,
+    seasonEndsAt: activeSeason?.end_date ?? null,
+    badges: seasonBadges
+      .map((row) => ({
+        seasonNumber: Number(row.season_number),
+        finalRating: Number(row.final_rating),
+        tier: RankingService.getTierFromRating(Number(row.final_rating)),
+      }))
+      .filter((row) => Number.isFinite(row.seasonNumber)),
+  };
+}
+
 /**
  * Get user profile data with Roblox connection status
  */
@@ -151,14 +251,10 @@ export async function getMeData(
   userId: string,
   fastify: FastifyInstance
 ): Promise<MeDataResponse> {
-  const supabase = getSupabase();
+  const userRepository = createUserRepository();
+  const userPlatformRepository = createUserPlatformRepository();
 
-  // Fetch app_users row
-  const { data: appUser, error: appUserError } = await supabase
-    .from('app_users')
-    .select('id, roblox_username, roblox_display_name, avatar_headshot_url, avatar_cached_at')
-    .eq('id', userId)
-    .maybeSingle<AppUserRow>();
+  const { data: appUser, error: appUserError } = await userRepository.findById(userId);
 
   if (appUserError) {
     throw new AppError(
@@ -171,21 +267,12 @@ export async function getMeData(
     throw new AppError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');
   }
 
-  // Use displayName if available, else fallback to username
   const displayName =
-    appUser.roblox_display_name || appUser.roblox_username || 'User';
+    appUser.robloxDisplayName || appUser.robloxUsername || 'User';
 
-  // Query user_platforms for Roblox connection
-  const { data: platformData, error: platformError } = await supabase
-    .from('user_platforms')
-    .select(
-      'user_id, platform_id, platform_user_id, platform_username, platform_display_name, platform_avatar_url, verified_at'
-    )
-    .eq('user_id', userId)
-    .eq('platform_id', 'roblox')
-    .maybeSingle<UserPlatformRow>();
+  const { data: platformData, error: platformError } = await userPlatformRepository.findRobloxConnection(userId);
 
-  if (platformError && platformError.code !== 'PGRST116') {
+  if (platformError) {
     throw new AppError(
       ErrorCodes.INTERNAL_ERROR,
       `Failed to fetch platform connection: ${platformError.message}`
@@ -199,70 +286,20 @@ export async function getMeData(
       return undefined;
     }
 
-    const { data: rankingRow, error: rankingError } = await supabase
-      .from('user_rankings')
-      .select('rating')
-      .eq('user_id', userId)
-      .maybeSingle<UserRankingRow>();
-
-    if (rankingError) {
+    try {
+      return getProvider() === 'postgres'
+        ? await getCompetitiveDataPg(userId)
+        : await getCompetitiveDataSupabase(userId);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to fetch user ranking: ${rankingError.message}`,
+        error instanceof Error ? error.message : 'Failed to fetch competitive profile data',
         500
       );
     }
-
-    const { data: activeSeason, error: seasonError } = await supabase
-      .from('seasons')
-      .select('season_number, end_date')
-      .eq('is_active', true)
-      .maybeSingle<ActiveSeasonRow>();
-
-    if (seasonError && seasonError.code !== 'PGRST116') {
-      throw new AppError(
-        ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to fetch active season: ${seasonError.message}`,
-        500
-      );
-    }
-
-    const { data: seasonBadges, error: badgeError } = await supabase
-      .from('season_rankings')
-      .select('final_rating, seasons(season_number)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(5)
-      .returns<SeasonBadgeRow[]>();
-
-    if (badgeError) {
-      throw new AppError(
-        ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to fetch season badges: ${badgeError.message}`,
-        500
-      );
-    }
-
-    const rating = rankingRow?.rating ?? 1000;
-    return {
-      rating,
-      tier: RankingService.getTierFromRating(rating),
-      currentSeasonNumber: activeSeason?.season_number ?? null,
-      seasonEndsAt: activeSeason?.end_date ?? null,
-      badges: (seasonBadges || [])
-        .map((row) => {
-          const season = Array.isArray(row.seasons) ? row.seasons[0] : row.seasons;
-          if (!season?.season_number) {
-            return null;
-          }
-          return {
-            seasonNumber: Number(season.season_number),
-            finalRating: Number(row.final_rating),
-            tier: RankingService.getTierFromRating(Number(row.final_rating)),
-          };
-        })
-        .filter((row): row is NonNullable<typeof row> => Boolean(row)),
-    };
   };
 
   const competitive = await buildCompetitiveData();
@@ -272,7 +309,7 @@ export async function getMeData(
     return {
       appUser: {
         id: userId,
-        email: null, // Not available with Roblox OAuth
+        email: null,
         displayName,
       },
       roblox: {
@@ -287,17 +324,14 @@ export async function getMeData(
     };
   }
 
-  // User is connected - fetch avatar headshot
-  let avatarHeadshotUrl: string | null = appUser.avatar_headshot_url ?? platformData.platform_avatar_url;
+  let avatarHeadshotUrl: string | null = appUser.avatarHeadshotUrl ?? platformData.platform_avatar_url;
 
-  // Refresh avatar only if app_users cache is stale or missing.
-  const shouldFetchAvatar = !isAvatarCacheFresh(appUser.avatar_cached_at) || !appUser.avatar_headshot_url;
+  const shouldFetchAvatar = !isAvatarCacheFresh(appUser.avatarCachedAt) || !appUser.avatarHeadshotUrl;
   metrics.incrementCounter(shouldFetchAvatar ? 'avatar_cache_misses_total' : 'avatar_cache_hits_total');
   if (shouldFetchAvatar) {
     const freshHeadshot = await fetchRobloxHeadshot(platformData.platform_user_id);
     if (freshHeadshot) {
       avatarHeadshotUrl = freshHeadshot;
-      // Update cache asynchronously (best-effort)
       updateAppUserAvatarCache(userId, freshHeadshot).catch((err: unknown) =>
         logger.warn({ userId, error: err instanceof Error ? err.message : String(err) }, 'Avatar cache update failed')
       );
@@ -307,7 +341,7 @@ export async function getMeData(
   return {
     appUser: {
       id: userId,
-      email: null, // Not available with Roblox OAuth
+      email: null,
       displayName,
     },
     roblox: {

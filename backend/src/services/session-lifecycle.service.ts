@@ -1,6 +1,7 @@
-import { getSupabase } from '../config/supabase.js';
+import { createSessionLifecycleRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
+import type { SessionLifecycleRepository } from '../db/repositories/session-lifecycle.repository.js';
 
 interface SessionLifecycleServiceOptions {
   autoCompleteAfterHours?: number;
@@ -29,6 +30,7 @@ export class SessionLifecycleService {
   private readonly autoCompleteAfterHours: number;
   private readonly completedRetentionHours: number;
   private readonly batchSize: number;
+  private repositoryInstance: SessionLifecycleRepository | null = null;
   private archivedColumnAvailable: boolean | null = null;
 
   constructor(options: SessionLifecycleServiceOptions = {}) {
@@ -43,6 +45,13 @@ export class SessionLifecycleService {
     this.batchSize = clampPositiveInt(options.batchSize ?? DEFAULT_BATCH_SIZE, DEFAULT_BATCH_SIZE);
   }
 
+  private get repository(): SessionLifecycleRepository {
+    if (!this.repositoryInstance) {
+      this.repositoryInstance = createSessionLifecycleRepository();
+    }
+    return this.repositoryInstance;
+  }
+
   private isMissingArchivedAtColumn(error: { message?: string } | null | undefined): boolean {
     const message = error?.message ?? '';
     return /archived_at/i.test(message) && /column/i.test(message);
@@ -54,6 +63,23 @@ export class SessionLifecycleService {
 
   private completedRetentionCutoffIso(now: Date): string {
     return new Date(now.getTime() - this.completedRetentionHours * 60 * 60 * 1000).toISOString();
+  }
+
+  private async resolveArchivedColumnAvailability(): Promise<boolean> {
+    if (this.archivedColumnAvailable !== null) {
+      return this.archivedColumnAvailable;
+    }
+
+    const { data, error } = await this.repository.hasArchivedAtColumn();
+    if (error) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to inspect sessions schema for archived_at column: ${error.message}`
+      );
+    }
+
+    this.archivedColumnAvailable = data;
+    return data ?? [];
   }
 
   async processLifecycle(now: Date = new Date()): Promise<SessionLifecycleRunResult> {
@@ -73,13 +99,7 @@ export class SessionLifecycleService {
   }
 
   private async findStaleActiveSessionIds(cutoffIso: string): Promise<string[]> {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('status', 'active')
-      .or(`scheduled_start.lte.${cutoffIso},and(scheduled_start.is.null,created_at.lte.${cutoffIso})`)
-      .limit(this.batchSize);
+    const { data, error } = await this.repository.findStaleActiveSessionIds(cutoffIso, this.batchSize);
 
     if (error) {
       throw new AppError(
@@ -88,58 +108,40 @@ export class SessionLifecycleService {
       );
     }
 
-    return (data ?? []).map((row: { id: string }) => row.id);
+    return data ?? [];
   }
 
   private async autoCompleteSessions(sessionIds: string[], nowIso: string): Promise<number> {
     if (sessionIds.length === 0) return 0;
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('sessions')
-      .update({
-        status: 'completed',
-        scheduled_end: nowIso,
-        updated_at: nowIso,
-      })
-      .in('id', sessionIds)
-      .eq('status', 'active')
-      .select('id');
+    const { data, error } = await this.repository.autoCompleteSessions(sessionIds, nowIso);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to auto-complete sessions: ${error.message}`);
     }
 
-    return Array.isArray(data) ? data.length : sessionIds.length;
+    return data;
   }
 
   private async findStaleCompletedSessionIds(cutoffIso: string): Promise<string[]> {
-    const supabase = getSupabase();
-    let query = supabase
-      .from('sessions')
-      .select('id')
-      .eq('status', 'completed');
+    const useArchivedAtFilter = await this.resolveArchivedColumnAvailability();
+    let { data, error } = await this.repository.findStaleCompletedSessionIds(
+      cutoffIso,
+      this.batchSize,
+      useArchivedAtFilter
+    );
 
-    if (this.archivedColumnAvailable !== false) {
-      query = query.is('archived_at', null);
-    }
-
-    let { data, error } = await query
-      .lte('updated_at', cutoffIso)
-      .limit(this.batchSize);
-
-    if (error && this.isMissingArchivedAtColumn(error)) {
+    if (error && useArchivedAtFilter && this.isMissingArchivedAtColumn(error)) {
       this.archivedColumnAvailable = false;
       logger.warn(
         { error: error.message },
         'sessions.archived_at not available yet; skipping archival filter in lifecycle job'
       );
-      ({ data, error } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('status', 'completed')
-        .lte('updated_at', cutoffIso)
-        .limit(this.batchSize));
+      ({ data, error } = await this.repository.findStaleCompletedSessionIds(
+        cutoffIso,
+        this.batchSize,
+        false
+      ));
     }
 
     if (error) {
@@ -149,51 +151,30 @@ export class SessionLifecycleService {
       );
     }
 
-    return (data ?? []).map((row: { id: string }) => row.id);
+    return data ?? [];
   }
 
   private async archiveCompletedSessions(sessionIds: string[], nowIso: string): Promise<number> {
     if (sessionIds.length === 0) return 0;
 
-    const supabase = getSupabase();
-    const archivePayload =
-      this.archivedColumnAvailable === false
-        ? {
-            status: 'cancelled',
-            updated_at: nowIso,
-          }
-        : {
-            archived_at: nowIso,
-            updated_at: nowIso,
-          };
+    const useArchivedAtColumn = await this.resolveArchivedColumnAvailability();
+    let { data, error } = await this.repository.archiveCompletedSessions(
+      sessionIds,
+      nowIso,
+      useArchivedAtColumn
+    );
 
-    let query = supabase
-      .from('sessions')
-      .update(archivePayload)
-      .in('id', sessionIds)
-      .eq('status', 'completed');
-
-    if (this.archivedColumnAvailable !== false) {
-      query = query.is('archived_at', null);
-    }
-
-    let { data, error } = await query.select('id');
-
-    if (error && this.isMissingArchivedAtColumn(error)) {
+    if (error && useArchivedAtColumn && this.isMissingArchivedAtColumn(error)) {
       this.archivedColumnAvailable = false;
       logger.warn(
         { error: error.message },
         'sessions.archived_at not available yet; falling back to status=cancelled archival'
       );
-      ({ data, error } = await supabase
-        .from('sessions')
-        .update({
-          status: 'cancelled',
-          updated_at: nowIso,
-        })
-        .in('id', sessionIds)
-        .eq('status', 'completed')
-        .select('id'));
+      ({ data, error } = await this.repository.archiveCompletedSessions(
+        sessionIds,
+        nowIso,
+        false
+      ));
     }
 
     if (error) {
@@ -203,6 +184,6 @@ export class SessionLifecycleService {
       );
     }
 
-    return Array.isArray(data) ? data.length : sessionIds.length;
+    return data ?? 0;
   }
 }

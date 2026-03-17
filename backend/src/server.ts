@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fastifyEnv from '@fastify/env';
 import { envSchema, validateEnvForRuntime } from './config/env.js';
 import { initSupabase } from './config/supabase.js';
+import { initDb } from './db/provider.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
@@ -55,6 +56,7 @@ export async function buildServer() {
 
   // Initialize Supabase
   initSupabase(fastify);
+  initDb(fastify);
 
   // Initialize monitoring
   monitoring.captureMessage('Server starting', 'info');

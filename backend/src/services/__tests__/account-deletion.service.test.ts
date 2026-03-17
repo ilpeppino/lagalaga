@@ -56,10 +56,7 @@ function buildSupabaseMock(params: {
 }
 
 describe('AccountDeletionService', () => {
-  let service: import('../account-deletion.service.js').AccountDeletionService;
-
   beforeEach(() => {
-    service = new AccountDeletionServiceClass();
     activeSupabaseMock = null;
   });
 
@@ -75,6 +72,7 @@ describe('AccountDeletionService', () => {
         reason: null,
       },
     });
+    const service = new AccountDeletionServiceClass();
 
     const result = await service.createDeletionRequest({
       userId: 'user-1',
@@ -90,6 +88,7 @@ describe('AccountDeletionService', () => {
       pendingRequest: null,
       countInLastHour: 3,
     });
+    const service = new AccountDeletionServiceClass();
 
     await expect(
       service.createDeletionRequest({

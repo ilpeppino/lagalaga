@@ -5,6 +5,7 @@ export default {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^supertest$': '<rootDir>/src/__tests__/helpers/supertest-shim.ts',
   },
   transform: {
     '^.+\\.ts$': [

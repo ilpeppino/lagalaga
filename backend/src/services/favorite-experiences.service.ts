@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabase } from '../config/supabase.js';
+import { createFavoriteExperiencesRepository } from '../db/repository-factory.js';
 import { FAVORITES_CACHE_TTL_MS } from '../config/cache.js';
 import { logger } from '../lib/logger.js';
 import { RobloxFavoritesService } from './roblox-favorites.service.js';
+import {
+  SupabaseFavoriteExperiencesRepository,
+  type FavoriteExperiencesRepository,
+} from '../db/repositories/favorite-experiences.repository.js';
 
 export interface FavoriteExperience {
   id: string;
@@ -37,16 +41,18 @@ interface GetFavoriteExperiencesOptions {
 interface ServiceDeps {
   supabase?: SupabaseClient;
   robloxFavoritesService?: RobloxFavoritesService;
+  repository?: FavoriteExperiencesRepository;
 }
 
 export class FavoriteExperiencesService {
-  private readonly supabase: SupabaseClient;
+  private readonly repository: FavoriteExperiencesRepository;
   private readonly robloxFavoritesService: RobloxFavoritesService;
   private readonly inFlightRefreshes = new Map<string, Promise<void>>();
   private warnedMissingCacheTable = false;
 
   constructor(deps: ServiceDeps = {}) {
-    this.supabase = deps.supabase ?? getSupabase();
+    this.repository = deps.repository
+      ?? (deps.supabase ? new SupabaseFavoriteExperiencesRepository(deps.supabase) : createFavoriteExperiencesRepository());
     this.robloxFavoritesService = deps.robloxFavoritesService ?? new RobloxFavoritesService();
   }
 
@@ -196,11 +202,7 @@ export class FavoriteExperiencesService {
   }
 
   private async readCacheRow(userId: string): Promise<CachedFavoritesRow | null> {
-    const { data, error } = await this.supabase
-      .from('user_favorites_cache')
-      .select('user_id, favorites_json, etag, cached_at, expires_at')
-      .eq('user_id', userId)
-      .maybeSingle<CachedFavoritesRow>();
+    const { data, error } = await this.repository.findCacheRow(userId);
 
     if (error) {
       if (this.isMissingCacheTableError(error.message)) {
@@ -222,18 +224,13 @@ export class FavoriteExperiencesService {
   }
 
   private async upsertCacheRow(row: CachedFavoritesRow): Promise<void> {
-    const { error } = await this.supabase
-      .from('user_favorites_cache')
-      .upsert(
-        {
-          user_id: row.user_id,
-          favorites_json: row.favorites_json,
-          etag: row.etag,
-          cached_at: row.cached_at,
-          expires_at: row.expires_at,
-        },
-        { onConflict: 'user_id' }
-      );
+    const { error } = await this.repository.upsertCacheRow({
+      user_id: row.user_id,
+      favorites_json: row.favorites_json,
+      etag: row.etag,
+      cached_at: row.cached_at,
+      expires_at: row.expires_at,
+    });
 
     if (error && !this.isMissingCacheTableError(error.message)) {
       throw new Error(`Failed to upsert user_favorites_cache: ${error.message}`);
@@ -244,13 +241,7 @@ export class FavoriteExperiencesService {
   }
 
   private async updateCacheTimestamps(userId: string, cachedAt: string, expiresAt: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('user_favorites_cache')
-      .update({
-        cached_at: cachedAt,
-        expires_at: expiresAt,
-      })
-      .eq('user_id', userId);
+    const { error } = await this.repository.updateCacheTimestamps(userId, cachedAt, expiresAt);
 
     if (error && !this.isMissingCacheTableError(error.message)) {
       throw new Error(`Failed to update user_favorites_cache timestamps: ${error.message}`);

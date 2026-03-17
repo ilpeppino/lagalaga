@@ -1,22 +1,10 @@
-import { getSupabase } from '../config/supabase.js';
 import { AVATAR_CACHE_TTL_MS } from '../config/cache.js';
+import { createUserRepository } from '../db/repository-factory.js';
+import type { AppUser } from '../db/repositories/user.repository.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 import { RobloxThumbnailService } from './robloxThumbnail.js';
 
-export interface AppUser {
-  id: string;
-  robloxUserId: string | null;
-  robloxUsername: string | null;
-  robloxDisplayName: string | null;
-  robloxProfileUrl: string | null;
-  status: 'ACTIVE' | 'PENDING_DELETION' | 'DELETED';
-  tokenVersion: number;
-  createdAt: string;
-  updatedAt: string;
-  lastLoginAt: string | null;
-  avatarHeadshotUrl: string | null;
-  avatarCachedAt: string | null;
-}
+export type { AppUser };
 
 export interface UpsertUserInput {
   robloxUserId: string;
@@ -50,93 +38,47 @@ export class UserService {
   }
 
   async upsertUser(input: UpsertUserInput): Promise<AppUser> {
-    const supabase = getSupabase();
+    const now = new Date().toISOString();
+    const { data, error } = await createUserRepository().upsert({
+      robloxUserId: input.robloxUserId,
+      robloxUsername: input.robloxUsername,
+      robloxDisplayName: input.robloxDisplayName ?? null,
+      robloxProfileUrl: input.robloxProfileUrl ?? null,
+      lastLoginAt: now,
+      updatedAt: now,
+    });
 
-    const { data, error } = await supabase
-      .from('app_users')
-      .upsert(
-        {
-          roblox_user_id: input.robloxUserId,
-          roblox_username: input.robloxUsername,
-          roblox_display_name: input.robloxDisplayName || null,
-          roblox_profile_url: input.robloxProfileUrl || null,
-          last_login_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'roblox_user_id',
-        }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to upsert user: ${error.message}`);
+    if (error || !data) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to upsert user: ${error?.message ?? 'unknown error'}`);
     }
 
-    return {
-      id: data.id,
-      robloxUserId: data.roblox_user_id,
-      robloxUsername: data.roblox_username,
-      robloxDisplayName: data.roblox_display_name,
-      robloxProfileUrl: data.roblox_profile_url,
-      status: data.status,
-      tokenVersion: data.token_version ?? 0,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      lastLoginAt: data.last_login_at,
-      avatarHeadshotUrl: data.avatar_headshot_url,
-      avatarCachedAt: data.avatar_cached_at,
-    };
+    return data;
   }
 
   async createUser(input: CreateUserInput = {}): Promise<AppUser> {
-    const supabase = getSupabase();
     const now = new Date().toISOString();
+    const { data, error } = await createUserRepository().insert({
+      robloxUserId: input.robloxUserId ?? null,
+      robloxUsername: input.robloxUsername ?? null,
+      robloxDisplayName: input.robloxDisplayName ?? null,
+      robloxProfileUrl: input.robloxProfileUrl ?? null,
+      lastLoginAt: now,
+      updatedAt: now,
+    });
 
-    const { data, error } = await supabase
-      .from('app_users')
-      .insert({
-        roblox_user_id: input.robloxUserId ?? null,
-        roblox_username: input.robloxUsername ?? null,
-        roblox_display_name: input.robloxDisplayName ?? null,
-        roblox_profile_url: input.robloxProfileUrl ?? null,
-        last_login_at: now,
-        updated_at: now,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create user: ${error.message}`);
+    if (error || !data) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to create user: ${error?.message ?? 'unknown error'}`);
     }
 
-    return {
-      id: data.id,
-      robloxUserId: data.roblox_user_id,
-      robloxUsername: data.roblox_username,
-      robloxDisplayName: data.roblox_display_name,
-      robloxProfileUrl: data.roblox_profile_url,
-      status: data.status,
-      tokenVersion: data.token_version ?? 0,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      lastLoginAt: data.last_login_at,
-      avatarHeadshotUrl: data.avatar_headshot_url,
-      avatarCachedAt: data.avatar_cached_at,
-    };
+    return data;
   }
 
   async touchLastLogin(userId: string): Promise<void> {
-    const supabase = getSupabase();
     const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('app_users')
-      .update({
-        last_login_at: now,
-        updated_at: now,
-      })
-      .eq('id', userId);
+    const { error } = await createUserRepository().updateById(userId, {
+      lastLoginAt: now,
+      updatedAt: now,
+    });
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to update last login: ${error.message}`);
@@ -144,16 +86,11 @@ export class UserService {
   }
 
   async syncProviderIdentity(input: SyncProviderIdentityInput): Promise<void> {
-    const supabase = getSupabase();
-    const { data: current, error: currentError } = await supabase
-      .from('app_users')
-      .select('id, roblox_user_id, auth_provider')
-      .eq('id', input.userId)
-      .maybeSingle<{
-        id: string;
-        roblox_user_id: string | null;
-        auth_provider: 'ROBLOX' | 'APPLE' | 'GOOGLE' | null;
-      }>();
+    const { data: current, error: currentError } = await createUserRepository().findColumns(input.userId, [
+      'id',
+      'robloxUserId',
+      'authProvider',
+    ]);
 
     if (currentError) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to load user before provider sync: ${currentError.message}`);
@@ -162,35 +99,32 @@ export class UserService {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, 'User not found during provider sync');
     }
 
-    const nextAuthProvider = current.roblox_user_id
-      ? (current.auth_provider ?? 'ROBLOX')
+    const nextAuthProvider = current.robloxUserId
+      ? (current.authProvider ?? 'ROBLOX')
       : input.provider;
 
-    const updatePayload: Record<string, unknown> = {
-      auth_provider: nextAuthProvider,
-      updated_at: new Date().toISOString(),
+    const updatePayload: Partial<AppUser> = {
+      authProvider: nextAuthProvider,
+      updatedAt: new Date().toISOString(),
     };
 
     if (input.provider === 'APPLE') {
-      updatePayload.apple_sub = input.sub;
-      updatePayload.apple_email = input.email ?? null;
-      updatePayload.apple_full_name = input.fullName ?? null;
+      updatePayload.appleSub = input.sub;
+      updatePayload.appleEmail = input.email ?? null;
+      updatePayload.appleFullName = input.fullName ?? null;
       if (input.isPrivateEmail !== undefined) {
-        updatePayload.apple_email_is_private = input.isPrivateEmail;
+        updatePayload.appleEmailIsPrivate = input.isPrivateEmail;
       }
     } else {
-      updatePayload.google_sub = input.sub;
-      updatePayload.google_email = input.email ?? null;
-      updatePayload.google_full_name = input.fullName ?? null;
+      updatePayload.googleSub = input.sub;
+      updatePayload.googleEmail = input.email ?? null;
+      updatePayload.googleFullName = input.fullName ?? null;
       if (input.emailVerified !== undefined) {
-        updatePayload.google_email_verified = input.emailVerified;
+        updatePayload.googleEmailVerified = input.emailVerified;
       }
     }
 
-    const { error } = await supabase
-      .from('app_users')
-      .update(updatePayload)
-      .eq('id', input.userId);
+    const { error } = await createUserRepository().updateById(input.userId, updatePayload);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to sync provider identity fields: ${error.message}`);
@@ -198,35 +132,13 @@ export class UserService {
   }
 
   async getUserById(id: string): Promise<AppUser | null> {
-    const supabase = getSupabase();
-
-    const { data, error } = await supabase
-      .from('app_users')
-      .select()
-      .eq('id', id)
-      .single();
+    const { data, error } = await createUserRepository().findById(id);
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return null;
-      }
       throw new AppError(ErrorCodes.INTERNAL_ERROR, `Failed to get user: ${error.message}`);
     }
 
-    return {
-      id: data.id,
-      robloxUserId: data.roblox_user_id,
-      robloxUsername: data.roblox_username,
-      robloxDisplayName: data.roblox_display_name,
-      robloxProfileUrl: data.roblox_profile_url,
-      status: data.status,
-      tokenVersion: data.token_version ?? 0,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      lastLoginAt: data.last_login_at,
-      avatarHeadshotUrl: data.avatar_headshot_url,
-      avatarCachedAt: data.avatar_cached_at,
-    };
+    return data;
   }
 
   /**
@@ -236,17 +148,13 @@ export class UserService {
    * Falls back to cached value if Roblox fetch fails
    */
   async getAvatarHeadshotUrl(userId: string, robloxUserId: string): Promise<string | null> {
-    const supabase = getSupabase();
+    const { data: userData } = await createUserRepository().findColumns(userId, [
+      'avatarHeadshotUrl',
+      'avatarCachedAt',
+    ]);
 
-    // Get current cache state
-    const { data: userData } = await supabase
-      .from('app_users')
-      .select('avatar_headshot_url, avatar_cached_at')
-      .eq('id', userId)
-      .single();
-
-    const cachedUrl = userData?.avatar_headshot_url || null;
-    const cachedAt = userData?.avatar_cached_at ? new Date(userData.avatar_cached_at) : null;
+    const cachedUrl = userData?.avatarHeadshotUrl ?? null;
+    const cachedAt = userData?.avatarCachedAt ? new Date(String(userData.avatarCachedAt)) : null;
 
     // Check if cache is fresh
     const now = new Date();
@@ -262,20 +170,17 @@ export class UserService {
 
       // Only update cache if we got a non-null URL
       if (freshUrl) {
-        await supabase
-          .from('app_users')
-          .update({
-            avatar_headshot_url: freshUrl,
-            avatar_cached_at: now.toISOString(),
-          })
-          .eq('id', userId);
+        await createUserRepository().updateById(userId, {
+          avatarHeadshotUrl: freshUrl,
+          avatarCachedAt: now.toISOString(),
+        });
 
         return freshUrl;
       }
 
       // If Roblox returned null but we have a cached URL, keep using it
       return cachedUrl;
-    } catch (error) {
+    } catch {
       // On error, fall back to cached URL if available
       // This ensures we don't lose the avatar on temporary API failures
       return cachedUrl;
@@ -287,18 +192,12 @@ export class UserService {
    * Returns the new version number.
    */
   async incrementTokenVersion(userId: string, currentVersion: number): Promise<number> {
-    const supabase = getSupabase();
-    const nextVersion = currentVersion + 1;
-
-    const { error } = await supabase
-      .from('app_users')
-      .update({ token_version: nextVersion })
-      .eq('id', userId);
+    const { error } = await createUserRepository().incrementTokenVersion(userId);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to rotate token version: ${error.message}`);
     }
 
-    return nextVersion;
+    return currentVersion + 1;
   }
 }

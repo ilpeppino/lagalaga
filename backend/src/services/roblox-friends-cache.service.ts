@@ -1,24 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabase } from '../config/supabase.js';
+import { createRobloxFriendsCacheRepository } from '../db/repository-factory.js';
 import { ROBLOX_FRIENDS_CACHE_TTL_MS } from '../config/cache.js';
 import { fetchWithTimeoutAndRetry } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
+import {
+  SupabaseRobloxFriendsCacheRepository,
+  type RobloxFriendsCacheRepository,
+  type RobloxFriendsUserCacheRow as CacheRow,
+} from '../db/repositories/roblox-friends-cache.repository.js';
 
-const ROBLOX_PLATFORM_ID = 'roblox';
 const ROBLOX_BATCH_SIZE = 50;
 
 interface ServiceDeps {
   supabase?: SupabaseClient;
   fetchFn?: typeof fetch;
-}
-
-interface CacheRow {
-  user_id: string;
-  roblox_user_id: number;
-  fetched_at: string;
-  expires_at: string;
-  friends_json: unknown;
+  repository?: RobloxFriendsCacheRepository;
 }
 
 interface RobloxFriendBasic {
@@ -49,11 +46,12 @@ export interface RobloxFriendsResult {
 }
 
 export class RobloxFriendsCacheService {
-  private readonly supabase: SupabaseClient;
+  private readonly repository: RobloxFriendsCacheRepository;
   private readonly fetchFn: typeof fetch;
 
   constructor(deps: ServiceDeps = {}) {
-    this.supabase = deps.supabase ?? getSupabase();
+    this.repository = deps.repository
+      ?? (deps.supabase ? new SupabaseRobloxFriendsCacheRepository(deps.supabase) : createRobloxFriendsCacheRepository());
     this.fetchFn = deps.fetchFn ?? fetch;
   }
 
@@ -91,33 +89,18 @@ export class RobloxFriendsCacheService {
   }
 
   private async getRobloxUserId(userId: string): Promise<string> {
-    const { data, error } = await this.supabase
-      .from('user_platforms')
-      .select('platform_user_id')
-      .eq('user_id', userId)
-      .eq('platform_id', ROBLOX_PLATFORM_ID)
-      .maybeSingle<{ platform_user_id: string | null }>();
-
+    const { data, error } = await this.repository.findPlatformRobloxUserId(userId);
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load Roblox link: ${error.message}`, 500);
     }
-
-    const platformRobloxUserId = data?.platform_user_id?.trim();
-    if (platformRobloxUserId) {
-      return platformRobloxUserId;
+    if (data) {
+      return data;
     }
 
-    const { data: appUserData, error: appUserError } = await this.supabase
-      .from('app_users')
-      .select('roblox_user_id')
-      .eq('id', userId)
-      .maybeSingle<{ roblox_user_id: string | null }>();
-
+    const { data: appUserRobloxUserId, error: appUserError } = await this.repository.findAppUserRobloxUserId(userId);
     if (appUserError) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load Roblox link: ${appUserError.message}`, 500);
     }
-
-    const appUserRobloxUserId = appUserData?.roblox_user_id?.trim();
     if (appUserRobloxUserId) {
       return appUserRobloxUserId;
     }
@@ -128,12 +111,7 @@ export class RobloxFriendsCacheService {
   }
 
   private async getCacheRow(userId: string): Promise<CacheRow | null> {
-    const { data, error } = await this.supabase
-      .from('roblox_friends_cache')
-      .select('user_id,roblox_user_id,fetched_at,expires_at,friends_json')
-      .eq('user_id', userId)
-      .maybeSingle<CacheRow>();
-
+    const { data, error } = await this.repository.findCacheRow(userId);
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to load friends cache: ${error.message}`, 500);
     }
@@ -149,17 +127,14 @@ export class RobloxFriendsCacheService {
     expiresAt: Date
   ): Promise<void> {
     const numericRobloxId = Number.parseInt(robloxUserId, 10);
-    const { error } = await this.supabase
-      .from('roblox_friends_cache')
-      .upsert({
-        user_id: userId,
-        roblox_user_id: Number.isFinite(numericRobloxId) ? numericRobloxId : 0,
-        fetched_at: fetchedAt.toISOString(),
-        expires_at: expiresAt.toISOString(),
-        friends_json: friends,
-        updated_at: new Date().toISOString(),
-      });
-
+    const { error } = await this.repository.upsertCacheRow({
+      userId,
+      robloxUserId: Number.isFinite(numericRobloxId) ? numericRobloxId : 0,
+      fetchedAtIso: fetchedAt.toISOString(),
+      expiresAtIso: expiresAt.toISOString(),
+      friendsJson: friends,
+      updatedAtIso: new Date().toISOString(),
+    });
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to update friends cache: ${error.message}`, 500);
     }

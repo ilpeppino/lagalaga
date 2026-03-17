@@ -6,7 +6,8 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { getSupabase } from '../config/supabase.js';
+import { createHealthRepository } from '../db/repository-factory.js';
+import { getProvider } from '../db/provider.js';
 
 interface HealthCheckResult {
   name: string;
@@ -59,6 +60,7 @@ export async function healthCheckPlugin(fastify: FastifyInstance) {
 
       return reply.status(statusCode).send({
         status: overallStatus,
+        provider: getProvider(),
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         version: process.env.npm_package_version || '1.0.0',
@@ -81,9 +83,8 @@ async function checkDatabase(): Promise<HealthCheckResult> {
   const start = now;
   let result: HealthCheckResult;
   try {
-    const supabase = getSupabase();
-    // Simple query to check database connectivity
-    const { error } = await supabase.from('sessions').select('id').limit(1);
+    const healthRepository = createHealthRepository();
+    const { error } = await healthRepository.ping();
     const latencyMs = Date.now() - start;
 
     if (error) {

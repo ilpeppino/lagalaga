@@ -8,8 +8,23 @@ jest.unstable_mockModule('../../lib/http.js', () => ({
   fetchJsonWithTimeoutRetry: jest.fn(),
 }));
 
-jest.unstable_mockModule('../../config/supabase.js', () => ({
-  getSupabase: jest.fn(),
+const mockUpdateById = jest.fn();
+
+jest.unstable_mockModule('../../db/repository-factory.js', () => ({
+  createUserRepository: jest.fn(() => ({
+    updateById: mockUpdateById,
+  })),
+  createUserPlatformRepository: jest.fn(() => ({
+    findRobloxConnection: jest.fn(),
+  })),
+}));
+
+jest.unstable_mockModule('../../db/provider.js', () => ({
+  getProvider: jest.fn(() => 'supabase'),
+}));
+
+jest.unstable_mockModule('../../db/pool.js', () => ({
+  getPool: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../config/cache.js', () => ({
@@ -30,16 +45,15 @@ jest.unstable_mockModule('../../services/rankingService.js', () => ({
 
 const { logger } = await import('../../lib/logger.js');
 const { fetchJsonWithTimeoutRetry } = await import('../../lib/http.js');
-const { getSupabase } = await import('../../config/supabase.js');
 const { fetchRobloxHeadshot, updateAppUserAvatarCache, isAvatarCacheFresh } = await import('../../services/me.service.js');
 
 const mockFetch = fetchJsonWithTimeoutRetry as jest.MockedFunction<typeof fetchJsonWithTimeoutRetry>;
-const mockGetSupabase = getSupabase as jest.MockedFunction<any>;
 const mockWarn = logger.warn as jest.MockedFunction<typeof logger.warn>;
 
 describe('fetchRobloxHeadshot', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUpdateById.mockResolvedValue({ data: undefined, error: null });
   });
 
   it('logs structured warning and returns null when fetch throws', async () => {
@@ -73,9 +87,7 @@ describe('updateAppUserAvatarCache .catch handler', () => {
   });
 
   it('the .catch handler prevents unhandled rejection when cache update throws', async () => {
-    mockGetSupabase.mockReturnValue({
-      from: () => ({ update: () => ({ eq: async () => { throw new Error('db error'); } }) }),
-    });
+    mockUpdateById.mockRejectedValue(new Error('db error'));
 
     // The caller uses .catch — no unhandled rejection should surface
     await expect(

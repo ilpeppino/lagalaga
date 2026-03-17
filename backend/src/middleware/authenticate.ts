@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { createUserRepository } from '../db/repository-factory.js';
 import { AuthError, ErrorCodes } from '../utils/errors.js';
-import { getSupabase } from '../config/supabase.js';
 
 export async function authenticate(request: FastifyRequest, _reply: FastifyReply) {
   try {
@@ -9,12 +9,7 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
     throw new AuthError(ErrorCodes.AUTH_TOKEN_EXPIRED, 'Token expired or invalid');
   }
 
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('app_users')
-    .select('status, token_version')
-    .eq('id', request.user.userId)
-    .maybeSingle<{ status: 'ACTIVE' | 'PENDING_DELETION' | 'DELETED'; token_version: number }>();
+  const { data, error } = await createUserRepository().findStatusAndTokenVersion(request.user.userId);
 
   if (error) {
     throw new AuthError(ErrorCodes.AUTH_INVALID_CREDENTIALS, 'User not found');

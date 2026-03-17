@@ -1,7 +1,13 @@
-import { getSupabase } from '../config/supabase.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createRobloxExperienceResolverRepository } from '../db/repository-factory.js';
 import { fetchJsonWithTimeoutRetry, type FetchLike } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { ValidationError } from '../utils/errors.js';
+import {
+  SupabaseRobloxExperienceResolverRepository,
+  type GamesRow,
+  type RobloxExperienceResolverRepository,
+} from '../db/repositories/roblox-experience-resolver.repository.js';
 
 export interface ResolvedExperience {
   placeId: number;
@@ -45,15 +51,6 @@ interface GameIconResponse {
   }>;
 }
 
-interface GamesRow {
-  place_id: number;
-  canonical_web_url?: string | null;
-  canonical_start_url?: string | null;
-  game_name?: string | null;
-  thumbnail_url?: string | null;
-  game_description?: string | null;
-}
-
 interface SupabaseLike {
   from(table: 'games'): {
     select(columns: string): {
@@ -71,17 +68,21 @@ interface SupabaseLike {
 export interface RobloxExperienceResolverServiceOptions {
   fetchFn?: FetchLike;
   supabase?: SupabaseLike;
+  repository?: RobloxExperienceResolverRepository;
 }
 
 const CACHE_MISS_CODE = 'PGRST116';
 
 export class RobloxExperienceResolverService {
   private readonly fetchFn: FetchLike;
-  private readonly supabase: SupabaseLike;
+  private readonly repository: RobloxExperienceResolverRepository;
 
   constructor(options: RobloxExperienceResolverServiceOptions = {}) {
     this.fetchFn = options.fetchFn ?? fetch;
-    this.supabase = options.supabase ?? (getSupabase() as unknown as SupabaseLike);
+    this.repository = options.repository
+      ?? (options.supabase
+        ? new SupabaseRobloxExperienceResolverRepository(options.supabase as unknown as SupabaseClient)
+        : createRobloxExperienceResolverRepository());
   }
 
   async resolveExperienceByPlaceId(placeId: number): Promise<ResolvedExperience> {
@@ -192,11 +193,7 @@ export class RobloxExperienceResolverService {
   }
 
   private async getCachedGame(placeId: number): Promise<GamesRow | null> {
-    const { data, error } = await this.supabase
-      .from('games')
-      .select('*')
-      .eq('place_id', placeId)
-      .maybeSingle<GamesRow>();
+    const { data, error } = await this.repository.findByPlaceId(placeId);
 
     if (error && error.code !== CACHE_MISS_CODE) {
       logger.warn(
@@ -346,7 +343,7 @@ export class RobloxExperienceResolverService {
 
     // NOTE: Some deployments may not yet have game_description/max_players/creator_* columns.
     // We attempt extended upsert first, then gracefully fall back to the known-safe payload.
-    const primary = await this.supabase.from('games').upsert(extendedPayload, {
+    const primary = await this.repository.upsertGame(extendedPayload, {
       onConflict: 'place_id',
       ignoreDuplicates: false,
     });
@@ -367,7 +364,7 @@ export class RobloxExperienceResolverService {
       return;
     }
 
-    const fallback = await this.supabase.from('games').upsert(basePayload, {
+    const fallback = await this.repository.upsertGame(basePayload, {
       onConflict: 'place_id',
       ignoreDuplicates: false,
     });

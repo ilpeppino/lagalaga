@@ -1,15 +1,7 @@
-import { getSupabase } from '../config/supabase.js';
+import { createLeaderboardRepository } from '../db/repository-factory.js';
+import type { LeaderboardRow } from '../db/repositories/leaderboard.repository.js';
 import { RankingService, type SkillTier } from './rankingService.js';
 import { AppError, ErrorCodes, ValidationError } from '../utils/errors.js';
-
-interface LeaderboardRow {
-  rank: number;
-  user_id: string;
-  rating: number;
-  wins: number;
-  losses: number;
-  display_name: string | null;
-}
 
 export interface LeaderboardEntry {
   rank: number;
@@ -34,10 +26,8 @@ export class LeaderboardService {
       throw new ValidationError(`Unsupported leaderboard type: ${type}`);
     }
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('get_weekly_leaderboard', {
-      p_limit: 10,
-    });
+    const repository = createLeaderboardRepository();
+    const { data, error } = await repository.getWeekly(10);
 
     if (error) {
       throw new AppError(

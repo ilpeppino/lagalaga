@@ -1,9 +1,10 @@
-import { getSupabase } from '../config/supabase.js';
+import { createRankingRepository } from '../db/repository-factory.js';
 import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { sanitize } from '../lib/sanitizer.js';
 import { logger } from '../lib/logger.js';
 import { metrics } from '../plugins/metrics.js';
 import { AppError, ConflictError, ErrorCodes, SessionError, ValidationError, RateLimitError } from '../utils/errors.js';
+import type { RankedSessionRow, RatingUpdateRow } from '../db/repositories/ranking.repository.js';
 
 const FIXED_RATING_DELTA = 25;
 const RESULT_SUBMIT_RATE_LIMIT_MS = 10_000;
@@ -13,21 +14,6 @@ const OPPONENT_WINDOW_HOURS = 24;
 
 const TIER_ORDER = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master'] as const;
 export type SkillTier = (typeof TIER_ORDER)[number];
-
-interface RatingUpdateRow {
-  user_id: string;
-  rating: number;
-  wins: number;
-  losses: number;
-  delta: number;
-}
-
-interface RankedSessionRow {
-  id: string;
-  is_ranked: boolean;
-  status: string;
-  created_at: string;
-}
 
 export interface MatchResultSubmission {
   sessionId: string;
@@ -44,6 +30,14 @@ export interface MatchResultSubmission {
 
 export class RankingService {
   private static recentSubmissionByKey = new Map<string, number>();
+  private rankingRepositoryInstance: ReturnType<typeof createRankingRepository> | null = null;
+
+  private get rankingRepository() {
+    if (!this.rankingRepositoryInstance) {
+      this.rankingRepositoryInstance = createRankingRepository();
+    }
+    return this.rankingRepositoryInstance;
+  }
 
   static getTierFromRating(rating: number): SkillTier {
     if (rating >= 1800) return 'master';
@@ -80,19 +74,7 @@ export class RankingService {
   }
 
   async ensureRankingRow(userId: string): Promise<void> {
-    const supabase = getSupabase();
-    const { error } = await supabase
-      .from('user_rankings')
-      .upsert(
-        {
-          user_id: userId,
-          rating: 1000,
-          wins: 0,
-          losses: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id', ignoreDuplicates: true }
-      );
+    const { error } = await this.rankingRepository.ensureRankingRow(userId, new Date().toISOString());
 
     if (error) {
       throw new AppError(
@@ -104,12 +86,7 @@ export class RankingService {
   }
 
   private async getJoinedParticipants(sessionId: string): Promise<string[]> {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('session_participants')
-      .select('user_id')
-      .eq('session_id', sessionId)
-      .eq('state', 'joined');
+    const { data, error } = await this.rankingRepository.listJoinedParticipantIds(sessionId);
 
     if (error) {
       throw new AppError(
@@ -119,7 +96,7 @@ export class RankingService {
       );
     }
 
-    return (data || []).map((row: { user_id: string }) => row.user_id);
+    return data ?? [];
   }
 
   private async enforceMinimumSessionDuration(session: RankedSessionRow): Promise<void> {
@@ -146,7 +123,6 @@ export class RankingService {
       return;
     }
 
-    const supabase = getSupabase();
     const windowStartIso = new Date(Date.now() - OPPONENT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
 
     for (let i = 0; i < participantIds.length; i += 1) {
@@ -154,11 +130,11 @@ export class RankingService {
         const userA = participantIds[i];
         const userB = participantIds[j];
 
-        const { data, error } = await supabase.rpc('count_recent_ranked_matches_between_users', {
-          p_user_a: userA,
-          p_user_b: userB,
-          p_window_start: windowStartIso,
-        });
+        const { data, error } = await this.rankingRepository.countRecentRankedMatchesBetweenUsers(
+          userA,
+          userB,
+          windowStartIso
+        );
 
         if (error) {
           throw new AppError(
@@ -168,7 +144,7 @@ export class RankingService {
           );
         }
 
-        const recentCount = Number(data || 0);
+        const recentCount = Number(data ?? 0);
         if (recentCount >= MAX_RANKED_MATCHES_PER_OPPONENT_PER_24H) {
           if (isCompetitiveDepthEnabled()) {
             metrics.suspiciousRankedActivityTotal.inc({ reason: 'opponent_limit' });
@@ -180,12 +156,7 @@ export class RankingService {
   }
 
   private async enforceRankedIntegrity(sessionId: string, winnerId: string): Promise<void> {
-    const supabase = getSupabase();
-    const { data: session, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id, is_ranked, status, created_at')
-      .eq('id', sessionId)
-      .maybeSingle<RankedSessionRow>();
+    const { data: session, error: sessionError } = await this.rankingRepository.findRankedSessionById(sessionId);
 
     if (sessionError) {
       throw new AppError(
@@ -213,38 +184,20 @@ export class RankingService {
     await this.enforceOpponentWindowLimit(participantIds);
   }
 
-  private async lockSessionAfterResult(sessionId: string): Promise<void> {
-    const supabase = getSupabase();
-    const { error } = await supabase
-      .from('sessions')
-      .update({ status: 'completed' })
-      .eq('id', sessionId);
-
-    if (error) {
-      throw new AppError(
-        ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to lock ranked session after result submission: ${error.message}`,
-        500
-      );
-    }
-  }
-
   async submitMatchResult(
     sessionId: string,
     winnerId: string,
     submittedByUserId: string
   ): Promise<MatchResultSubmission> {
-    const supabase = getSupabase();
-
     await this.enforceRankedIntegrity(sessionId, winnerId);
     await this.ensureRankingRow(winnerId);
 
-    const { data, error } = await supabase.rpc('submit_ranked_match_result', {
-      p_session_id: sessionId,
-      p_winner_id: winnerId,
-      p_submitted_by_user_id: submittedByUserId,
-      p_rating_delta: FIXED_RATING_DELTA,
-      p_occurred_at: new Date().toISOString(),
+    const { data, error } = await this.rankingRepository.submitRankedMatchResult({
+      sessionId,
+      winnerId,
+      submittedByUserId,
+      ratingDelta: FIXED_RATING_DELTA,
+      occurredAtIso: new Date().toISOString(),
     });
 
     if (error) {
@@ -283,15 +236,13 @@ export class RankingService {
       );
     }
 
-    const updates = ((data || []) as RatingUpdateRow[]).map((row) => ({
+    const updates = (data ?? []).map((row: RatingUpdateRow) => ({
       userId: row.user_id,
       rating: row.rating,
       wins: row.wins,
       losses: row.losses,
       delta: row.delta,
     }));
-
-    await this.lockSessionAfterResult(sessionId);
 
     metrics.rankedMatchResultsTotal.inc();
     metrics.ratingUpdatesTotal.inc({ count: String(updates.length) });

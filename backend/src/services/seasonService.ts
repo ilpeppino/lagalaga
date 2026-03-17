@@ -1,38 +1,31 @@
-import { getSupabase } from '../config/supabase.js';
+import { createSeasonRepository } from '../db/repository-factory.js';
 import { isCompetitiveDepthEnabled } from '../config/featureFlags.js';
 import { logger } from '../lib/logger.js';
 import { sanitize } from '../lib/sanitizer.js';
 import { metrics } from '../plugins/metrics.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
-
-interface SeasonRow {
-  id: string;
-  season_number: number;
-  start_date: string;
-  end_date: string;
-  is_active: boolean;
-  created_at: string;
-}
-
-interface RolloverResult {
-  rolled_over: boolean;
-  previous_season_number: number | null;
-  new_active_season_number: number | null;
-  snapshot_rows: number;
-}
+import type {
+  SeasonRepository,
+  SeasonRolloverResult,
+  SeasonRow,
+} from '../db/repositories/season.repository.js';
 
 export class SeasonService {
+  private seasonRepositoryInstance: SeasonRepository | null = null;
+
+  private get seasonRepository(): SeasonRepository {
+    if (!this.seasonRepositoryInstance) {
+      this.seasonRepositoryInstance = createSeasonRepository();
+    }
+    return this.seasonRepositoryInstance;
+  }
+
   async getActiveSeason(): Promise<SeasonRow | null> {
     if (!isCompetitiveDepthEnabled()) {
       return null;
     }
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('seasons')
-      .select('id, season_number, start_date, end_date, is_active, created_at')
-      .eq('is_active', true)
-      .maybeSingle<SeasonRow>();
+    const { data, error } = await this.seasonRepository.getActiveSeason();
 
     if (error && error.code !== 'PGRST116') {
       throw new AppError(
@@ -50,10 +43,7 @@ export class SeasonService {
       return 0;
     }
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('snapshot_rankings_for_season', {
-      p_season_id: seasonId,
-    });
+    const { data, error } = await this.seasonRepository.snapshotRankings(seasonId);
 
     if (error) {
       throw new AppError(
@@ -71,8 +61,7 @@ export class SeasonService {
       return 0;
     }
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('reset_all_rankings_for_new_season');
+    const { data, error } = await this.seasonRepository.resetRatings();
 
     if (error) {
       throw new AppError(
@@ -90,10 +79,7 @@ export class SeasonService {
       return;
     }
 
-    const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('run_competitive_season_rollover', {
-      p_now: new Date().toISOString(),
-    });
+    const { data, error } = await this.seasonRepository.runSeasonRollover(new Date().toISOString());
 
     if (error) {
       throw new AppError(
@@ -103,7 +89,7 @@ export class SeasonService {
       );
     }
 
-    const result = (data || {}) as RolloverResult;
+    const result = (data || {}) as SeasonRolloverResult;
     if (!result.rolled_over) {
       return;
     }

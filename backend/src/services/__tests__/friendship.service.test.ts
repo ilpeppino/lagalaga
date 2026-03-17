@@ -98,11 +98,13 @@ describe('FriendshipService.sendRequest', () => {
 
   it('rejects when target user is missing', async () => {
     activeSupabase = buildSupabase({ targetExists: false });
+    service = new FriendshipService();
     await expect(service.sendRequest('user-1', 'missing-user')).rejects.toBeInstanceOf(AppError);
   });
 
   it('rejects when friendship already accepted', async () => {
     activeSupabase = buildSupabase({ existingStatus: 'accepted' });
+    service = new FriendshipService();
     await expect(service.sendRequest('user-1', 'target-user')).rejects.toBeInstanceOf(AppError);
   });
 

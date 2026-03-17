@@ -38,6 +38,34 @@ export const envSchema = {
       type: 'string',
       default: '',
     },
+    DB_PROVIDER: {
+      type: 'string',
+      default: 'supabase',
+    },
+    POSTGRES_HOST: {
+      type: 'string',
+      default: '',
+    },
+    POSTGRES_PORT: {
+      type: 'number',
+      default: 5433,
+    },
+    POSTGRES_DB: {
+      type: 'string',
+      default: '',
+    },
+    POSTGRES_USER: {
+      type: 'string',
+      default: '',
+    },
+    POSTGRES_PASSWORD: {
+      type: 'string',
+      default: '',
+    },
+    POSTGRES_SSL: {
+      type: 'boolean',
+      default: false,
+    },
     ROBLOX_CLIENT_ID: {
       type: 'string',
     },
@@ -184,6 +212,13 @@ declare module 'fastify' {
       SUPABASE_URL: string;
       SUPABASE_SERVICE_ROLE_KEY: string;
       SUPABASE_ANON_KEY: string;
+      DB_PROVIDER: 'supabase' | 'postgres';
+      POSTGRES_HOST: string;
+      POSTGRES_PORT: number;
+      POSTGRES_DB: string;
+      POSTGRES_USER: string;
+      POSTGRES_PASSWORD: string;
+      POSTGRES_SSL: boolean;
       ROBLOX_CLIENT_ID: string;
       ROBLOX_CLIENT_SECRET: string;
       ROBLOX_REDIRECT_URI: string;

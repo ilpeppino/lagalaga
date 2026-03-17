@@ -1,6 +1,6 @@
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import Fastify from 'fastify';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { AppError, AuthError } from '../../utils/errors.js';
 
 const mockGoogleGenerateAuthorizationUrl = jest.fn<any>();

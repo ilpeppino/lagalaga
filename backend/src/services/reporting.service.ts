@@ -1,4 +1,4 @@
-import { getSupabase } from '../config/supabase.js';
+import { createReportRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 import {
   AppError,
@@ -7,6 +7,13 @@ import {
   RateLimitError,
   ValidationError,
 } from '../utils/errors.js';
+import type {
+  RecentReportRow,
+  ReportCategory,
+  ReportRepository,
+  ReportStatus,
+  ReportTargetType,
+} from '../db/repositories/report.repository.js';
 
 export const REPORT_CATEGORIES = [
   'CSAM',
@@ -17,10 +24,6 @@ export const REPORT_CATEGORIES = [
 ] as const;
 
 export const REPORT_TARGET_TYPES = ['USER', 'SESSION', 'GENERAL'] as const;
-
-type ReportCategory = (typeof REPORT_CATEGORIES)[number];
-type ReportTargetType = (typeof REPORT_TARGET_TYPES)[number];
-type ReportStatus = 'OPEN' | 'UNDER_REVIEW' | 'CLOSED' | 'ESCALATED';
 
 interface CreateReportInput {
   reporterId: string;
@@ -33,18 +36,8 @@ interface CreateReportInput {
   correlationId?: string;
 }
 
-interface ReportInsertRow {
-  id: string;
-  status: ReportStatus;
-  created_at: string;
-}
-
-interface RecentReportRow {
-  id: string;
-  target_user_id: string | null;
-  target_session_id: string | null;
-  description: string | null;
-}
+type SupportedReportCategory = (typeof REPORT_CATEGORIES)[number];
+type SupportedReportTargetType = (typeof REPORT_TARGET_TYPES)[number];
 
 interface ServiceOptions {
   maxReportsPerHour?: number;
@@ -56,6 +49,7 @@ interface ServiceOptions {
 }
 
 export class ReportingService {
+  private reportRepositoryInstance: ReportRepository | null = null;
   private readonly maxReportsPerHour: number;
   private readonly duplicateWindowMinutes: number;
   private readonly safetyAlertWebhookUrl: string | null;
@@ -72,6 +66,13 @@ export class ReportingService {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
+  private get reportRepository(): ReportRepository {
+    if (!this.reportRepositoryInstance) {
+      this.reportRepositoryInstance = createReportRepository();
+    }
+    return this.reportRepositoryInstance;
+  }
+
   async createReport(input: CreateReportInput): Promise<{ ticketId: string; status: ReportStatus; createdAt: string }> {
     this.validateInput(input);
     await this.ensureTargetExists(input);
@@ -80,20 +81,14 @@ export class ReportingService {
 
     const status: ReportStatus = this.requiresEscalation(input.category) ? 'ESCALATED' : 'OPEN';
     const description = input.description.trim();
-    const supabase = getSupabase();
-
-    const { data, error } = await supabase
-      .from('reports')
-      .insert({
-        reporter_id: input.reporterId,
-        target_user_id: input.targetType === 'USER' ? input.targetUserId! : null,
-        target_session_id: input.targetType === 'SESSION' ? input.targetSessionId! : null,
-        category: input.category,
-        description,
-        status,
-      })
-      .select('id, status, created_at')
-      .single<ReportInsertRow>();
+    const { data, error } = await this.reportRepository.insertReport({
+      reporterId: input.reporterId,
+      targetUserId: input.targetType === 'USER' ? input.targetUserId! : null,
+      targetSessionId: input.targetType === 'SESSION' ? input.targetSessionId! : null,
+      category: input.category,
+      description,
+      status,
+    });
 
     if (error || !data) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to create safety report: ${error?.message ?? 'unknown error'}`);
@@ -128,11 +123,11 @@ export class ReportingService {
   }
 
   private validateInput(input: CreateReportInput): void {
-    if (!REPORT_CATEGORIES.includes(input.category)) {
+    if (!REPORT_CATEGORIES.includes(input.category as SupportedReportCategory)) {
       throw new ValidationError('Invalid report category');
     }
 
-    if (!REPORT_TARGET_TYPES.includes(input.targetType)) {
+    if (!REPORT_TARGET_TYPES.includes(input.targetType as SupportedReportTargetType)) {
       throw new ValidationError('Invalid report target type');
     }
 
@@ -167,14 +162,8 @@ export class ReportingService {
   }
 
   private async ensureTargetExists(input: CreateReportInput): Promise<void> {
-    const supabase = getSupabase();
-
     if (input.targetType === 'USER') {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('id')
-        .eq('id', input.targetUserId!)
-        .maybeSingle<{ id: string }>();
+      const { data, error } = await this.reportRepository.findUserById(input.targetUserId!);
 
       if (error) {
         throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to validate reported user: ${error.message}`);
@@ -185,11 +174,7 @@ export class ReportingService {
     }
 
     if (input.targetType === 'SESSION') {
-      const { data, error } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('id', input.targetSessionId!)
-        .maybeSingle<{ id: string }>();
+      const { data, error } = await this.reportRepository.findSessionById(input.targetSessionId!);
 
       if (error) {
         throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to validate reported session: ${error.message}`);
@@ -201,14 +186,9 @@ export class ReportingService {
   }
 
   private async enforceRateLimit(reporterId: string): Promise<void> {
-    const supabase = getSupabase();
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-    const { count, error } = await supabase
-      .from('reports')
-      .select('id', { count: 'exact', head: true })
-      .eq('reporter_id', reporterId)
-      .gte('created_at', oneHourAgo);
+    const { data: count, error } = await this.reportRepository.countRecentReportsByReporter(reporterId, oneHourAgo);
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to apply report rate limit: ${error.message}`);
@@ -220,15 +200,13 @@ export class ReportingService {
   }
 
   private async enforceDuplicateWindow(input: CreateReportInput): Promise<void> {
-    const supabase = getSupabase();
     const since = new Date(Date.now() - this.duplicateWindowMinutes * 60 * 1000).toISOString();
 
-    const { data, error } = await supabase
-      .from('reports')
-      .select('id, target_user_id, target_session_id, description')
-      .eq('reporter_id', input.reporterId)
-      .eq('category', input.category)
-      .gte('created_at', since);
+    const { data, error } = await this.reportRepository.listRecentReportsForDuplicateCheck(
+      input.reporterId,
+      input.category,
+      since
+    );
 
     if (error) {
       throw new AppError(ErrorCodes.INTERNAL_DB_ERROR, `Failed to check duplicate reports: ${error.message}`);

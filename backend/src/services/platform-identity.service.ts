@@ -1,52 +1,46 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabase } from '../config/supabase.js';
+import { createUserPlatformRepository } from '../db/repository-factory.js';
+import {
+  type LinkPlatformToUserInput,
+  SupabaseUserPlatformRepository,
+  type SupportedPlatformId,
+  type UserPlatformRepository,
+} from '../db/repositories/user-platform.repository.js';
 import { AppError, ErrorCodes } from '../utils/errors.js';
 
-export type SupportedPlatformId = 'roblox' | 'google' | 'apple';
+export type { SupportedPlatformId };
 
 interface PlatformIdentityServiceDeps {
   supabase?: SupabaseClient;
-}
-
-interface LinkPlatformToUserInput {
-  userId: string;
-  platformId: SupportedPlatformId;
-  platformUserId: string;
-  platformUsername?: string | null;
-  platformDisplayName?: string | null;
-  platformAvatarUrl?: string | null;
-  metadata?: Record<string, unknown> | null;
-  robloxProfileUrl?: string | null;
-}
-
-interface LinkPlatformTxResponse {
-  linked_user_id: string;
-  conflict_user_id: string | null;
-}
-
-interface SafeMergeTxResponse {
-  merged: boolean;
-  merged_user_id: string | null;
-  reason_code: string | null;
+  repository?: UserPlatformRepository;
 }
 
 export class PlatformIdentityService {
-  private readonly providedSupabase?: SupabaseClient;
+  private readonly repositoryOverride: UserPlatformRepository | null;
+  private repositoryInstance: UserPlatformRepository | null = null;
   private metadataColumnSupported: boolean | null = null;
 
   constructor(deps: PlatformIdentityServiceDeps = {}) {
-    this.providedSupabase = deps.supabase;
+    this.repositoryOverride = deps.repository
+      ?? (deps.supabase
+        ? new SupabaseUserPlatformRepository(deps.supabase)
+        : null);
+  }
+
+  private get repository(): UserPlatformRepository {
+    if (this.repositoryOverride) {
+      return this.repositoryOverride;
+    }
+    if (!this.repositoryInstance) {
+      this.repositoryInstance = createUserPlatformRepository();
+    }
+    return this.repositoryInstance;
   }
 
   async findUserIdByPlatform(platformId: SupportedPlatformId, platformUserId: string): Promise<string | null> {
-    const { data, error } = await this.getSupabase()
-      .from('user_platforms')
-      .select('user_id')
-      .eq('platform_id', platformId)
-      .eq('platform_user_id', platformUserId)
-      .maybeSingle<{ user_id: string }>();
+    const { data, error } = await this.repository.findUserIdByPlatform(platformId, platformUserId);
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
         `Failed to lookup platform identity: ${error.message}`,
@@ -54,7 +48,7 @@ export class PlatformIdentityService {
       );
     }
 
-    return data?.user_id ?? null;
+    return data;
   }
 
   async assertPlatformNotLinkedToDifferentUser(input: {
@@ -81,8 +75,29 @@ export class PlatformIdentityService {
       platformUserId: input.platformUserId,
     });
 
-    const rpcResult = await this.linkWithTransactionRpc(input);
-    if (rpcResult === 'linked') {
+    const rpcResult = await this.repository.linkPlatformToUserTx(input);
+    if (rpcResult.error) {
+      throw new AppError(
+        ErrorCodes.INTERNAL_DB_ERROR,
+        `Failed to link platform identity: ${rpcResult.error.message}`,
+        500
+      );
+    }
+
+    if (rpcResult.data?.conflictUserId && rpcResult.data.conflictUserId !== input.userId) {
+      throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
+        severity: 'warning',
+        metadata: {
+          platformId: input.platformId,
+          action: 'use_original_login',
+        },
+      });
+    }
+
+    if (!rpcResult.data?.unavailable) {
+      if (input.metadata && this.metadataColumnSupported !== false) {
+        await this.tryUpdatePlatformMetadata(input.userId, input.platformId, input.metadata);
+      }
       return;
     }
 
@@ -90,11 +105,7 @@ export class PlatformIdentityService {
   }
 
   async unlinkPlatformFromUser(input: { userId: string; platformId: SupportedPlatformId }): Promise<void> {
-    const { error } = await this.getSupabase()
-      .from('user_platforms')
-      .delete()
-      .eq('user_id', input.userId)
-      .eq('platform_id', input.platformId);
+    const { error } = await this.repository.unlinkPlatformFromUser(input);
 
     if (error) {
       throw new AppError(
@@ -109,19 +120,12 @@ export class PlatformIdentityService {
     sourceUserId: string;
     robloxPlatformUserId: string;
   }): Promise<{ merged: boolean; mergedUserId: string | null; reasonCode: string | null }> {
-    const { data, error } = await this.getSupabase().rpc('merge_provider_shadow_user_into_roblox_user_tx', {
-      p_source_user_id: input.sourceUserId,
-      p_roblox_platform_user_id: input.robloxPlatformUserId,
+    const { data, error } = await this.repository.mergeProviderShadowUserIntoRobloxUserTx({
+      sourceUserId: input.sourceUserId,
+      robloxPlatformUserId: input.robloxPlatformUserId,
     });
 
     if (error) {
-      if (error.code === 'PGRST202') {
-        return {
-          merged: false,
-          mergedUserId: null,
-          reasonCode: 'RPC_UNAVAILABLE',
-        };
-      }
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
         `Failed to merge provider shadow user into Roblox user: ${error.message}`,
@@ -129,27 +133,17 @@ export class PlatformIdentityService {
       );
     }
 
-    const row = (Array.isArray(data) ? data[0] : data) as SafeMergeTxResponse | null;
     return {
-      merged: row?.merged === true,
-      mergedUserId: row?.merged_user_id ?? null,
-      reasonCode: row?.reason_code ?? null,
+      merged: data?.merged === true,
+      mergedUserId: data?.mergedUserId ?? null,
+      reasonCode: data?.reasonCode ?? null,
     };
   }
 
   async syncRobloxFieldsFromPlatformLink(userId: string): Promise<void> {
-    const { data, error } = await this.getSupabase()
-      .from('user_platforms')
-      .select('platform_user_id, platform_username, platform_display_name')
-      .eq('user_id', userId)
-      .eq('platform_id', 'roblox')
-      .maybeSingle<{
-        platform_user_id: string;
-        platform_username: string | null;
-        platform_display_name: string | null;
-      }>();
+    const { data, error } = await this.repository.findRobloxPlatformLink(userId);
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
         `Failed to load Roblox platform link: ${error.message}`,
@@ -161,87 +155,26 @@ export class PlatformIdentityService {
       return;
     }
 
-    const { error: updateError } = await this.getSupabase()
-      .from('app_users')
-      .update({
-        roblox_user_id: data.platform_user_id,
-        roblox_username: data.platform_username,
-        roblox_display_name: data.platform_display_name,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId);
-
-    if (updateError) {
-      throw new AppError(
-        ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to sync Roblox profile fields: ${updateError.message}`,
-        500
-      );
-    }
-  }
-
-  private async linkWithTransactionRpc(input: LinkPlatformToUserInput): Promise<'linked' | 'fallback'> {
-    const { data, error } = await this.getSupabase().rpc('link_platform_to_user_tx', {
-      p_user_id: input.userId,
-      p_platform_id: input.platformId,
-      p_platform_user_id: input.platformUserId,
-      p_platform_username: input.platformUsername ?? null,
-      p_platform_display_name: input.platformDisplayName ?? null,
-      p_platform_avatar_url: input.platformAvatarUrl ?? null,
-      p_roblox_profile_url: input.robloxProfileUrl ?? null,
+    const syncResult = await this.repository.updateUserRobloxFields(userId, {
+      robloxUserId: data.platform_user_id,
+      robloxUsername: data.platform_username,
+      robloxDisplayName: data.platform_display_name,
     });
 
-    if (error) {
-      if (error.code === 'PGRST202') {
-        return 'fallback';
-      }
+    if (syncResult.error) {
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to link platform identity: ${error.message}`,
+        `Failed to sync Roblox profile fields: ${syncResult.error.message}`,
         500
       );
     }
-
-    const row = (Array.isArray(data) ? data[0] : data) as LinkPlatformTxResponse | null;
-    if (row?.conflict_user_id && row.conflict_user_id !== input.userId) {
-      throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
-        severity: 'warning',
-        metadata: {
-          platformId: input.platformId,
-          action: 'use_original_login',
-        },
-      });
-    }
-
-    if (input.metadata && this.metadataColumnSupported !== false) {
-      await this.tryUpdatePlatformMetadata(input.userId, input.platformId, input.metadata);
-    }
-
-    return 'linked';
   }
 
   private async linkWithFallbackUpsert(input: LinkPlatformToUserInput): Promise<void> {
-    const payload: Record<string, unknown> = {
-      user_id: input.userId,
-      platform_id: input.platformId,
-      platform_user_id: input.platformUserId,
-      platform_username: input.platformUsername ?? null,
-      platform_display_name: input.platformDisplayName ?? null,
-      platform_avatar_url: input.platformAvatarUrl ?? null,
-      verified_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const result = await this.repository.upsertLink(input);
 
-    if (input.metadata && this.metadataColumnSupported !== false) {
-      payload.metadata = input.metadata;
-    }
-
-    const { error } = await this.getSupabase()
-      .from('user_platforms')
-      .upsert(payload, { onConflict: 'user_id,platform_id' });
-
-    if (error) {
-      if (error.code === '23505') {
+    if (result.error) {
+      if (result.error.code === '23505' || result.error.code === ErrorCodes.CONFLICT) {
         const linkedUserId = await this.findUserIdByPlatform(input.platformId, input.platformUserId);
         if (linkedUserId && linkedUserId !== input.userId) {
           throw new AppError('CONFLICT_ACCOUNT_PROVIDER', `This ${input.platformId} account is already linked to another LagaLaga account.`, 409, {
@@ -258,22 +191,19 @@ export class PlatformIdentityService {
         });
       }
 
-      if (error.code === 'PGRST204') {
+      if (result.error.code === 'PGRST204') {
         this.metadataColumnSupported = false;
-        const fallbackPayload = { ...payload };
-        delete fallbackPayload.metadata;
-        const { error: fallbackError } = await this.getSupabase()
-          .from('user_platforms')
-          .upsert(fallbackPayload, { onConflict: 'user_id,platform_id' });
+        const fallbackPayload = { ...input, metadata: undefined };
+        const fallbackResult = await this.repository.upsertLink(fallbackPayload);
 
-        if (!fallbackError) {
+        if (!fallbackResult.error) {
           return;
         }
       }
 
       throw new AppError(
         ErrorCodes.INTERNAL_DB_ERROR,
-        `Failed to link platform identity: ${error.message}`,
+        `Failed to link platform identity: ${result.error.message}`,
         500
       );
     }
@@ -281,14 +211,12 @@ export class PlatformIdentityService {
     if (input.platformId === 'roblox') {
       await this.syncRobloxFieldsFromPlatformLink(input.userId);
       if (input.robloxProfileUrl) {
-        const { error: profileError } = await this.getSupabase()
-          .from('app_users')
-          .update({ roblox_profile_url: input.robloxProfileUrl, updated_at: new Date().toISOString() })
-          .eq('id', input.userId);
-        if (profileError) {
+        const profileResult = await this.repository.updateUserRobloxProfileUrl(input.userId, input.robloxProfileUrl);
+
+        if (profileResult.error) {
           throw new AppError(
             ErrorCodes.INTERNAL_DB_ERROR,
-            `Failed to sync Roblox profile URL: ${profileError.message}`,
+            `Failed to sync Roblox profile URL: ${profileResult.error.message}`,
             500
           );
         }
@@ -301,33 +229,22 @@ export class PlatformIdentityService {
     platformId: SupportedPlatformId,
     metadata: Record<string, unknown>
   ): Promise<void> {
-    const { error } = await this.getSupabase()
-      .from('user_platforms')
-      .update({
-        metadata,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .eq('platform_id', platformId);
+    const result = await this.repository.updatePlatformMetadata(userId, platformId, metadata);
 
-    if (!error) {
+    if (!result.error) {
       this.metadataColumnSupported = this.metadataColumnSupported ?? true;
       return;
     }
 
-    if (error.code === 'PGRST204') {
+    if (result.error.code === 'PGRST204') {
       this.metadataColumnSupported = false;
       return;
     }
 
     throw new AppError(
       ErrorCodes.INTERNAL_DB_ERROR,
-      `Failed to update Google metadata: ${error.message}`,
+      `Failed to update Google metadata: ${result.error.message}`,
       500
     );
-  }
-
-  private getSupabase(): SupabaseClient {
-    return this.providedSupabase ?? getSupabase();
   }
 }

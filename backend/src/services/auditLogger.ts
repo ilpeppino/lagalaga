@@ -6,38 +6,16 @@
  */
 
 import type { FastifyRequest } from 'fastify';
-import { getSupabase } from '../config/supabase.js';
+import type { AuditLogEntry } from '../db/repositories/audit.repository.js';
+import { createAuditRepository } from '../db/repository-factory.js';
 import { logger } from '../lib/logger.js';
 import { withRetry } from '../lib/errorRecovery.js';
 import { metrics } from '../plugins/metrics.js';
 
-export interface AuditLogEntry {
-  actor_id: string | null;
-  action: string;
-  resource_type?: string;
-  resource_id?: string;
-  metadata?: Record<string, unknown>;
-  ip_address?: string;
-  user_agent?: string;
-  outcome: 'success' | 'failure';
-  error_message?: string;
-}
-
 async function insertAuditEntry(entry: AuditLogEntry): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('audit_logs').insert([
-    {
-      actor_id: entry.actor_id,
-      action: entry.action,
-      resource_type: entry.resource_type,
-      resource_id: entry.resource_id,
-      metadata: entry.metadata,
-      ip_address: entry.ip_address,
-      user_agent: entry.user_agent,
-      outcome: entry.outcome,
-      error_message: entry.error_message,
-    },
-  ]);
+  const repository = createAuditRepository();
+  const { error } = await repository.insert(entry);
+
   if (error) {
     throw new Error(error.message);
   }

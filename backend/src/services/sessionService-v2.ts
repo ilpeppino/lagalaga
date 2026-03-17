@@ -1,4 +1,5 @@
 import { getSupabase } from '../config/supabase.js';
+import { createSessionRepository } from '../db/repository-factory.js';
 import { SessionError, ErrorCodes, AppError, ValidationError } from '../utils/errors.js';
 import { chunkArray } from '../lib/arrays.js';
 import { TtlCache } from '../lib/ttlCache.js';
@@ -538,38 +539,18 @@ export class SessionServiceV2 {
       hasMore: boolean;
     };
   }> {
-    const supabase = getSupabase();
     const limit = params.limit || 20;
     const offset = params.offset || 0;
 
-    const rpcParams = {
-      p_status: params.status || null,
-      p_visibility: params.visibility || null,
-      p_place_id: params.placeId || null,
-      p_host_id: params.hostId || null,
-      p_requester_id: params.requesterId || null,
-      p_limit: limit,
-      p_offset: offset,
-    };
-
-    // Prefer requester-aware RPC signature; fall back to legacy signature if DB is not migrated yet.
-    let { data, error } = await supabase.rpc('list_sessions_optimized', rpcParams);
-    if (error && /Could not find the function public\.list_sessions_optimized/i.test(error.message)) {
-      logger.warn(
-        { error: error.message },
-        'Falling back to legacy list_sessions_optimized signature without requester filtering'
-      );
-      const fallback = await supabase.rpc('list_sessions_optimized', {
-        p_status: params.status || null,
-        p_visibility: params.visibility || null,
-        p_place_id: params.placeId || null,
-        p_host_id: params.hostId || null,
-        p_limit: limit,
-        p_offset: offset,
-      });
-      data = fallback.data;
-      error = fallback.error;
-    }
+    const { data, error } = await createSessionRepository().listSessionsOptimized({
+      status: params.status,
+      visibility: params.visibility,
+      placeId: params.placeId,
+      hostId: params.hostId,
+      requesterId: params.requesterId,
+      limit,
+      offset,
+    });
 
     if (error) {
       logger.warn(
@@ -631,14 +612,10 @@ export class SessionServiceV2 {
       hasMore: boolean;
     };
   }> {
-    const supabase = getSupabase();
-
-    // Use optimized RPC function instead of nested selects
-    // This eliminates N+1 query problem and uses composite index
-    const { data, error } = await supabase.rpc('list_user_planned_sessions_optimized', {
-      p_user_id: userId,
-      p_limit: limit,
-      p_offset: offset,
+    const { data, error } = await createSessionRepository().listUserPlannedSessionsOptimized({
+      userId,
+      limit,
+      offset,
     });
 
     if (error) {

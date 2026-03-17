@@ -55,6 +55,25 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const SIGN_OUT_NETWORK_TIMEOUT_MS = 8_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -259,15 +278,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     const userId = user?.id;
+    logger.info('Sign-out started', {
+      hasUserId: Boolean(userId),
+    });
+    let revokeSucceeded = false;
     try {
-      await apiClient.auth.revoke();
+      await withTimeout(
+        apiClient.auth.revoke(),
+        SIGN_OUT_NETWORK_TIMEOUT_MS,
+        'auth.revoke'
+      );
+      revokeSucceeded = true;
     } catch (error) {
       logger.warn('Failed to revoke token on server', {
         error: error instanceof Error ? error.message : String(error),
       });
     } finally {
       try {
-        await unregisterPushToken();
+        await withTimeout(
+          unregisterPushToken(),
+          SIGN_OUT_NETWORK_TIMEOUT_MS,
+          'push.unregister'
+        );
       } catch {
         // best effort
       }
@@ -277,6 +309,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await clearCachedFavorites(userId);
       }
       setUser(null);
+      const [accessTokenAfterClear, refreshTokenAfterClear] = await Promise.all([
+        tokenStorage.getToken(),
+        tokenStorage.getRefreshToken(),
+      ]);
+      const tokenClearSucceeded = !accessTokenAfterClear && !refreshTokenAfterClear;
+      if (!tokenClearSucceeded) {
+        logger.warn('Sign-out token clear verification failed, retrying token clear');
+        await tokenStorage.clearTokens();
+      }
+      logger.info('Sign-out completed', {
+        revokeSucceeded,
+        tokenClearSucceeded,
+      });
     }
   };
 

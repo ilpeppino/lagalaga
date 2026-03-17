@@ -471,13 +471,22 @@ export default function MeScreen() {
             try {
               await signOut();
             } catch {
-              // signOut handles cleanup in finally block; user state cleared → auto-redirect
+              // signOut handles cleanup in finally block.
+            } finally {
+              setSigningOut(false);
+              router.replace('/auth/sign-in');
             }
           },
         },
       ],
     );
-  }, [signOut]);
+  }, [router, signOut]);
+
+  useEffect(() => {
+    if (signingOut && !user) {
+      router.replace('/auth/sign-in');
+    }
+  }, [router, signingOut, user]);
 
   // ---------------------------------------------------------------------------
   // Derived colors

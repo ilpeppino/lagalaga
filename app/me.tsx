@@ -11,6 +11,7 @@ import {
   Animated,
   Easing,
   Switch,
+  Modal,
 } from 'react-native';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +33,15 @@ import { resolveAccountLinkConflict } from '@/src/features/auth/accountLinkConfl
 import { logger } from '@/src/lib/logger';
 import { getOrCreateAuthFlowCorrelationId } from '@/src/features/auth/authFlowCorrelation';
 import {
+  type BackendTarget,
+  getBackendTarget,
+  getBackendUrl,
+  isAsusBackendConfigured,
+  isDeveloperSettingsUnlocked,
+  setBackendTarget,
+  setDeveloperSettingsUnlocked,
+} from '@/src/lib/backendTarget';
+import {
   DEFAULT_SESSION_SETTINGS,
   type SessionSettings,
   loadSessionSettings,
@@ -49,6 +59,9 @@ import {
 
 const PRIVACY_POLICY_URL = 'https://ilpeppino.github.io/lagalaga/privacy-policy.html';
 const TERMS_OF_SERVICE_URL = 'https://ilpeppino.github.io/lagalaga/terms.html';
+const DEV_TAP_REQUIRED = 10;
+const DEV_TAP_WINDOW_MS = 3500;
+const DEV_TAP_MAX_GAP_MS = 500;
 
 interface MeData {
   appUser: {
@@ -182,7 +195,14 @@ export default function MeScreen() {
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [syncFeedback, setSyncFeedback] = useState<'idle' | 'success' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
+  const [developerSettingsUnlocked, setDeveloperSettingsUnlockedState] = useState(false);
+  const [showDeveloperSettings, setShowDeveloperSettings] = useState(false);
+  const [backendTarget, setBackendTargetState] = useState<BackendTarget>('render');
+  const [updatingBackendTarget, setUpdatingBackendTarget] = useState(false);
   const syncFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const devTapCountRef = useRef(0);
+  const devTapWindowStartRef = useRef(0);
+  const devLastTapRef = useRef(0);
 
   // ---------------------------------------------------------------------------
   // Animations
@@ -287,6 +307,24 @@ export default function MeScreen() {
       if (syncFeedbackTimerRef.current) {
         clearTimeout(syncFeedbackTimerRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [unlocked, target] = await Promise.all([
+        isDeveloperSettingsUnlocked(),
+        getBackendTarget(),
+      ]);
+      if (!active) return;
+      setDeveloperSettingsUnlockedState(unlocked);
+      setBackendTargetState(target);
+    })().catch(() => {
+      // Ignore initialization failures in non-critical dev UI state.
+    });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -482,6 +520,62 @@ export default function MeScreen() {
     );
   }, [router, signOut]);
 
+  const handleRobloxBadgeTap = useCallback(() => {
+    const now = Date.now();
+    const gap = now - devLastTapRef.current;
+
+    if (gap > DEV_TAP_MAX_GAP_MS || devTapCountRef.current === 0) {
+      devTapCountRef.current = 0;
+      devTapWindowStartRef.current = now;
+    }
+
+    if (now - devTapWindowStartRef.current > DEV_TAP_WINDOW_MS) {
+      devTapCountRef.current = 0;
+      devTapWindowStartRef.current = now;
+    }
+
+    devTapCountRef.current += 1;
+    devLastTapRef.current = now;
+
+    if (devTapCountRef.current < DEV_TAP_REQUIRED) {
+      return;
+    }
+
+    devTapCountRef.current = 0;
+    devTapWindowStartRef.current = 0;
+    devLastTapRef.current = 0;
+
+    (async () => {
+      if (!developerSettingsUnlocked) {
+        await setDeveloperSettingsUnlocked(true);
+        setDeveloperSettingsUnlockedState(true);
+        Alert.alert('Developer settings enabled');
+      }
+      setShowDeveloperSettings(true);
+    })().catch(() => {
+      Alert.alert('Failed to open developer settings');
+    });
+  }, [developerSettingsUnlocked]);
+
+  const handleBackendTargetChange = useCallback(async (target: BackendTarget) => {
+    if (target === backendTarget) {
+      return;
+    }
+    setUpdatingBackendTarget(true);
+    try {
+      await setBackendTarget(target);
+      setBackendTargetState(target);
+      Alert.alert(
+        'Backend switched',
+        `Active backend is now ${target === 'render' ? 'Render Production' : 'Asus/NAS'}.`
+      );
+    } catch {
+      Alert.alert('Failed to switch backend');
+    } finally {
+      setUpdatingBackendTarget(false);
+    }
+  }, [backendTarget]);
+
   useEffect(() => {
     if (signingOut && !user) {
       router.replace('/auth/sign-in');
@@ -665,14 +759,21 @@ export default function MeScreen() {
             {/* Roblox identity mark */}
             <View style={styles.robloxMarkWrap}>
               {data.roblox.connected ? (
-                <>
+                <TouchableOpacity
+                  onPress={handleRobloxBadgeTap}
+                  activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel="Roblox connected"
+                  accessibilityHint="Tap repeatedly to unlock developer settings"
+                  style={styles.robloxBadgeTapTarget}
+                >
                   <View style={styles.robloxBadge} accessibilityLabel="Roblox account connected">
                     <Text style={styles.robloxBadgeR}>R</Text>
                   </View>
                   <Text style={[styles.robloxBadgeLabel, { color: secondaryTextColor }]}>
                     Roblox
                   </Text>
-                </>
+                </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   onPress={() => void handleConnectRoblox()}
@@ -873,6 +974,22 @@ export default function MeScreen() {
               ) : null}
             </>
           ) : null}
+
+          {developerSettingsUnlocked ? (
+            <>
+              <View style={[styles.divider, { backgroundColor: rowBorderColor }]} />
+              <TouchableOpacity
+                style={[styles.listRowButton, { borderBottomColor: rowBorderColor }]}
+                onPress={() => setShowDeveloperSettings(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Open developer settings"
+              >
+                <IconSymbol name="wrench.and.screwdriver" size={18} color={secondaryTextColor} />
+                <Text style={[styles.listRowButtonText, { color: textColor }]}>Developer Settings</Text>
+                <IconSymbol name="chevron.right" size={14} color={secondaryTextColor} />
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
 
         {/* ------------------------------------------------------------------ */}
@@ -1020,6 +1137,60 @@ export default function MeScreen() {
           Lagalaga is not affiliated with, endorsed by, or sponsored by Roblox Corporation.
         </Text>
       </Animated.ScrollView>
+
+      <Modal
+        visible={showDeveloperSettings}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowDeveloperSettings(false)}
+      >
+        <View style={styles.devModalBackdrop}>
+          <View style={[styles.devModalCard, { backgroundColor: cardColor }]}>
+            <Text style={[styles.devModalTitle, { color: textColor }]}>Developer Settings</Text>
+            <Text style={[styles.devModalSubtitle, { color: secondaryTextColor }]}>
+              Choose which backend environment this app uses.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.devOption,
+                backendTarget === 'render' && { borderColor: tintColor, borderWidth: 1.5 },
+              ]}
+              onPress={() => void handleBackendTargetChange('render')}
+              disabled={updatingBackendTarget}
+            >
+              <Text style={[styles.devOptionTitle, { color: textColor }]}>Render Production</Text>
+              <Text style={[styles.devOptionUrl, { color: secondaryTextColor }]}>
+                {getBackendUrl('render')}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.devOption,
+                backendTarget === 'asus' && { borderColor: tintColor, borderWidth: 1.5 },
+                !isAsusBackendConfigured() && styles.devOptionDisabled,
+              ]}
+              onPress={() => void handleBackendTargetChange('asus')}
+              disabled={updatingBackendTarget || !isAsusBackendConfigured()}
+            >
+              <Text style={[styles.devOptionTitle, { color: textColor }]}>Asus / NAS</Text>
+              <Text style={[styles.devOptionUrl, { color: secondaryTextColor }]}>
+                {isAsusBackendConfigured() ? getBackendUrl('asus') : 'Not configured (set EXPO_PUBLIC_API_URL_ASUS)'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.devCloseButton, { borderColor: rowBorderColor }]}
+              onPress={() => setShowDeveloperSettings(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close developer settings"
+            >
+              <Text style={[styles.devCloseButtonText, { color: textColor }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1112,6 +1283,10 @@ const styles = StyleSheet.create({
     gap: 4,
     width: 72,
     paddingTop: 28,
+  },
+  robloxBadgeTapTarget: {
+    alignItems: 'center',
+    gap: 4,
   },
   avatarIdentityMeta: {
     width: PROFILE_NAME_MAX_WIDTH,
@@ -1279,5 +1454,53 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
     marginBottom: 8,
+  },
+  devModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  devModalCard: {
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
+  },
+  devModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  devModalSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  devOption: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(127,127,127,0.25)',
+    padding: 12,
+    gap: 4,
+  },
+  devOptionDisabled: {
+    opacity: 0.55,
+  },
+  devOptionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  devOptionUrl: {
+    fontSize: 12,
+  },
+  devCloseButton: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  devCloseButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

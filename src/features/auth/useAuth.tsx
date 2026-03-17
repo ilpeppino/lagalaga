@@ -11,7 +11,7 @@ import { warmFavorites } from '../favorites/service';
 import { clearCachedFavorites } from '../favorites/cache';
 import { clearSessionSettings } from '../../lib/sessionSettings';
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPushToken';
-import { API_URL } from '../../lib/runtimeConfig';
+import { getActiveApiBaseUrl } from '../../lib/backendTarget';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { redactUserId } from './authFlowCorrelation';
 
@@ -244,8 +244,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<WebBrowser.WebBrowserAuthSessionResult> => {
     try {
+      const apiBaseUrl = await getActiveApiBaseUrl();
       logger.info('Initiating Google sign-in', {
-        apiUrl: API_URL,
+        apiUrl: apiBaseUrl,
         platform: Platform.OS,
       });
       const { url } = await apiClient.auth.startGoogleAuth();
@@ -259,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       logger.info('Launching Google OAuth browser flow', {
-        apiUrl: API_URL,
+        apiUrl: apiBaseUrl,
         providerHost,
         returnUrl,
       });

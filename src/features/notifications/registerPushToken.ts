@@ -9,7 +9,7 @@ import { logger } from '@/src/lib/logger';
 import { monitoring } from '@/src/lib/monitoring';
 import { apiClient } from '@/src/lib/api';
 import { tokenStorage } from '@/src/lib/tokenStorage';
-import { API_URL } from '@/src/lib/runtimeConfig';
+import { getActiveApiBaseUrl } from '@/src/lib/backendTarget';
 
 let cachedToken: string | null = null;
 let lastRegistrationTime: number | null = null;
@@ -124,7 +124,8 @@ async function registerPushTokenWithBackend(input: {
     throw new Error('Missing auth token while registering push token with backend');
   }
 
-  const response = await fetch(`${API_URL}/api/me/push-tokens`, {
+  const apiBaseUrl = await getActiveApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/api/me/push-tokens`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${authToken}`,

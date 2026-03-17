@@ -2,7 +2,7 @@ import { tokenStorage } from './tokenStorage';
 import { ApiError, NetworkError, parseApiError } from './errors';
 import { logger } from './logger';
 import { monitoring } from './monitoring';
-import { API_URL } from './runtimeConfig';
+import { getActiveApiBaseUrl } from './backendTarget';
 import type { Session, CreateSessionInput, SessionParticipant } from '../features/sessions/types';
 
 type RobloxNotConnectedHandler = (context: { endpoint: string; statusCode: number }) => void;
@@ -134,7 +134,8 @@ class ApiClient {
           });
         }
 
-        const response = await fetch(`${API_URL}/auth/refresh`, {
+        const apiBaseUrl = await getActiveApiBaseUrl();
+        const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refreshToken }),
@@ -178,8 +179,9 @@ class ApiClient {
     }
 
     let response: Response;
+    const apiBaseUrl = await getActiveApiBaseUrl();
     try {
-      response = await fetch(`${API_URL}${endpoint}`, {
+      response = await fetch(`${apiBaseUrl}${endpoint}`, {
         ...options,
         headers,
       });
@@ -228,10 +230,11 @@ class ApiClient {
         if (options.body != null && !this.hasHeader(options.headers, 'content-type')) {
           newHeaders['Content-Type'] = 'application/json';
         }
-        const retryResponse = await fetch(`${API_URL}${endpoint}`, {
+        const retryResponse = await fetch(`${apiBaseUrl}${endpoint}`, {
           ...options,
           headers: newHeaders,
         });
+        const retryUrl = `${apiBaseUrl}${endpoint}`;
 
         if (!retryResponse.ok) {
           const apiError = await parseApiError(retryResponse);
@@ -240,7 +243,7 @@ class ApiClient {
           }
       logger.error(`API error after token refresh: ${apiError.code}`, {
         endpoint,
-        requestUrl: `${API_URL}${endpoint}`,
+        requestUrl: retryUrl,
         statusCode: retryResponse.status,
         requestId,
       });
@@ -260,7 +263,7 @@ class ApiClient {
       }
       logger.error(`API error: ${apiError.code} - ${apiError.message}`, {
         endpoint,
-        requestUrl: `${API_URL}${endpoint}`,
+        requestUrl: `${apiBaseUrl}${endpoint}`,
         statusCode: response.status,
         requestId,
         correlationId,
@@ -294,10 +297,11 @@ class ApiClient {
       'X-Correlation-ID': correlationId,
       ...(options.headers ?? {}),
     };
+    const apiBaseUrl = await getActiveApiBaseUrl();
 
     let response: Response;
     try {
-      response = await fetch(`${API_URL}${endpoint}`, {
+      response = await fetch(`${apiBaseUrl}${endpoint}`, {
         method: 'GET',
         headers: requestHeaders,
       });
@@ -321,7 +325,7 @@ class ApiClient {
           ...(options.headers ?? {}),
         };
         try {
-          response = await fetch(`${API_URL}${endpoint}`, {
+          response = await fetch(`${apiBaseUrl}${endpoint}`, {
             method: 'GET',
             headers: retryHeaders,
           });
@@ -361,16 +365,17 @@ class ApiClient {
     },
 
     startGoogleAuth: async (): Promise<{ url: string }> => {
+      const apiBaseUrl = await getActiveApiBaseUrl();
       try {
         logger.info('Starting Google OAuth via primary backend route', {
-          apiUrl: API_URL,
+          apiUrl: apiBaseUrl,
           endpoint: '/api/auth/google/start',
         });
         const response = await this.request<{ url: string }>('/api/auth/google/start', {
           method: 'GET',
         });
         logger.info('Google OAuth start URL received from primary backend route', {
-          apiUrl: API_URL,
+          apiUrl: apiBaseUrl,
           endpoint: '/api/auth/google/start',
           providerUrlHost: (() => {
             try {
@@ -389,14 +394,14 @@ class ApiClient {
 
         // Compatibility fallback for environments exposing Google auth under /auth/*
         logger.warn('Primary Google OAuth route returned 404, using fallback route', {
-          apiUrl: API_URL,
+          apiUrl: apiBaseUrl,
           endpoint: '/auth/google/start',
         });
         const response = await this.request<{ url: string }>('/auth/google/start', {
           method: 'GET',
         });
         logger.info('Google OAuth start URL received from fallback backend route', {
-          apiUrl: API_URL,
+          apiUrl: apiBaseUrl,
           endpoint: '/auth/google/start',
           providerUrlHost: (() => {
             try {

@@ -19,6 +19,14 @@ function readPublicEnv(name: 'EXPO_PUBLIC_API_URL'): string {
   return value;
 }
 
+function readOptionalApiEnv(name: 'EXPO_PUBLIC_API_URL_ASUS'): string | null {
+  const value = process.env.EXPO_PUBLIC_API_URL_ASUS;
+  if (!value || !value.trim()) {
+    return null;
+  }
+  return value.trim();
+}
+
 function readOptionalPublicEnv(
   name: 'EXPO_PUBLIC_DELETE_ACCOUNT_WEB_URL' | 'EXPO_PUBLIC_CHILD_SAFETY_POLICY_URL'
 ): string | null {
@@ -53,6 +61,12 @@ function normalizeBaseUrl(value: string): string {
 export const API_URL = normalizeBaseUrl(
   requireEnv('EXPO_PUBLIC_API_URL', readPublicEnv('EXPO_PUBLIC_API_URL'))
 );
+
+export const API_URL_ASUS = (() => {
+  const value = readOptionalApiEnv('EXPO_PUBLIC_API_URL_ASUS');
+  if (!value) return null;
+  return normalizeBaseUrl(value);
+})();
 
 export const ENABLE_COMPETITIVE_DEPTH = readOptionalPublicBoolean(
   'EXPO_PUBLIC_ENABLE_COMPETITIVE_DEPTH'

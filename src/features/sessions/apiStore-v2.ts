@@ -20,7 +20,7 @@ import {
 import { tokenStorage } from '@/src/lib/tokenStorage';
 import { ApiError, NetworkError, isApiError, parseApiError } from '@/src/lib/errors';
 import { logger } from '@/src/lib/logger';
-import { API_URL } from '@/src/lib/runtimeConfig';
+import { getActiveApiBaseUrl } from '@/src/lib/backendTarget';
 import { notifyRobloxNotConnected } from '@/src/lib/api';
 
 export interface RobloxExperienceResolution {
@@ -77,7 +77,8 @@ async function fetchWithAuth<T>(endpoint: string, options: FetchWithAuthOptions 
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${endpoint}`, {
+    const apiBaseUrl = await getActiveApiBaseUrl();
+    response = await fetch(`${apiBaseUrl}${endpoint}`, {
       ...requestOptions,
       headers: {
         ...headers,
